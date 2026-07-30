@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 from typing import Any, Sequence
 
 from ..elasticity import MP_CONVENTIONAL_CIF_FRAME, MP_IEEE_CONVENTIONAL_FRAME
@@ -227,9 +228,11 @@ class MaterialsProjectProvider:
         except Exception:
             pass
 
-    def _elasticity_documents(self, mpr: object, material_ids: list[str]) -> dict[str, object]:
+    def _elasticity_documents(
+        self, mpr: object, material_ids: list[str]
+    ) -> tuple[dict[str, object], str]:
         if not material_ids:
-            return {}
+            return {}, ""
         fields = [
             "material_id",
             "formula_pretty",
@@ -250,17 +253,23 @@ class MaterialsProjectProvider:
                 num_chunks=None,
             )
         except TypeError:
-            docs = mpr.materials.elasticity.search(  # type: ignore[attr-defined]
-                material_ids=material_ids,
-                fields=fields,
-            )
-        except Exception:
-            return {}
-        return {
-            str(_value(doc, "material_id", "") or "").lower(): doc
-            for doc in docs
-            if _value(doc, "material_id", "")
-        }
+            try:
+                docs = mpr.materials.elasticity.search(  # type: ignore[attr-defined]
+                    material_ids=material_ids,
+                    fields=fields,
+                )
+            except Exception as exc:
+                return {}, str(exc)
+        except Exception as exc:
+            return {}, str(exc)
+        return (
+            {
+                str(_value(doc, "material_id", "") or "").lower(): doc
+                for doc in docs
+                if _value(doc, "material_id", "")
+            },
+            "",
+        )
 
     def _write_elasticity(
         self,
@@ -269,7 +278,9 @@ class MaterialsProjectProvider:
         document: object | None,
         *,
         conventional_unit_cell: bool,
-    ) -> Path:
+        query_error: str = "",
+        return_status: bool = False,
+    ) -> Path | tuple[Path, str, str]:
         tensor = _value(document, "elastic_tensor") if document is not None else None
         ieee = _matrix(_value(tensor, "ieee_format"))
         raw = _matrix(_value(tensor, "raw"))
@@ -278,21 +289,36 @@ class MaterialsProjectProvider:
         # differ by a rotation and is retained for provenance, but is not used
         # for hkl-resolved calculations without that rotation.
         stiffness = raw if conventional_unit_cell else None
-        if stiffness is not None:
+        if query_error:
+            status = "elasticity_query_failed"
+            coordinate_frame = ""
+            error = query_error
+        elif document is None:
+            status = "no_elasticity_data"
+            coordinate_frame = ""
+            error = "No elasticity document was returned for this material."
+        elif stiffness is not None:
             status = "ok"
             coordinate_frame = MP_CONVENTIONAL_CIF_FRAME
+            error = ""
         elif ieee is not None:
             status = "frame_transform_required"
             coordinate_frame = MP_IEEE_CONVENTIONAL_FRAME
+            error = (
+                "Only an IEEE-oriented tensor was returned; an explicit rotation is required "
+                "before hkl-resolved properties can be evaluated."
+            )
         else:
             status = "no_elastic_tensor"
             coordinate_frame = ""
+            error = "The elasticity document contains no usable 6x6 tensor."
         payload: dict[str, object] = {
             "schema": "diffractscout_elasticity_v1",
             "material_id": candidate.material_id,
             "formula": candidate.formula,
             "cif_filename": cif_path.name,
             "status": status,
+            "error": error,
             "units": {"elastic_tensor": "GPa"},
             "elastic_tensor": {"ieee_format": ieee, "raw": raw} if document is not None else None,
             "bulk_modulus": _plain(_value(document, "bulk_modulus")) if document is not None else None,
@@ -310,6 +336,7 @@ class MaterialsProjectProvider:
                 "source_url": candidate.source_url,
                 "nature_of_data": "DFT_calculated" if (raw is not None or ieee is not None) else "none",
                 "numerical_cij": raw is not None or ieee is not None,
+                "query_error": query_error,
                 "usable_for_hkl_modulus": stiffness is not None,
                 "not_experimental": True,
                 "coordinate_frame": coordinate_frame,
@@ -322,8 +349,8 @@ class MaterialsProjectProvider:
                 "coordinate_frame": coordinate_frame,
                 "paired_cif": cif_path.name,
             }
-        path = cif_path.with_name(f"{cif_path.stem}_elasticity.json")
-        return write_json(path, payload)
+        path = write_json(cif_path.with_name(f"{cif_path.stem}_elasticity.json"), payload)
+        return (path, status, error) if return_status else path
 
     def download_candidates(
         self,
@@ -353,7 +380,17 @@ class MaterialsProjectProvider:
                     if structure is None:
                         raise RuntimeError("No structure returned by Materials Project.")
                     path = output_dir / _candidate_filename(candidate)
-                    structure.to(fmt="cif", filename=str(path))
+                    temporary_name = ""
+                    try:
+                        with tempfile.NamedTemporaryFile(
+                            mode="w", suffix=".cif", prefix=f".{path.stem}_", dir=output_dir, delete=False
+                        ) as handle:
+                            temporary_name = handle.name
+                        structure.to(fmt="cif", filename=temporary_name)
+                        Path(temporary_name).replace(path)
+                    finally:
+                        if temporary_name:
+                            Path(temporary_name).unlink(missing_ok=True)
                     successful.append((candidate, path))
                     results.append(
                         DownloadArtifact(
@@ -374,13 +411,14 @@ class MaterialsProjectProvider:
                         )
                     )
 
-            documents = (
-                self._elasticity_documents(mpr, [candidate.material_id for candidate, _path in successful])
-                if include_elasticity
-                else {}
-            )
+            if include_elasticity:
+                documents, elasticity_query_error = self._elasticity_documents(
+                    mpr, [candidate.material_id for candidate, _path in successful]
+                )
+            else:
+                documents, elasticity_query_error = {}, ""
 
-        elasticity_by_id: dict[str, Path] = {}
+        elasticity_by_id: dict[str, tuple[Path, str, str]] = {}
         if include_elasticity:
             for candidate, path in successful:
                 elasticity_by_id[candidate.material_id] = self._write_elasticity(
@@ -388,14 +426,18 @@ class MaterialsProjectProvider:
                     path,
                     documents.get(candidate.material_id),
                     conventional_unit_cell=conventional_unit_cell,
-                )
+                    query_error=elasticity_query_error,
+                    return_status=True,
+                )  # type: ignore[assignment]
         return [
             DownloadArtifact(
                 candidate=item.candidate,
                 cif_path=item.cif_path,
-                elasticity_path=elasticity_by_id.get(item.candidate.material_id),
+                elasticity_path=(elasticity_by_id[item.candidate.material_id][0] if item.candidate.material_id in elasticity_by_id else None),
                 status=item.status,
                 error=item.error,
+                elasticity_status=(elasticity_by_id[item.candidate.material_id][1] if item.candidate.material_id in elasticity_by_id else ""),
+                elasticity_error=(elasticity_by_id[item.candidate.material_id][2] if item.candidate.material_id in elasticity_by_id else ""),
                 provider_metadata=item.provider_metadata,
             )
             for item in results

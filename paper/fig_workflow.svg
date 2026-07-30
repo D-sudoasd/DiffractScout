@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="520" viewBox="0 0 1100 520" role="img" aria-labelledby="title desc">
   <title id="title">DiffractScout workflow</title>
-  <desc id="desc">Five-stage workflow connecting composition parsing, candidate discovery, structure acquisition and validation, diffraction and elasticity calculation, and traceable export.</desc>
+  <desc id="desc">Five-stage workflow connecting composition parsing, candidate discovery, structure acquisition and validation, bounded diffraction and elasticity calculation, structured diagnostics, staged export, and bundle verification.</desc>
   <style>
     .box { fill:#f7fbfc; stroke:#1f6f78; stroke-width:2; }
     .head { font:700 20px Arial, sans-serif; fill:#173f46; }
@@ -22,12 +22,12 @@
   <path d="M690 112 H730" class="arrow"/>
   <rect x="740" y="45" width="340" height="135" rx="16" class="box"/>
   <text x="910" y="78" text-anchor="middle" class="head">4. Validate and calculate</text>
-  <text x="910" y="108" text-anchor="middle" class="body">CIF identity · cell · space group · occupancy</text><text x="910" y="132" text-anchor="middle" class="body">systematic absences · multiplicity · |F|² · LP</text><text x="910" y="156" text-anchor="middle" class="body">optional hkl-normal Young's modulus</text>
+  <text x="910" y="108" text-anchor="middle" class="body">CIF identity · cell · space group · occupancy</text><text x="910" y="132" text-anchor="middle" class="body">systematic absences · multiplicity · |F|² · LP</text><text x="910" y="156" text-anchor="middle" class="body">optional E(hkl) · bounded search</text>
   <path d="M910 180 V236" class="arrow"/>
   <rect x="215" y="250" width="670" height="205" rx="18" class="box"/>
-  <text x="550" y="286" text-anchor="middle" class="head">5. Export one self-contained evidence bundle</text>
-  <text x="550" y="322" text-anchor="middle" class="body">candidate_index.csv · phase_summary.csv · peak_reference.csv</text>
-  <text x="550" y="350" text-anchor="middle" class="body">pattern_profiles.csv · elasticity.csv · results.xlsx</text>
-  <text x="550" y="378" text-anchor="middle" class="body">provenance.json · manifest.json with SHA-256 inventory</text>
+  <text x="550" y="286" text-anchor="middle" class="head">5. Stage, verify, and commit one evidence bundle</text>
+  <text x="550" y="322" text-anchor="middle" class="body">candidate_index.csv · download_index.csv · phase_summary.csv</text>
+  <text x="550" y="350" text-anchor="middle" class="body">peak_reference.csv · pattern_profiles.csv · elasticity.csv · diagnostics.csv</text>
+  <text x="550" y="378" text-anchor="middle" class="body">results.xlsx · provenance.json · strict SHA-256 manifest</text>
   <text x="550" y="420" text-anchor="middle" class="body">Every missing or uncertain quantity remains explicit; no phase identity or experimental correction is inferred.</text>
 </svg>

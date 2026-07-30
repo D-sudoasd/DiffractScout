@@ -43,3 +43,26 @@ def test_unrotated_ieee_tensor_does_not_emit_hkl_modulus(demo_inputs: Path) -> N
     tensor = validate_elastic_tensor(matrix, coordinate_frame=MP_IEEE_CONVENTIONAL_FRAME)
     assert tensor.status == "valid_with_warnings"
     assert young_modulus_hkl_normal_GPa(tensor, structure.small_structure.cell, (1, 1, 1)) is None
+
+
+def test_exact_sidecar_with_conflicting_pair_is_rejected(demo_inputs: Path, tmp_path: Path) -> None:
+    import json
+    import shutil
+
+    cif = tmp_path / "sample.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    payload = json.loads((demo_inputs / "synthetic_fcc_al_elasticity.json").read_text(encoding="utf-8"))
+    payload["cif_filename"] = "different.cif"
+    payload["provenance"]["paired_cif"] = "different.cif"
+    (tmp_path / "sample_elasticity.json").write_text(json.dumps(payload), encoding="utf-8")
+    tensor = discover_elastic_tensor(cif)
+    assert tensor is not None
+    assert tensor.status == "invalid"
+    assert any("do not match" in warning for warning in tensor.warnings)
+
+
+def test_compliance_matrix_is_cached() -> None:
+    tensor = validate_elastic_tensor(np.eye(6) * 100.0)
+    first = tensor.compliance_1_over_GPa
+    second = tensor.compliance_1_over_GPa
+    assert first is second

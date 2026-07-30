@@ -15,11 +15,30 @@ result = analyze_cifs(
         two_theta_max_deg=15.0,
         step_deg=0.005,
         fwhm_deg=0.03,
+        profile_eta=0.5,
+        include_elasticity=True,
+        max_profile_points=500_000,
+        max_reflection_estimate=1_000_000,
     ),
 )
+
+print(result.manifest_path)
+for diagnostic in result.diagnostics:
+    print(diagnostic.level, diagnostic.stage, diagnostic.item, diagnostic.message)
 ```
 
-`analyze_cifs` copies source artifacts into the output bundle, parses each CIF, pairs a compatible elasticity sidecar when present, calculates reflections and writes all exports. It returns a `PipelineResult` containing the `PhaseAnalysis` objects and manifest path.
+`analyze_cifs`:
+
+1. resolves and deduplicates CIF inputs;
+2. rejects overlap between input and output trees;
+3. copies source artifacts into a staging result directory;
+4. pairs elastic sidecars only when `include_elasticity=True`;
+5. analyzes each readable phase while recording per-phase diagnostics;
+6. writes CSV, optional XLSX, provenance, and a manifest;
+7. verifies the staged bundle;
+8. atomically moves it into the requested target.
+
+It returns a `PipelineResult`. An invalid phase can be recorded in `diagnostics` while other phases complete. CLI exit status is nonzero when no phase is analyzable.
 
 ## Candidate discovery
 
@@ -37,12 +56,29 @@ discovery = discover_candidates(
     settings=DiscoverySettings(
         mode="near_stable",
         e_hull_max_eV_atom=0.05,
+        max_subsystem_order=3,
+        max_per_subsystem=100,
         max_total=50,
     ),
 )
 ```
 
-`DiscoveryResult` contains the normalized input, queried subsystems, per-subsystem counts, deterministic candidate list, provider metadata and warnings.
+`DiscoveryResult` contains normalized input, queried subsystems, per-subsystem counts, a deterministic candidate list, provider metadata, and warnings. Invalid negative/non-finite energy limits and non-positive count limits are rejected before provider access.
+
+## Discovery-only export
+
+```python
+from diffractscout.pipeline import export_discovery
+
+result = export_discovery(
+    "Ti-Al-V",
+    provider,
+    "outputs/ti_al_v_candidates",
+    discovery_settings=DiscoverySettings(max_total=50),
+)
+```
+
+This produces a verifiable result bundle without downloading structures.
 
 ## Complete pipeline
 
@@ -58,16 +94,42 @@ result = run_pipeline(
         e_hull_max_eV_atom=0.05,
         max_total=50,
     ),
+    analysis_settings=AnalysisSettings(
+        input_mode="source",
+        source_preset="Cu Ka",
+    ),
+    conventional_unit_cell=True,
+    include_elasticity=True,
     confirm_above=50,
 )
 ```
 
-Downloads above `confirm_above` require `authorize_large_download=True`.
+Downloads above `confirm_above` require `authorize_large_download=True`. Automatic Materials Project elasticity coupling requires a conventional-standard cell. A primitive-cell run must set `include_elasticity=False`.
+
+## Result records
+
+### `PipelineResult`
+
+- `output_dir`: committed bundle directory;
+- `discovery`: optional `DiscoveryResult`;
+- `downloads`: `DownloadArtifact` records with separate CIF and elasticity status;
+- `analyses`: successful `PhaseAnalysis` records;
+- `manifest_path`: committed manifest path;
+- `warnings`: deduplicated warning/error summaries;
+- `diagnostics`: structured stage/item/severity/message records.
+
+### `AnalysisSettings`
+
+- radiation: `input_mode`, `source_preset`, `wavelength_A`, `energy_keV`;
+- window/profile: `two_theta_min_deg`, `two_theta_max_deg`, `step_deg`, `fwhm_deg`, `profile_eta`;
+- elasticity: `include_elasticity`;
+- safety: `max_profile_points`, `max_reflection_estimate`.
 
 ## Lower-level functions
 
 - `diffractscout.composition.parse_composition_text(text)`
 - `diffractscout.composition.chemsys_subsystems(elements, max_order=None)`
+- `diffractscout.selection.validate_discovery_settings(settings)`
 - `diffractscout.structure.load_structure(path)`
 - `diffractscout.elasticity.discover_elastic_tensor(cif_path)`
 - `diffractscout.elasticity.validate_elastic_tensor(matrix_GPa, ...)`
@@ -76,6 +138,8 @@ Downloads above `confirm_above` require `authorize_large_download=True`.
 - `diffractscout.diffraction.simulate_powder_pattern(structure, settings, elastic_tensor=None)`
 - `diffractscout.validation.verify_bundle(path)`
 
+Scientific meanings and units are defined in `docs/SCIENTIFIC_CONTRACTS.md`.
+
 ## Provider protocol
 
 A provider implements:
@@ -83,9 +147,22 @@ A provider implements:
 ```python
 class PhaseProvider(Protocol):
     name: str
+
     def search_subsystem(...): ...
     def download_candidates(...): ...
     def metadata(self) -> dict[str, object]: ...
 ```
 
-Provider implementations must return source identity and must not silently synthesize missing property values.
+A provider must preserve source identity and distinguish service failure from a valid no-data result. It must not synthesize missing property values. `DownloadArtifact` supports separate `status/error` and `elasticity_status/elasticity_error` fields for this purpose.
+
+## Bundle verification
+
+```python
+from diffractscout.validation import verify_bundle
+
+report = verify_bundle("outputs/run_01")
+if not report["ok"]:
+    raise RuntimeError(report["errors"])
+```
+
+Verification checks every declared hash and size and rejects unsafe paths, duplicates, symlinks, root escapes, missing files, modified files, and unlisted files.

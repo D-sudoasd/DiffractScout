@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diffractscout"
-version = "0.1.0"
+version = "0.2.0"
 description = "Provenance-first phase scouting, CIF validation, theoretical powder diffraction, and hkl-resolved elasticity."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,6 +39,7 @@ dependencies = [
   "numpy>=1.24",
   "pandas>=2.0",
   "openpyxl>=3.1",
+  "spglib>=2.4",
 ]
 
 [project.optional-dependencies]
@@ -54,6 +55,8 @@ test = [
 
 [project.scripts]
 diffractscout = "diffractscout.cli:main"
+
+[project.gui-scripts]
 diffractscout-gui = "diffractscout.gui:main"
 
 [project.urls]
@@ -80,3 +83,12 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
 ignore = ["E501"]
+
+[tool.coverage.run]
+omit = [
+  "src/diffractscout/gui.py",
+  "src/diffractscout/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true

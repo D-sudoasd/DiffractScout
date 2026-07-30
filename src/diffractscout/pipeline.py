@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 from typing import Iterable, Sequence
+from uuid import uuid4
 
 from .composition import parse_composition_text
 from .diffraction import simulate_powder_pattern
@@ -14,8 +16,10 @@ from .elasticity import discover_elastic_tensor
 from .exporters import export_result_bundle
 from .models import (
     AnalysisSettings,
+    DiagnosticRecord,
     DiscoveryResult,
     DiscoverySettings,
+    ElasticTensor,
     PhaseAnalysis,
     PipelineResult,
 )
@@ -23,6 +27,7 @@ from .providers.base import PhaseProvider
 from .selection import search_candidates
 from .structure import load_structure
 from .utils import sha256_file
+from .validation import verify_bundle
 
 
 def collect_cif_paths(inputs: Sequence[str | Path], *, recursive: bool = True) -> list[Path]:
@@ -43,8 +48,27 @@ def collect_cif_paths(inputs: Sequence[str | Path], *, recursive: bool = True) -
     return output
 
 
-def _prepare_output(output_dir: str | Path, *, overwrite: bool = False) -> Path:
-    output = Path(output_dir).expanduser().resolve()
+def _validate_input_output_separation(
+    inputs: Sequence[str | Path], output_dir: str | Path
+) -> None:
+    """Reject input/output overlap before an overwrite can remove source data."""
+
+    target = Path(output_dir).expanduser().resolve()
+    for item in inputs:
+        source = Path(item).expanduser().resolve()
+        if source == target or source.is_relative_to(target) or target.is_relative_to(source):
+            raise ValueError(
+                "Input and output paths must be disjoint. "
+                f"Unsafe overlap: input={source}, output={target}."
+            )
+
+
+def _validate_output_target(output_dir: str | Path, *, overwrite: bool) -> Path:
+    raw = Path(output_dir).expanduser()
+    if raw.is_symlink():
+        raise FileExistsError(f"Refusing to use a symbolic-link output directory: {raw}")
+    output = raw.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists() and not output.is_dir():
         raise FileExistsError(f"Output path exists and is not a directory: {output}")
     if output.exists() and any(output.iterdir()):
@@ -60,47 +84,111 @@ def _prepare_output(output_dir: str | Path, *, overwrite: bool = False) -> Path:
         try:
             payload = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise FileExistsError(f"Refusing to overwrite output with an unreadable manifest: {exc}") from exc
+            raise FileExistsError(
+                f"Refusing to overwrite output with an unreadable manifest: {exc}"
+            ) from exc
         if payload.get("schema") != "diffractscout_bundle_manifest_v1":
             raise FileExistsError("Refusing to overwrite output with an unknown manifest schema.")
-        shutil.rmtree(output)
-    output.mkdir(parents=True, exist_ok=True)
+        verification = verify_bundle(output)
+        if not verification["ok"]:
+            details = "; ".join(verification["errors"][:5])
+            raise FileExistsError(
+                "Refusing to overwrite an existing DiffractScout bundle that fails integrity "
+                f"verification: {details}"
+            )
     return output
 
 
-def _copy_local_input(cif_path: Path, inputs_dir: Path) -> tuple[Path, object | None]:
+def _create_staging_output(target: Path) -> Path:
+    return Path(
+        tempfile.mkdtemp(prefix=f".{target.name}.diffractscout-", dir=str(target.parent))
+    ).resolve()
+
+
+def _commit_staging_output(target: Path, staging: Path) -> None:
+    """Replace a verified result directory while retaining rollback capability."""
+
+    backup: Path | None = None
+    try:
+        if target.exists():
+            backup = target.with_name(f".{target.name}.backup-{uuid4().hex}")
+            target.replace(backup)
+        staging.replace(target)
+    except Exception:
+        if not target.exists() and backup is not None and backup.exists():
+            backup.replace(target)
+        raise
+    else:
+        if backup is not None:
+            shutil.rmtree(backup, ignore_errors=True)
+
+
+def _copy_local_input(
+    cif_path: Path,
+    inputs_dir: Path,
+    *,
+    include_elasticity: bool,
+) -> tuple[Path, ElasticTensor | None]:
     digest = sha256_file(cif_path)
     target = inputs_dir / cif_path.name
     if target.exists() and sha256_file(target) != digest:
         target = inputs_dir / f"{cif_path.stem}_{digest[:8]}{cif_path.suffix}"
     shutil.copy2(cif_path, target)
 
-    tensor = discover_elastic_tensor(cif_path)
+    tensor = discover_elastic_tensor(cif_path) if include_elasticity else None
     if tensor is not None and tensor.raw_payload_path is not None and tensor.raw_payload_path.is_file():
-        sidecar_target = target.with_name(f"{target.stem}_elasticity{tensor.raw_payload_path.suffix}")
+        sidecar_target = target.with_name(
+            f"{target.stem}_elasticity{tensor.raw_payload_path.suffix}"
+        )
         shutil.copy2(tensor.raw_payload_path, sidecar_target)
         tensor.raw_payload_path = sidecar_target
     return target, tensor
 
 
 def _analyze_paths(
-    paths_and_tensors: Iterable[tuple[Path, object | None]],
+    paths_and_tensors: Iterable[tuple[Path, ElasticTensor | None]],
     settings: AnalysisSettings,
-) -> tuple[list[PhaseAnalysis], list[str]]:
+) -> tuple[list[PhaseAnalysis], list[DiagnosticRecord]]:
     analyses: list[PhaseAnalysis] = []
-    warnings: list[str] = []
+    diagnostics: list[DiagnosticRecord] = []
     for path, tensor in paths_and_tensors:
         try:
             structure = load_structure(path)
             analysis = simulate_powder_pattern(
                 structure,
                 settings,
-                elastic_tensor=tensor,  # type: ignore[arg-type]
+                elastic_tensor=tensor,
             )
             analyses.append(analysis)
+            for warning in analysis.warnings:
+                diagnostics.append(
+                    DiagnosticRecord("analysis", path.name, "warning", warning)
+                )
         except Exception as exc:
-            warnings.append(f"{path.name}: {exc}")
-    return analyses, warnings
+            diagnostics.append(
+                DiagnosticRecord("analysis", path.name, "error", str(exc))
+            )
+    return analyses, diagnostics
+
+
+def _diagnostic_warnings(diagnostics: list[DiagnosticRecord]) -> list[str]:
+    return list(
+        dict.fromkeys(
+            f"{item.item}: {item.message}" if item.item else item.message
+            for item in diagnostics
+            if item.level in {"warning", "error"}
+        )
+    )
+
+
+def _verify_and_commit(target: Path, staging: Path) -> Path:
+    report = verify_bundle(staging)
+    if not report["ok"]:
+        raise RuntimeError(
+            "Generated bundle failed its integrity check: " + "; ".join(report["errors"])
+        )
+    _commit_staging_output(target, staging)
+    return target / "manifest.json"
 
 
 def analyze_cifs(
@@ -113,28 +201,44 @@ def analyze_cifs(
     overwrite: bool = False,
 ) -> PipelineResult:
     settings = settings or AnalysisSettings()
+    _validate_input_output_separation(inputs, output_dir)
     paths = collect_cif_paths(inputs, recursive=recursive)
     if not paths:
         raise FileNotFoundError("No CIF files were found in the supplied inputs.")
-    output = _prepare_output(output_dir, overwrite=overwrite)
-    inputs_dir = output / "inputs"
-    inputs_dir.mkdir(parents=True, exist_ok=True)
-    copied = [_copy_local_input(path, inputs_dir) for path in paths]
-    analyses, warnings = _analyze_paths(copied, settings)
-    manifest = export_result_bundle(
-        output,
-        analyses=analyses,
-        settings=settings,
-        downloads=[],
-        include_excel=include_excel,
-    )
+    target = _validate_output_target(output_dir, overwrite=overwrite)
+    staging = _create_staging_output(target)
+    try:
+        inputs_dir = staging / "inputs"
+        inputs_dir.mkdir(parents=True, exist_ok=True)
+        copied = [
+            _copy_local_input(
+                path,
+                inputs_dir,
+                include_elasticity=settings.include_elasticity,
+            )
+            for path in paths
+        ]
+        analyses, diagnostics = _analyze_paths(copied, settings)
+        export_result_bundle(
+            staging,
+            analyses=analyses,
+            settings=settings,
+            downloads=[],
+            diagnostics=diagnostics,
+            include_excel=include_excel,
+        )
+        manifest = _verify_and_commit(target, staging)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     return PipelineResult(
-        output_dir=output,
+        output_dir=target,
         discovery=None,
         downloads=[],
         analyses=analyses,
         manifest_path=manifest,
-        warnings=warnings,
+        warnings=_diagnostic_warnings(diagnostics),
+        diagnostics=diagnostics,
     )
 
 
@@ -157,27 +261,39 @@ def export_discovery(
     include_excel: bool = True,
     overwrite: bool = False,
 ) -> PipelineResult:
-    output = _prepare_output(output_dir, overwrite=overwrite)
     discovery = discover_candidates(
         composition,
         provider,
         settings=discovery_settings,
     )
-    manifest = export_result_bundle(
-        output,
-        analyses=[],
-        settings=AnalysisSettings(),
-        discovery=discovery,
-        downloads=[],
-        include_excel=include_excel,
-    )
+    target = _validate_output_target(output_dir, overwrite=overwrite)
+    staging = _create_staging_output(target)
+    diagnostics = [
+        DiagnosticRecord("discovery", "query", "warning", warning)
+        for warning in discovery.warnings
+    ]
+    try:
+        export_result_bundle(
+            staging,
+            analyses=[],
+            settings=AnalysisSettings(),
+            discovery=discovery,
+            downloads=[],
+            diagnostics=diagnostics,
+            include_excel=include_excel,
+        )
+        manifest = _verify_and_commit(target, staging)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     return PipelineResult(
-        output_dir=output,
+        output_dir=target,
         discovery=discovery,
         downloads=[],
         analyses=[],
         manifest_path=manifest,
-        warnings=list(discovery.warnings),
+        warnings=_diagnostic_warnings(diagnostics),
+        diagnostics=diagnostics,
     )
 
 
@@ -200,54 +316,102 @@ def run_pipeline(
             "Primitive-cell downloads cannot be paired automatically with Materials Project "
             "elastic tensors. Set include_elasticity=False or use the conventional cell."
         )
-    output = _prepare_output(output_dir, overwrite=overwrite)
+    if isinstance(confirm_above, bool) or not isinstance(confirm_above, int) or confirm_above < 1:
+        raise ValueError("confirm_above must be a positive integer.")
+
     discovery = discover_candidates(
         composition,
         provider,
         settings=discovery_settings,
     )
     if len(discovery.candidates) > confirm_above and not authorize_large_download:
-        shutil.rmtree(output)
         raise PermissionError(
             f"Refusing to download {len(discovery.candidates)} candidates (> {confirm_above}) "
             "without explicit authorization. Set authorize_large_download=True or reduce the query."
         )
-    inputs_dir = output / "inputs"
-    downloads = provider.download_candidates(
-        discovery.candidates,
-        inputs_dir,
-        conventional_unit_cell=conventional_unit_cell,
-        include_elasticity=include_elasticity,
-    )
-    settings = analysis_settings or AnalysisSettings(include_elasticity=include_elasticity)
-    if settings.include_elasticity != include_elasticity:
-        settings = replace(settings, include_elasticity=include_elasticity)
 
-    path_pairs: list[tuple[Path, object | None]] = []
-    for item in downloads:
-        if item.cif_path is None or not item.cif_path.is_file():
-            continue
-        tensor = discover_elastic_tensor(item.cif_path) if include_elasticity else None
-        path_pairs.append((item.cif_path, tensor))
-    analyses, analysis_warnings = _analyze_paths(path_pairs, settings)
-    warnings = [*discovery.warnings, *analysis_warnings]
-    for item in downloads:
-        if item.status != "ok":
-            warnings.append(f"{item.candidate.material_id}: {item.error}")
+    target = _validate_output_target(output_dir, overwrite=overwrite)
+    staging = _create_staging_output(target)
+    diagnostics = [
+        DiagnosticRecord("discovery", "query", "warning", warning)
+        for warning in discovery.warnings
+    ]
+    try:
+        inputs_dir = staging / "inputs"
+        downloads = provider.download_candidates(
+            discovery.candidates,
+            inputs_dir,
+            conventional_unit_cell=conventional_unit_cell,
+            include_elasticity=include_elasticity,
+        )
+        settings = analysis_settings or AnalysisSettings(
+            include_elasticity=include_elasticity
+        )
+        if settings.include_elasticity != include_elasticity:
+            settings = replace(settings, include_elasticity=include_elasticity)
 
-    manifest = export_result_bundle(
-        output,
-        analyses=analyses,
-        settings=settings,
-        discovery=discovery,
-        downloads=downloads,
-        include_excel=include_excel,
-    )
+        path_pairs: list[tuple[Path, ElasticTensor | None]] = []
+        for item in downloads:
+            if item.status != "ok":
+                diagnostics.append(
+                    DiagnosticRecord(
+                        "download",
+                        item.candidate.material_id,
+                        "error",
+                        item.error or "Structure download failed.",
+                    )
+                )
+                continue
+            if item.elasticity_status in {
+                "elasticity_query_failed",
+                "frame_transform_required",
+                "no_elasticity_data",
+                "no_elastic_tensor",
+            }:
+                level = "error" if item.elasticity_status == "elasticity_query_failed" else "warning"
+                diagnostics.append(
+                    DiagnosticRecord(
+                        "elasticity",
+                        item.candidate.material_id,
+                        level,  # type: ignore[arg-type]
+                        item.elasticity_error or item.elasticity_status,
+                    )
+                )
+            if item.cif_path is None or not item.cif_path.is_file():
+                diagnostics.append(
+                    DiagnosticRecord(
+                        "download",
+                        item.candidate.material_id,
+                        "error",
+                        "Provider reported success without a readable CIF file.",
+                    )
+                )
+                continue
+            tensor = discover_elastic_tensor(item.cif_path) if include_elasticity else None
+            path_pairs.append((item.cif_path, tensor))
+
+        analyses, analysis_diagnostics = _analyze_paths(path_pairs, settings)
+        diagnostics.extend(analysis_diagnostics)
+        export_result_bundle(
+            staging,
+            analyses=analyses,
+            settings=settings,
+            discovery=discovery,
+            downloads=downloads,
+            diagnostics=diagnostics,
+            include_excel=include_excel,
+        )
+        manifest = _verify_and_commit(target, staging)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
     return PipelineResult(
-        output_dir=output,
+        output_dir=target,
         discovery=discovery,
         downloads=downloads,
         analyses=analyses,
         manifest_path=manifest,
-        warnings=list(dict.fromkeys(warnings)),
+        warnings=_diagnostic_warnings(diagnostics),
+        diagnostics=diagnostics,
     )

@@ -51,3 +51,21 @@ def test_fcc_structure_factor_uses_crystallographic_occupancy(demo_inputs: Path)
         1.0 / (4.0 * reflection_111.d_spacing_A**2)
     )
     assert reflection_111.structure_factor_sq == pytest.approx((4.0 * form_factor) ** 2, rel=1e-7)
+
+
+def test_profile_resource_guard_rejects_extreme_grid(demo_inputs: Path) -> None:
+    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    with pytest.raises(ValueError, match="Profile grid would contain"):
+        simulate_powder_pattern(
+            structure,
+            AnalysisSettings(step_deg=1e-6, max_profile_points=1000),
+        )
+
+
+def test_unknown_source_preset_is_rejected(demo_inputs: Path) -> None:
+    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    with pytest.raises(ValueError, match="Unknown X-ray source preset"):
+        simulate_powder_pattern(
+            structure,
+            AnalysisSettings(source_preset="not-a-source"),
+        )

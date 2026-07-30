@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import math
 from pathlib import Path
 from typing import Iterable
 
@@ -33,19 +34,24 @@ SCIENTIFIC_BOUNDARY = (
 
 def resolve_wavelength(settings: AnalysisSettings) -> tuple[float, float | None, str]:
     if settings.input_mode == "energy":
-        if settings.energy_keV is None or settings.energy_keV <= 0:
-            raise ValueError("energy_keV must be positive when input_mode='energy'.")
+        if settings.energy_keV is None or not np.isfinite(settings.energy_keV) or settings.energy_keV <= 0:
+            raise ValueError("energy_keV must be a finite positive number when input_mode='energy'.")
         energy = float(settings.energy_keV)
         return ENERGY_WAVELENGTH_KEV_A / energy, energy, "energy_keV"
     if settings.input_mode == "wavelength":
-        if settings.wavelength_A is None or settings.wavelength_A <= 0:
-            raise ValueError("wavelength_A must be positive when input_mode='wavelength'.")
+        if settings.wavelength_A is None or not np.isfinite(settings.wavelength_A) or settings.wavelength_A <= 0:
+            raise ValueError("wavelength_A must be a finite positive number when input_mode='wavelength'.")
         wavelength = float(settings.wavelength_A)
         return wavelength, ENERGY_WAVELENGTH_KEV_A / wavelength, "wavelength_A"
-    preset = X_RAY_SOURCES_A.get(settings.source_preset)
+    if settings.input_mode != "source":
+        raise ValueError(f"Unsupported input_mode: {settings.input_mode!r}.")
+    if settings.source_preset not in X_RAY_SOURCES_A:
+        choices = ", ".join(sorted(X_RAY_SOURCES_A))
+        raise ValueError(f"Unknown X-ray source preset {settings.source_preset!r}; choose one of: {choices}.")
+    preset = X_RAY_SOURCES_A[settings.source_preset]
     if preset is None:
-        if settings.wavelength_A is None or settings.wavelength_A <= 0:
-            raise ValueError("A positive wavelength_A is required for the Custom source preset.")
+        if settings.wavelength_A is None or not np.isfinite(settings.wavelength_A) or settings.wavelength_A <= 0:
+            raise ValueError("A finite positive wavelength_A is required for the Custom source preset.")
         wavelength = float(settings.wavelength_A)
         return wavelength, ENERGY_WAVELENGTH_KEV_A / wavelength, "custom_source_wavelength"
     wavelength = float(preset)
@@ -68,6 +74,31 @@ def _validate_settings(settings: AnalysisSettings) -> None:
         raise ValueError("step_deg and fwhm_deg must be positive.")
     if not 0 <= settings.profile_eta <= 1:
         raise ValueError("profile_eta must lie in [0, 1].")
+    for name in ("max_profile_points", "max_reflection_estimate"):
+        value = getattr(settings, name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be a positive integer.")
+
+
+def _profile_point_count(settings: AnalysisSettings) -> int:
+    span = settings.two_theta_max_deg - settings.two_theta_min_deg
+    return int(math.ceil(span / settings.step_deg)) + 1
+
+
+def _reflection_search_estimate(cell_volume_A3: float, d_min_A: float) -> int:
+    """Estimate reciprocal-lattice points inside the 1/d sphere.
+
+    Reciprocal-space point density is the direct-cell volume when reciprocal
+    vectors are expressed without the 2π factor. The estimate intentionally
+    counts both Friedel mates and therefore serves as a conservative resource
+    guard, not as a crystallographic reflection count.
+    """
+
+    if not np.isfinite(cell_volume_A3) or cell_volume_A3 <= 0:
+        raise ValueError("Unit-cell volume must be finite and positive.")
+    if not np.isfinite(d_min_A) or d_min_A <= 0:
+        raise ValueError("Calculated d_min must be finite and positive.")
+    return int(math.ceil((4.0 * math.pi / 3.0) * cell_volume_A3 / d_min_A**3))
 
 
 def _equivalent_hkls(space_group: gemmi.SpaceGroup, hkl: Iterable[int]) -> set[tuple[int, int, int]]:
@@ -177,8 +208,23 @@ def simulate_powder_pattern(
 ) -> PhaseAnalysis:
     _validate_settings(settings)
     wavelength, energy, wavelength_source = resolve_wavelength(settings)
+    point_count = _profile_point_count(settings)
+    if point_count > settings.max_profile_points:
+        raise ValueError(
+            f"Profile grid would contain {point_count:,} points, exceeding max_profile_points="
+            f"{settings.max_profile_points:,}. Increase step_deg or the explicit safety limit."
+        )
+
     theta_max = np.deg2rad(settings.two_theta_max_deg / 2.0)
     d_min = wavelength / (2.0 * np.sin(theta_max))
+    cell_volume = float(structure.small_structure.cell.volume)
+    reflection_estimate = _reflection_search_estimate(cell_volume, float(d_min))
+    if reflection_estimate > settings.max_reflection_estimate:
+        raise ValueError(
+            f"Reciprocal search is estimated at {reflection_estimate:,} points, exceeding "
+            f"max_reflection_estimate={settings.max_reflection_estimate:,}. Reduce 2theta_max, "
+            "use a longer wavelength, or raise the explicit safety limit after reviewing memory use."
+        )
     miller_array = gemmi.make_miller_array(
         structure.small_structure.cell,
         structure.space_group_object,
@@ -186,8 +232,12 @@ def simulate_powder_pattern(
         0.0,
         True,
     )
+    if len(miller_array) > settings.max_reflection_estimate:
+        raise ValueError(
+            f"Gemmi generated {len(miller_array):,} reciprocal candidates, exceeding "
+            f"max_reflection_estimate={settings.max_reflection_estimate:,}."
+        )
     calculator = gemmi.StructureFactorCalculatorX(structure.small_structure.cell)
-    cell_volume = float(structure.small_structure.cell.volume)
     reflections: list[ReflectionRecord] = []
 
     for raw_hkl in miller_array:
@@ -265,12 +315,8 @@ def simulate_powder_pattern(
         for index, item in enumerate(reflections)
     ]
 
-    grid = np.arange(
-        settings.two_theta_min_deg,
-        settings.two_theta_max_deg + settings.step_deg * 0.5,
-        settings.step_deg,
-        dtype=float,
-    )
+    grid = settings.two_theta_min_deg + np.arange(point_count, dtype=float) * settings.step_deg
+    grid = grid[grid <= settings.two_theta_max_deg + settings.step_deg * 0.5]
     profile = np.zeros_like(grid)
     for item in reflections:
         if np.isfinite(item.intensity_with_lp):
@@ -302,6 +348,12 @@ def simulate_powder_pattern(
         "fwhm_deg": settings.fwhm_deg,
         "profile_model": "pseudo_voigt",
         "profile_eta": settings.profile_eta,
+        "profile_point_count": int(grid.size),
+        "max_profile_points": settings.max_profile_points,
+        "d_min_A": float(d_min),
+        "reflection_search_estimate": reflection_estimate,
+        "miller_candidates_generated": len(miller_array),
+        "max_reflection_estimate": settings.max_reflection_estimate,
         "intensity_model": "multiplicity * |F_xray|^2 * Lorentz-polarization",
         "volume_normalized_intensity_with_lp_definition": "I_with_LP / V_cell^2",
         "volume_normalized_intensity_no_lp_definition": "I_no_LP / V_cell^2",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Literal
 
@@ -8,6 +9,7 @@ import numpy as np
 
 SearchMode = Literal["possible_phases", "near_stable", "single_chemsys", "mpids_only"]
 XrayInputMode = Literal["source", "wavelength", "energy"]
+DiagnosticLevel = Literal["info", "warning", "error"]
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,16 @@ class AnalysisSettings:
     fwhm_deg: float = 0.15
     profile_eta: float = 0.5
     include_elasticity: bool = True
+    max_profile_points: int = 1_000_000
+    max_reflection_estimate: int = 2_000_000
+
+
+@dataclass(frozen=True)
+class DiagnosticRecord:
+    stage: str
+    item: str
+    level: DiagnosticLevel
+    message: str
 
 
 @dataclass
@@ -87,9 +99,11 @@ class ElasticTensor:
     warnings: list[str] = field(default_factory=list)
     raw_payload_path: Path | None = None
 
-    @property
+    @cached_property
     def compliance_1_over_GPa(self) -> np.ndarray | None:
-        if self.status == "invalid":
+        """Return a cached compliance tensor for repeated directional evaluations."""
+
+        if self.status == "invalid" or self.stiffness_GPa.shape != (6, 6):
             return None
         try:
             return np.linalg.inv(self.stiffness_GPa)
@@ -169,6 +183,8 @@ class DownloadArtifact:
     elasticity_path: Path | None = None
     status: str = "ok"
     error: str = ""
+    elasticity_status: str = ""
+    elasticity_error: str = ""
     provider_metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -191,3 +207,4 @@ class PipelineResult:
     analyses: list[PhaseAnalysis]
     manifest_path: Path
     warnings: list[str] = field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = field(default_factory=list)

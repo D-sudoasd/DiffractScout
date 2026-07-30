@@ -88,3 +88,35 @@ def test_ieee_only_sidecar_requires_explicit_frame_transform(tmp_path: Path) -> 
     assert "stiffness_GPa" not in payload
     assert payload["provenance"]["coordinate_frame"] == MP_IEEE_CONVENTIONAL_FRAME
     assert payload["provenance"]["usable_for_hkl_modulus"] is False
+
+
+def test_elasticity_query_failure_is_distinct_from_missing_data(tmp_path: Path) -> None:
+    provider = _provider_without_client()
+
+    class ElasticityEndpoint:
+        def search(self, **_kwargs: object) -> object:
+            raise RuntimeError("service unavailable")
+
+    class Materials:
+        elasticity = ElasticityEndpoint()
+
+    class Mpr:
+        materials = Materials()
+
+    documents, error = provider._elasticity_documents(Mpr(), ["mp-123"])
+    assert documents == {}
+    assert "service unavailable" in error
+
+    cif_path = tmp_path / "mp-123_Al.cif"
+    cif_path.write_text("data_test\n", encoding="utf-8")
+    path, status, sidecar_error = provider._write_elasticity(
+        _candidate(),
+        cif_path,
+        None,
+        conventional_unit_cell=True,
+        query_error=error,
+        return_status=True,
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert status == payload["status"] == "elasticity_query_failed"
+    assert "service unavailable" in sidecar_error

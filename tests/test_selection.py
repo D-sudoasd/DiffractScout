@@ -65,3 +65,13 @@ def test_explicit_material_ids_use_provider_metadata() -> None:
     assert result.candidates[0].formula == "Al"
     assert result.candidates[0].space_group_number == 225
     assert result.subsystem_counts == {"material_ids": 1}
+
+
+def test_invalid_discovery_limits_fail_before_provider_access() -> None:
+    parsed = parse_composition_text("Ti-Al")
+    try:
+        search_candidates(FakeProvider(), parsed, DiscoverySettings(max_total=0))
+    except ValueError as exc:
+        assert "max_total" in str(exc)
+    else:
+        raise AssertionError("Expected invalid max_total to be rejected")

@@ -69,6 +69,28 @@ jobs:
           python -m diffractscout demo -o ci_demo
           python -m diffractscout verify ci_demo
 
+
+  gui-smoke:
+    name: GUI smoke / Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install Xvfb and package
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Construct and close the Tk interface
+        run: |
+          xvfb-run -a python -c "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
+
   package:
     name: Build and install wheel
     runs-on: ubuntu-latest

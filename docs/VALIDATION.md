@@ -1,37 +1,80 @@
 # Validation strategy
 
-## Automated suite
+## Current automated suite
 
-The default test suite is offline and deterministic:
+The default suite is offline and deterministic:
 
 ```bash
 pytest -q
 ```
 
-It verifies:
+Current release-candidate status: **46 tests passing**.
 
-- alloy/formula/Materials Project ID parsing and subsystem enumeration;
-- CIF block selection, cell parsing, space group and symmetry expansion;
-- FCC systematic absences and reflection-family multiplicities;
-- the analytic monoatomic-FCC structure factor $|F_{111}|^2=(4f_{\mathrm{Al}})^2$, including
-  Gemmi's crystallographic-occupancy conversion for a special-position site;
-- Bragg geometry, $q=2\pi/d$, intensity normalization and profile normalization;
-- 6×6 tensor rejection, symmetrization and inversion;
-- direction-independent $E=110$ GPa for a deliberately isotropic cubic synthetic tensor;
+The suite covers:
+
+### Composition and discovery
+
+- alloy-grade, compact-formula, chemical-system, and Materials Project ID parsing;
+- subsystem enumeration and order limits;
+- invalid negative/non-finite energy limits and non-positive count limits;
 - candidate deduplication and deterministic ranking;
-- complete discovery → download → CIF validation → diffraction → export using an offline provider;
-- workbook sheet creation;
-- SHA-256 bundle verification and tamper detection;
-- refusal to overwrite unrelated user directories.
+- explicit-ID provider lookup and provider-neutral source URLs;
+- distinct provider-query, no-record, no-tensor, and frame-transform statuses.
+
+### CIF and symmetry
+
+- selection of a structure-bearing CIF data block;
+- finite positive cell geometry and atomic-site requirements;
+- space-group resolution from explicit symbol, explicit International Tables number, Gemmi inference, and warned P1 fallback;
+- detection of declaration and spglib cross-check mismatches;
+- partial-occupancy reporting;
+- separation of original occupancies from the structure-factor copy.
+
+### Diffraction
+
+- FCC systematic absences and reflection-family multiplicities;
+- analytic monoatomic-FCC structure factor $|F_{111}|^2=(4f_{\mathrm{Al}})^2$ after Gemmi's crystallographic-occupancy conversion;
+- Bragg geometry and $q=2\pi/d$;
+- LP and no-LP intensity definitions, phase-internal normalization, and profile normalization;
+- rejection of unknown source presets, nonphysical scan/profile inputs, conflicting CLI energy/wavelength inputs, excessive profile grids, and excessive reciprocal-candidate estimates.
+
+### Elasticity
+
+- exact 6×6 shape, finite values, symmetry handling, inversion, positive definiteness, and conditioning warnings;
+- cached compliance inversion for repeated directional evaluation;
+- direction-independent $E=110$ GPa for an explicitly synthetic isotropic cubic tensor;
+- exact sidecar pairing, declared-CIF conflicts, ambiguous matches, invalid matrices, and coordinate-frame boundaries;
+- Materials Project raw/conventional-CIF coupling and IEEE-only `frame_transform_required` behavior.
+
+### Orchestration and output
+
+- complete offline discovery → download → structure validation → diffraction → export;
+- `--no-elasticity` suppression of sidecar discovery, copying, and calculation;
+- input/output overlap rejection;
+- non-destructive refusal to overwrite unrelated or damaged directories;
+- transactional preservation of a previous valid bundle when staged export fails;
+- stable headers for empty CSV tables;
+- formula-injection escaping in CSV and XLSX;
+- workbook creation including the `Diagnostics` sheet;
+- download and elastic-query error export.
+
+### Bundle integrity
+
+- SHA-256 and byte-size verification;
+- missing or modified file detection;
+- malformed manifest entries without verifier crashes;
+- duplicate, absolute, parent-traversal, empty, and manifest-self paths;
+- symbolic links and root-escape attempts;
+- files present on disk but absent from the manifest.
 
 ## Synthetic reference fixture
 
 The offline demo uses:
 
 - a synthetic `Fm-3m` cell with $a=4$ Å and one aluminium site in the asymmetric unit;
-- a synthetic cubic tensor with $C_{11}=200$, $C_{12}=120$ and $C_{44}=40$ GPa.
+- a synthetic cubic tensor with $C_{11}=200$, $C_{12}=120$, and $C_{44}=40$ GPa.
 
-The tensor satisfies the isotropic relation $C_{44}=(C_{11}-C_{12})/2$, yielding $E=110$ GPa for every direction. These values are constructed for verification and are labeled `synthetic_test_fixture`; they are not experimental aluminium properties.
+The tensor satisfies $C_{44}=(C_{11}-C_{12})/2$, yielding $E=110$ GPa for every direction. The values are constructed for verification and labeled `synthetic_test_fixture`; they are not experimental aluminium properties.
 
 Run the public smoke test:
 
@@ -48,27 +91,61 @@ Expected first five families in the 5–100° Cu Kα window:
 
 The forbidden FCC families `(100)` and `(110)` must be absent.
 
-## Packaging validation
+## GUI validation
 
-Before release:
+The GUI form converters are unit-tested independently of a display. A Linux CI smoke step starts the complete Tk application under Xvfb, runs one update cycle, and destroys it cleanly:
 
 ```bash
-python -m compileall -q src
-python -m pip install -e ".[test]"
-pytest -q
-python -m pip wheel . --no-deps -w dist
+xvfb-run -a python -c \
+  "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
 ```
 
-A release candidate must also be installed into a clean environment and the offline demo must pass from the installed command.
+Reference screenshots are stored in `docs/assets/gui-local.png` and `docs/assets/gui-materials-project.png`. They document the v0.2.0 control layout; they are not substitutes for functional tests.
 
-## Validation still required before JOSS submission
+## CI and packaging validation
 
-Automated numerical tests establish defined software contracts. They do not establish experimental validity. The submission record should add:
+The configured GitHub Actions checks are:
 
-1. comparison of a representative set of CIF peak positions and relative intensities against an independent crystallography package;
-2. at least one real synchrotron or laboratory XRD planning case with preserved input and expected output;
-3. an elastic-tensor case checked against an independent tensor-analysis package or an analytic crystal class;
-4. documented use by the author's research workflow and preferably an external user group;
-5. issue or pull-request records showing feedback-driven refinement.
+- Python 3.10–3.13 on Ubuntu;
+- Ruff error and unused-name checks;
+- source compilation;
+- coverage threshold of 65% for the headless scientific, orchestration, provider, export, and verification code; the Tk controller and one-line module launcher are excluded from the line metric and checked by form-unit tests plus the Xvfb construction smoke test;
+- offline demo and manifest verification;
+- Windows and macOS tests and demo smoke runs;
+- Linux Xvfb GUI construction;
+- wheel build;
+- wheel installation in a clean virtual environment;
+- demo execution from the installed wheel;
+- Open Journals draft-PDF compilation.
 
-Results from those studies should be placed in a versioned `validation_cases/` directory or a separately archived reproducibility repository.
+Local release preflight:
+
+```bash
+python scripts/check_release.py
+```
+
+The script checks required files, version consistency, bibliography keys, source compilation, the test suite, the offline demo, manifest verification, and wheel creation. The wheel still requires a clean-environment installation test; CI performs that step on each package job.
+
+## PDF verification
+
+After `paper/paper.pdf` is rebuilt, render it to images and inspect every page:
+
+```bash
+python /home/oai/skills/pdfs/scripts/render_pdf.py paper/paper.pdf \
+  --out_dir /tmp/diffractscout-paper-render --dpi 200
+```
+
+Check headings, equations, table/figure placement, references, clipping, missing glyphs, and page balance. The exact JOSS draft is produced by the Open Journals workflow.
+
+## Evidence still required before JOSS submission
+
+Automated numerical tests establish declared software contracts. They do not establish experimental validity or research impact. The submission record should add:
+
+1. a representative set of CIF peak positions and intensities compared with an independent crystallography package using documented tolerances;
+2. at least one archived laboratory or synchrotron XRD planning/interpretation case with redistributable inputs;
+3. one elastic-tensor case checked against an independent implementation or analytic crystal-class result;
+4. documented use in a real research workflow and preferably evaluation by an external group;
+5. issue or pull-request records showing feedback-driven refinement;
+6. repeated tagged releases and a software archive DOI.
+
+These cases should be versioned in `validation_cases/` or a separately archived reproducibility repository. Experimental inputs that cannot be redistributed should be represented by a lawful, documented public substitute rather than silently omitted.

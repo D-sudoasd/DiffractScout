@@ -262,16 +262,34 @@ def elastic_tensor_from_payload(payload: dict[str, Any], *, path: Path | None = 
     return tensor
 
 
+def _invalid_tensor(message: str, *, path: Path | None = None) -> ElasticTensor:
+    return ElasticTensor(
+        stiffness_GPa=np.empty((0, 0)),
+        status="invalid",
+        warnings=[message],
+        raw_payload_path=path,
+    )
+
+
+def _read_payload(path: Path) -> tuple[dict[str, Any] | None, str]:
+    try:
+        decoded = json.loads(path.read_text(encoding="utf-8-sig"))
+    except OSError as exc:
+        return None, f"Could not read elasticity sidecar {path.name}: {exc}"
+    except json.JSONDecodeError as exc:
+        return None, f"Elasticity sidecar {path.name} is not valid JSON: {exc}"
+    if not isinstance(decoded, dict):
+        return None, f"Elasticity sidecar {path.name} must contain a JSON object."
+    return decoded, ""
+
+
 def load_elastic_tensor(path: str | Path) -> ElasticTensor | None:
     source = Path(path)
-    try:
-        payload = json.loads(source.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return elastic_tensor_from_payload(payload, path=source) if isinstance(payload, dict) else None
+    payload, _error = _read_payload(source)
+    return elastic_tensor_from_payload(payload, path=source) if payload is not None else None
 
 
-def _match_payload_to_cif(payload: dict[str, Any], cif_path: Path) -> bool:
+def _declared_pair_names(payload: dict[str, Any]) -> set[str]:
     names = {
         str(payload.get("cif_filename") or "").strip().lower(),
         str(payload.get("paired_cif") or "").strip().lower(),
@@ -282,61 +300,151 @@ def _match_payload_to_cif(payload: dict[str, Any], cif_path: Path) -> bool:
         block = payload.get(key)
         if isinstance(block, dict):
             names.add(str(block.get("paired_cif") or "").strip().lower())
-    if cif_path.name.lower() in names:
-        return True
-    mp_match = re.search(r"(mp-\d+)", cif_path.name, flags=re.IGNORECASE)
-    payload_id = str(payload.get("material_id") or provenance.get("material_id") or "").lower()
-    return bool(mp_match and payload_id == mp_match.group(1).lower())
+    names.discard("")
+    return names
+
+
+def _declared_material_id(payload: dict[str, Any]) -> str:
+    provenance = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
+    return str(payload.get("material_id") or provenance.get("material_id") or "").strip().lower()
+
+
+def _cif_material_id(cif_path: Path) -> str:
+    match = re.search(r"(mp-\d+)", cif_path.name, flags=re.IGNORECASE)
+    return match.group(1).lower() if match else ""
+
+
+def _payload_pairing(payload: dict[str, Any], cif_path: Path) -> tuple[bool, bool, str]:
+    """Return matched, has-explicit-pairing, and a human-readable mismatch reason."""
+
+    names = _declared_pair_names(payload)
+    payload_id = _declared_material_id(payload)
+    cif_id = _cif_material_id(cif_path)
+    has_explicit = bool(names or payload_id)
+    name_match = cif_path.name.lower() in names if names else False
+    id_match = bool(payload_id and cif_id and payload_id == cif_id)
+    if name_match or id_match:
+        return True, has_explicit, ""
+    if names:
+        return False, True, (
+            f"Elasticity sidecar declares paired CIF(s) {sorted(names)!r}, "
+            f"which do not match {cif_path.name!r}."
+        )
+    if payload_id and cif_id and payload_id != cif_id:
+        return False, True, (
+            f"Elasticity sidecar material_id {payload_id!r} does not match "
+            f"the CIF identifier {cif_id!r}."
+        )
+    if payload_id and not cif_id:
+        return False, True, (
+            f"Elasticity sidecar declares material_id {payload_id!r}, while "
+            f"{cif_path.name!r} has no verifiable Materials Project identifier."
+        )
+    return False, has_explicit, ""
+
+
+def _match_payload_to_cif(payload: dict[str, Any], cif_path: Path) -> bool:
+    matched, _explicit, _reason = _payload_pairing(payload, cif_path)
+    return matched
 
 
 def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
+    if not index_path.is_file():
+        return None
     try:
         with index_path.open(newline="", encoding="utf-8-sig") as handle:
             rows = list(csv.DictReader(handle))
-    except OSError:
+    except OSError as exc:
+        return _invalid_tensor(f"Could not read elasticity index {index_path.name}: {exc}", path=index_path)
+    matches = [
+        row
+        for row in rows
+        if cif_path.name.lower()
+        in {
+            str(row.get("cif_filename") or "").strip().lower(),
+            str(row.get("paired_cif") or "").strip().lower(),
+        }
+    ]
+    if len(matches) > 1:
+        return _invalid_tensor(
+            f"Elasticity index {index_path.name} contains {len(matches)} rows for {cif_path.name}; "
+            "the pairing is ambiguous.",
+            path=index_path,
+        )
+    if not matches:
         return None
-    for row in rows:
-        paired = {str(row.get("cif_filename") or "").lower(), str(row.get("paired_cif") or "").lower()}
-        if cif_path.name.lower() not in paired:
-            continue
-        matrix = _as_6x6(
-            [[row.get(f"C{i}{j}_GPa", "") for j in range(1, 7)] for i in range(1, 7)]
+    row = matches[0]
+    status = str(row.get("status") or "").strip().lower()
+    numerical = str(row.get("numerical_cij") or "").strip().lower()
+    if status and status not in {"ok", "valid", "valid_with_warnings"}:
+        return None
+    if numerical in {"false", "0", "no"}:
+        return None
+    matrix = _as_6x6([[row.get(f"C{i}{j}_GPa", "") for j in range(1, 7)] for i in range(1, 7)])
+    if matrix is None:
+        return _invalid_tensor(
+            f"Elasticity index row for {cif_path.name} does not contain a complete numeric 6x6 tensor.",
+            path=index_path,
         )
-        if matrix is None:
-            continue
-        return validate_elastic_tensor(
-            matrix,
-            source_provider=str(row.get("provider") or "Materials Project"),
-            source_record_id=str(row.get("material_id") or ""),
-            source_url=str(row.get("mp_material_url") or ""),
-            methodology_url=str(row.get("methodology_url") or ""),
-            nature_of_data=str(row.get("nature_of_data") or ""),
-            coordinate_frame=str(row.get("coordinate_frame") or MP_IEEE_CONVENTIONAL_FRAME),
-            raw_payload_path=index_path,
-        )
-    return None
+    return validate_elastic_tensor(
+        matrix,
+        source_provider=str(row.get("provider") or "Materials Project"),
+        source_record_id=str(row.get("material_id") or ""),
+        source_url=str(row.get("mp_material_url") or row.get("source_url") or ""),
+        methodology_url=str(row.get("methodology_url") or ""),
+        nature_of_data=str(row.get("nature_of_data") or ""),
+        coordinate_frame=str(row.get("coordinate_frame") or MP_IEEE_CONVENTIONAL_FRAME),
+        raw_payload_path=index_path,
+    )
 
 
 def discover_elastic_tensor(cif_path: str | Path) -> ElasticTensor | None:
     path = Path(cif_path).expanduser().resolve()
     exact = path.with_name(f"{path.stem}_elasticity.json")
     if exact.is_file():
-        tensor = load_elastic_tensor(exact)
+        payload, error = _read_payload(exact)
+        if payload is None:
+            return _invalid_tensor(error, path=exact)
+        matched, explicit, reason = _payload_pairing(payload, path)
+        if explicit and not matched:
+            return _invalid_tensor(reason, path=exact)
+        tensor = elastic_tensor_from_payload(payload, path=exact)
         if tensor is not None:
             return tensor
+        status = str(payload.get("status") or "").strip().lower()
+        provenance = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
+        if provenance.get("numerical_cij") is False or status in {
+            "no_elasticity_data",
+            "no_elastic_tensor",
+            "elasticity_query_failed",
+            "not_available",
+        }:
+            return None
+        return _invalid_tensor(
+            f"Elasticity sidecar {exact.name} does not contain a usable numeric 6x6 tensor.",
+            path=exact,
+        )
 
-    matched: list[Path] = []
+    matched: list[tuple[Path, dict[str, Any]]] = []
     for candidate in sorted(path.parent.glob("*_elasticity.json")):
-        try:
-            payload = json.loads(candidate.read_text(encoding="utf-8-sig"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(payload, dict) and _match_payload_to_cif(payload, path):
-            matched.append(candidate)
+        payload, _error = _read_payload(candidate)
+        if payload is not None and _match_payload_to_cif(payload, path):
+            matched.append((candidate, payload))
+    if len(matched) > 1:
+        return _invalid_tensor(
+            f"Found {len(matched)} elasticity sidecars matching {path.name}; pairing is ambiguous: "
+            + ", ".join(item[0].name for item in matched),
+            path=None,
+        )
     if len(matched) == 1:
-        tensor = load_elastic_tensor(matched[0])
+        candidate, payload = matched[0]
+        tensor = elastic_tensor_from_payload(payload, path=candidate)
         if tensor is not None:
             return tensor
+        return _invalid_tensor(
+            f"Matched elasticity sidecar {candidate.name} does not contain a usable numeric 6x6 tensor.",
+            path=candidate,
+        )
 
     for name in ("elasticity_index.csv", "diffractscout_elasticity.csv"):
         tensor = _load_from_index(path.parent / name, path)

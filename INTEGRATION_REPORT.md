@@ -1,82 +1,95 @@
-# DiffractScout integration report
+# DiffractScout integration and v0.2.0 hardening report
 
 Date: 30 July 2026
 
-## Scope completed
+## Repository scope
 
-A new independent Python repository, **DiffractScout**, was created from read-only inspection of `D-sudoasd/PhaseScout` and `D-sudoasd/CIF2Peaks`. The two source repositories were not edited. Their source snapshots and MIT notices are recorded in `docs/SOURCE_LINEAGE.md` and `NOTICE.md`.
+DiffractScout is an independent Python repository assembled from read-only inspection and lawful reuse of the MIT-licensed `D-sudoasd/PhaseScout` and `D-sudoasd/CIF2Peaks` projects. Neither source repository was modified. Source snapshots, retained behavior, architectural changes, and notices are recorded in `docs/SOURCE_LINEAGE.md` and `NOTICE.md`.
 
-The integrated package provides one data flow for:
+The integrated data flow covers:
 
 1. alloy, formula, chemical-system, or Materials Project identifier parsing;
-2. subsystem enumeration and deterministic candidate ranking;
-3. provider-based candidate search and source acquisition;
-4. conventional-standard CIF download and optional DFT elastic-tensor sidecar, using the Materials Project raw/POSCAR tensor for automatic directional coupling and retaining IEEE data for provenance;
-5. CIF block selection, hashing, cell/space-group/occupancy validation;
-6. indexed theoretical powder reflections with systematic absences, multiplicity, d, 2theta, q, g, X-ray structure-factor terms, and explicit LP/no-LP channels;
-7. validated 6x6 stiffness tensors and hkl-normal Young's modulus;
-8. CSV/XLSX/provenance export and SHA-256 bundle verification.
+2. subsystem enumeration, provider queries, deduplication, and deterministic ranking;
+3. conventional-standard CIF acquisition and optional DFT elastic-tensor records;
+4. CIF hashing, block selection, cell/site/space-group/occupancy validation;
+5. indexed theoretical powder reflections with systematic absences, multiplicity, $d$, $2\theta$, $q$, $g$, X-ray structure-factor terms, and explicit LP/no-LP channels;
+6. uniquely paired and frame-compatible 6×6 stiffness tensors with `hkl`-normal Young's modulus;
+7. CSV/XLSX/provenance/diagnostic output and strict SHA-256 bundle verification.
 
-The local-CIF path uses Gemmi and the base dependencies. Materials Project support is optional and isolated behind a provider protocol. This keeps the scientific core testable without a network or API key.
+## v0.2.0 code audit and fixes
 
-## Validation completed
+The hardening pass identified and corrected several reproducible defects or ambiguous behaviors:
 
-The offline test fixture is a synthetic FCC cell with an explicitly synthetic isotropic cubic stiffness tensor. It verifies:
+- `--no-elasticity` previously allowed local sidecar discovery/copying; it now disables the entire elasticity path.
+- a Materials Project elasticity service failure could be reported like a valid no-data result; query failure, no document, no tensor, and frame-transform requirement now have distinct statuses and errors;
+- exact-name elastic sidecars could be used despite declaring a different paired CIF; conflicts and ambiguous matches now stop directional evaluation;
+- existing output replacement checked only for a recognizable manifest; the current bundle must now pass full integrity verification before overwrite;
+- result generation now uses a sibling staging directory, verifies the completed bundle, and atomically replaces the target with rollback protection;
+- input/output path overlap is rejected before any write;
+- manifest verification now rejects malformed hashes/sizes, duplicates, unsafe paths, root escapes, symbolic links, missing/modified files, and unlisted files;
+- radiation mode validation now rejects simultaneous explicit energy and wavelength CLI arguments;
+- CIF validation and space-group resolution now record explicit symbol/number/inference sources and spglib disagreement;
+- profile grids and reciprocal-space searches now have configurable resource limits;
+- spreadsheet exports now neutralize formula-like external text and use atomic file replacement;
+- a duplicate `c_A` export mapping was removed.
 
-- FCC systematic absences and expected reflection families;
-- analytical d spacing and the identity q = 2*pi/d;
-- multiplicity and normalized theoretical intensity output;
-- direction-independent Young's modulus of 110 GPa for the chosen isotropic tensor;
-- fail-closed handling of Materials Project tensor frames: raw/conventional-CIF coupling is enabled, IEEE-only records require a verified transform, and primitive-cell downloads cannot auto-couple elasticity;
-- discovery-to-download-to-analysis orchestration through a fake provider;
-- CSV and XLSX generation;
-- overwrite protection;
-- SHA-256 detection of missing or modified bundle files;
-- command-line demo and verification.
+## GUI upgrade
 
-The fixture is a numerical contract test and is not presented as experimental material data.
+The desktop interface was rebuilt around two clear workflows:
 
-## Release-candidate verification
+- local CIF analysis with multiple files/folders and recursive scanning;
+- Materials Project candidate discovery, download, diffraction, and optional elasticity.
 
-The local release candidate was verified on Linux with Python 3.13.5:
+The GUI now exposes radiation and profile parameters, reciprocal-space safety limits, candidate limits, elastic pairing, Excel output, verified overwrite authorization, progress state, task locking, timestamped diagnostics, and result-folder access. The API key is retained only in process memory. Completion messages distinguish clean success, completion with error diagnostics, and diagnostic-only output with no analyzable phase.
 
-- `25 passed` in the offline automated suite;
-- total test coverage `68.16%`, above the configured `65%` gate;
-- `scripts/check_release.py` passed version, bibliography, compile, test, demo, manifest, and wheel checks;
-- the built `diffractscout-0.1.0-py3-none-any.whl` installed into a newly created environment using only declared runtime dependencies;
-- the installed wheel generated and verified a complete synthetic result bundle containing eight FCC reflection families and all seven workbook sheets;
-- the four-page manuscript PDF compiled with Pandoc/XeLaTeX, passed PDF preflight, and was inspected page by page for clipping, overlap, and broken glyphs.
+Reference screenshots are stored in:
 
-The GitHub-hosted CI jobs remain unexecuted until the repository is created and pushed. Their Ubuntu Python 3.10-3.13 matrix, Windows/macOS smoke tests, lint step, wheel installation, and Open Journals draft-PDF action are configured in `.github/workflows/`.
+- `docs/assets/gui-local.png`;
+- `docs/assets/gui-materials-project.png`.
 
-## Repository engineering
+## Automated validation
 
-Included components:
+The current deterministic suite contains **46 passing tests** and covers:
 
-- installable `src/` package and command-line entry points;
-- optional Materials Project dependency group;
-- headless core plus thin Tk interface;
-- automated tests and coverage threshold;
-- Ubuntu Python 3.10-3.13 CI and Windows/macOS smoke tests;
-- wheel build and clean-install verification;
-- official Open Journals draft-PDF workflow;
-- issue forms for software bugs, scientific validation, and features;
-- contribution, security, conduct, release, citation, source-lineage, and scientific-contract documentation;
-- JOSS-format manuscript source and verified bibliography.
+- composition and subsystem logic;
+- CIF block, cell, site, space-group, and occupancy contracts;
+- analytic FCC structure-factor behavior and systematic absences;
+- Bragg geometry, intensity channels, normalization, and resource limits;
+- tensor validation, cached compliance, sidecar identity, and coordinate frames;
+- provider query-failure semantics;
+- transactional output and preservation of an existing valid bundle on staged failure;
+- spreadsheet safety and stable empty schemas;
+- diagnostics workbook output;
+- strict manifest verification.
+
+Configured GitHub Actions include Ubuntu Python 3.10–3.13, Ruff, coverage, Windows/macOS smoke tests, Linux Xvfb GUI construction, wheel build and clean installation, the offline scientific demo, bundle verification, and the Open Journals draft-PDF action.
+
+## JOSS engineering state
+
+The repository now contains:
+
+- installable package metadata and CLI/GUI entry points;
+- OSI-approved MIT licensing and retained source notices;
+- automated tests and CI configuration;
+- user, GUI, API, architecture, validation, scientific-contract, comparison, source-lineage, release, security, conduct, and contribution documentation;
+- structured issue and pull-request templates;
+- JOSS manuscript source, bibliography, workflow figure, and AI usage disclosure;
+- a reproducible offline demonstration and release preflight script.
 
 ## Remaining JOSS gates
 
-The repository can satisfy the technical review criteria after CI runs on GitHub. Formal submission still requires evidence that cannot be manufactured during a one-time integration:
+The following evidence cannot be supplied by a one-time code hardening pass:
 
-- sustained public development history meeting the current JOSS screening period;
-- archived releases and a software DOI;
-- verified real-material cases and independent numerical comparisons;
-- concrete research use, external adoption, or equivalent impact evidence;
-- confirmed authorship, ORCID, funding, acknowledgements, and contributor list;
-- human review of all AI-assisted code, documentation, references, and scientific claims.
+- sustained public development over the applicable JOSS screening period;
+- successful remote CI records and reviewed pull requests;
+- tagged releases and a software archive DOI;
+- independent real-material diffraction and elasticity comparisons;
+- documented research use and external feedback/adoption;
+- confirmed final authorship, ORCID, funding, facility acknowledgements, and contributor list;
+- human review and approval of all AI-assisted code, documentation, references, and claims.
 
 These items are tracked in `docs/JOSS_READINESS.md`.
 
 ## Remote publication state
 
-The prepared repository is complete locally. Remote creation and push require an authenticated GitHub write channel. `scripts/publish_github.sh` and `scripts/publish_github.ps1` create `D-sudoasd/DiffractScout` as a private repository by default, push the clean local history, and set research-software topics after `gh auth status` succeeds.
+At the time of this report, `D-sudoasd/DiffractScout` is absent from the connected GitHub account. The current environment also lacks GitHub CLI and the available GitHub connector does not expose repository creation. Local source, commits, merge preparation, wheel, bundle, and checksums can be completed; remote push, pull-request merge, release publication, and remote branch deletion require creation of the empty repository or an equivalent authenticated repository-creation channel.

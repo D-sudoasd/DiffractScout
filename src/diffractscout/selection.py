@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 
 from .composition import chemsys_subsystems
 from .models import CandidateRecord, DiscoveryResult, DiscoverySettings, ParsedComposition
 from .providers.base import PhaseProvider
+
+
+def validate_discovery_settings(settings: DiscoverySettings) -> None:
+    """Reject ambiguous or unsafe discovery limits before provider access."""
+
+    if settings.e_hull_max_eV_atom is not None:
+        value = float(settings.e_hull_max_eV_atom)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("e_hull_max_eV_atom must be a finite non-negative value.")
+    for name in ("max_subsystem_order", "max_per_subsystem", "max_total"):
+        value = getattr(settings, name)
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 1):
+            raise ValueError(f"{name} must be a positive integer when supplied.")
 
 
 def _sort_key(candidate: CandidateRecord) -> tuple[float, int, str]:
@@ -24,6 +38,7 @@ def search_candidates(
     parsed: ParsedComposition,
     settings: DiscoverySettings,
 ) -> DiscoveryResult:
+    validate_discovery_settings(settings)
     warnings: list[str] = []
     subsystem_counts: dict[str, int] = {}
 
@@ -40,14 +55,20 @@ def search_candidates(
                 }
             except Exception as exc:
                 warnings.append(f"Provider lookup failed for explicit material IDs: {exc}")
+        provider_name = str(getattr(provider, "name", "") or "")
         for material_id in parsed.material_ids:
+            source_url = (
+                f"https://materialsproject.org/materials/{material_id}"
+                if provider_name.lower() == "materials project"
+                else ""
+            )
             resolved.setdefault(
                 material_id,
                 CandidateRecord(
                     material_id=material_id,
                     queried_chemsys="explicit_material_id",
-                    source_provider=provider.name,
-                    source_url=f"https://materialsproject.org/materials/{material_id}",
+                    source_provider=provider_name,
+                    source_url=source_url,
                 ),
             )
         return resolved
@@ -112,7 +133,7 @@ def search_candidates(
                 set(filter(None, previous.queried_chemsys.split(";")))
                 | {"explicit_material_id"}
             )
-            # The explicit-ID summary is preferred because it is queried for the exact record.
+            # The explicit-ID summary is preferred because it addresses the exact record.
             by_id[material_id] = replace(explicit, queried_chemsys=";".join(query_paths))
 
     candidates = sorted(by_id.values(), key=_sort_key)

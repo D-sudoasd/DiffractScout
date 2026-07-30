@@ -5,40 +5,45 @@
 # DiffractScout
 
 [![CI](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml)
+[![JOSS draft](https://github.com/D-sudoasd/DiffractScout/actions/workflows/draft-pdf.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/draft-pdf.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab.svg)](pyproject.toml)
 
-**DiffractScout connects candidate-phase discovery to auditable theoretical powder-diffraction references.** It accepts an alloy grade, chemical system, Materials Project IDs, or local CIF files; records where every structure came from; validates the CIF; calculates indexed powder reflections; optionally couples a numerical 6×6 stiffness tensor to the normal of each `hkl`; and exports a self-contained evidence bundle with SHA-256 hashes.
+**DiffractScout turns a chemical-system question or a folder of CIF files into a verifiable theoretical powder-diffraction reference bundle.** It preserves database identity, exact CIF hashes, structural diagnostics, radiation settings, optional elastic-tensor provenance, indexed reflections, warnings, and file checksums in one workflow.
 
-[中文概览](README.zh-CN.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Architecture](docs/ARCHITECTURE.md) · [Validation](docs/VALIDATION.md) · [JOSS readiness](docs/JOSS_READINESS.md)
+[中文说明](README.zh-CN.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Architecture](docs/ARCHITECTURE.md) · [Validation](docs/VALIDATION.md) · [JOSS readiness](docs/JOSS_READINESS.md)
 
-## Statement of need
+## Why this software exists
 
-Materials researchers often perform a chain of loosely connected tasks: expand an alloy into possible chemical subsystems, search a computed-materials database, download CIF files, inspect structural metadata, generate theoretical powder peaks, attach elastic constants, and prepare tables for experimental planning. Local scripts commonly lose the connection between a database record, the exact CIF, the tensor basis, the diffraction settings, and the exported table. That loss of provenance makes later interpretation and publication difficult.
+Candidate-phase assessment commonly involves several disconnected operations: interpret an alloy grade, enumerate chemical subsystems, query a computed-materials database, download structures, inspect CIF metadata, calculate theoretical reflections, locate elastic constants, and prepare tables for experimental planning. Ad hoc scripts often lose the relationship between the provider record, exact CIF setting, tensor basis, diffraction settings, and final spreadsheet.
 
-DiffractScout treats the complete chain as one research object. Candidate records, downloaded structures, elastic sidecars, calculated reflections, display profiles, warnings, software versions, and file hashes are written into one result directory. Missing elastic data stays missing. Literature hints are never converted into numerical tensors. Theoretical peak references are labeled separately from experimental fitting and phase identification.
+DiffractScout represents that chain as one research object. It supports two entry points:
 
-## Integrated workflow
+| Workflow | Input | Main output |
+|---|---|---|
+| Local structure analysis | CIF files or folders | Validated structures, indexed theoretical reflections, optional paired `Cij`, profiles, diagnostics, manifest |
+| Candidate-phase pipeline | Alloy grade, formula, chemical system, or Materials Project IDs | Candidate catalogue, downloaded conventional CIFs, optional DFT tensors, diffraction tables, provenance, diagnostics, manifest |
 
-```text
-alloy / formula / chemsys / mp-IDs
-        ↓
-subsystem expansion and deterministic candidate ranking
-        ↓
-Materials Project CIF + optional DFT Cij, or local CIF inputs
-        ↓
-CIF identity, cell, space group, occupancy, and source checks
-        ↓
-indexed theoretical reflections: d, 2θ, q, g, |F|², multiplicity, LP
-        ↓
-optional E along the reciprocal-lattice normal of each hkl
-        ↓
-CSV + XLSX + provenance JSON + SHA-256 manifest
+The base installation works offline. Materials Project access is optional and uses the researcher's own API key.
+
+## Graphical interface
+
+```bash
+python -m pip install -e .
+diffractscout-gui
+# equivalent: diffractscout gui
 ```
 
-The base installation works offline for local CIF analysis. Materials Project access is an optional dependency and requires the user's own API key.
+<p align="center">
+  <img src="docs/assets/gui-local.png" width="49%" alt="DiffractScout local CIF analysis interface">
+  <img src="docs/assets/gui-materials-project.png" width="49%" alt="DiffractScout Materials Project pipeline interface">
+</p>
+
+The desktop interface exposes the scientific controls used by the Python API: radiation definition, angular window, profile spacing, pseudo-Voigt parameters, elastic-tensor pairing, candidate limits, reciprocal-space resource guards, overwrite authorization, progress, structured diagnostics, and result-folder access. The API key remains in memory and is not written to project files. See [docs/GUI.md](docs/GUI.md).
 
 ## Installation
+
+### Local CIF analysis
 
 ```bash
 git clone https://github.com/D-sudoasd/DiffractScout.git
@@ -46,29 +51,30 @@ cd DiffractScout
 python -m pip install -e .
 ```
 
-Add Materials Project discovery and download support:
+### Materials Project support
 
 ```bash
 python -m pip install -e ".[mp]"
+export MP_API_KEY="your-key"     # PowerShell: $env:MP_API_KEY = "your-key"
 ```
 
-Development environment:
+### Development environment
 
 ```bash
 python -m pip install -e ".[test]"
 pytest -q
 ```
 
-## Five-minute verification
+## Five-minute offline verification
 
-The built-in demo uses a synthetic FCC structure and a synthetic isotropic stiffness tensor. It does not contain experimental property data.
+The demo uses an explicitly synthetic FCC structure and a synthetic isotropic stiffness tensor. It contains no experimental property values.
 
 ```bash
 diffractscout demo -o outputs/demo
 diffractscout verify outputs/demo
 ```
 
-Expected result:
+Expected terminal result:
 
 ```text
 Analyzed phases: 1
@@ -81,68 +87,96 @@ PASS
 diffractscout analyze path/to/cifs -o outputs/local_cifs
 ```
 
-Use 83 keV synchrotron radiation:
+Example for 83 keV synchrotron radiation:
 
 ```bash
 diffractscout analyze path/to/cifs -o outputs/83keV \
-  --energy-keV 83 --two-theta-min 0.5 --two-theta-max 15
+  --energy-keV 83 \
+  --two-theta-min 0.5 \
+  --two-theta-max 15 \
+  --step 0.005 \
+  --fwhm 0.03
 ```
 
-When `{cif_stem}_elasticity.json` or a compatible PhaseScout sidecar is present beside a CIF, DiffractScout validates the 6×6 matrix and fills `young_modulus_hkl_normal_GPa`. Disable this path with `--no-elasticity`.
+When a uniquely paired `{cif_stem}_elasticity.json`, compatible sidecar, or unambiguous elasticity index is present, DiffractScout validates the 6×6 matrix and can populate `young_modulus_hkl_normal_GPa`. Use `--no-elasticity` to disable discovery, copying, and evaluation of all elastic data.
 
 ## Discover candidate phases
 
 ```bash
-export MP_API_KEY="your-key"
 diffractscout discover "Ti-6Al-4V" -o outputs/ti64_candidates \
-  --mode near_stable --e-hull-max 0.05 --max-total 100
+  --mode near_stable \
+  --e-hull-max 0.05 \
+  --max-total 100
 ```
 
-The discovery command writes the candidate catalogue and provenance without downloading structures.
+This command records the query and candidate catalogue without downloading structures.
 
 ## Run the complete pipeline
 
 ```bash
-export MP_API_KEY="your-key"
 diffractscout run "Ti-Al-V" -o outputs/ti_al_v \
-  --mode near_stable --e-hull-max 0.05 --max-total 50
+  --mode near_stable \
+  --e-hull-max 0.05 \
+  --max-total 50
 ```
 
-The pipeline requests conventional-standard unit cells by default. For automatic `hkl`-normal modulus calculation, it uses the Materials Project raw/POSCAR-format tensor documented as consistent with that CIF setting. IEEE-format tensors are retained in provenance, but an IEEE-only record is marked `frame_transform_required` and produces no directional modulus until an explicit rotation into the CIF Cartesian frame is supplied. `--primitive` therefore requires `--no-elasticity`.
+The Materials Project path requests conventional-standard cells by default. Automatic `hkl`-normal elasticity uses the raw/POSCAR-format tensor paired with that cell setting. An IEEE-only tensor is retained with status `frame_transform_required`; directional modulus fields remain empty until a verified coordinate transformation is supplied. Primitive-cell acquisition therefore requires `--no-elasticity`.
+
+Candidate counts above `--confirm-above` require `--yes`. The GUI applies an explicit maximum-candidate authorization for every download run.
 
 ## Result bundle
 
-Each completed run contains:
+A successful run is first written to a sibling staging directory, verified, and then moved into place. An existing bundle can be replaced only when its manifest is recognized, its current contents pass integrity verification, and overwrite was explicitly authorized. A failed query, calculation, export, or verification leaves the previous valid bundle in place.
 
 | File | Purpose |
 |---|---|
-| `inputs/` | Copied local inputs or downloaded CIF/Cij source artifacts |
-| `candidate_index.csv` | Candidate phases, query subsystem, stability metadata, source URL |
-| `phase_summary.csv` | CIF hash, unit cell, space group, occupancy and validation warnings |
-| `peak_reference.csv` | Indexed theoretical peaks and optional hkl-normal modulus |
+| `inputs/` | Copied local inputs or provider-downloaded CIF and elasticity artifacts |
+| `candidate_index.csv` | Candidate identity, subsystem, stability metadata, provider URL |
+| `download_index.csv` | Structure download and elasticity-query outcomes, errors, hashes |
+| `phase_summary.csv` | CIF hash, selected block, unit cell, space group, occupancy, warnings |
+| `peak_reference.csv` | Indexed theoretical reflections and optional `hkl`-normal modulus |
 | `pattern_profiles.csv` | Normalized pseudo-Voigt display profiles |
-| `elasticity.csv` | Tensor values, coordinate frame, source and warnings |
+| `elasticity.csv` | Numerical tensors, coordinate frames, source records, warnings |
+| `diagnostics.csv` | Structured discovery, download, elasticity, and analysis diagnostics |
 | `results.xlsx` | Human-readable workbook containing the same tables |
-| `provenance.json` | Settings, equations, software versions and source metadata |
-| `manifest.json` | SHA-256 inventory checked by `diffractscout verify` |
+| `provenance.json` | Settings, definitions, provider metadata, software versions, boundaries |
+| `manifest.json` | SHA-256 and byte-size inventory checked by `diffractscout verify` |
 
-## Scientific contracts
+The verifier rejects missing files, modified files, malformed entries, duplicate or unsafe paths, symbolic links, and files that are present but absent from the manifest.
 
-DiffractScout calculates a kinematic theoretical powder reference. The current implementation does not perform experimental phase identification, Rietveld/Le Bail/Pawley refinement, quantitative phase analysis, instrument calibration, background estimation, preferred-orientation correction, absorption correction, size/strain broadening, or absolute intensity calibration.
+## Scientific scope
 
-The reflection table reports both:
+DiffractScout calculates a kinematic theoretical powder reference from the average CIF structure. It does not perform experimental phase identification, Rietveld/Le Bail/Pawley refinement, quantitative phase analysis, detector calibration, background fitting, preferred-orientation correction, absorption correction, size/strain analysis, or absolute intensity calibration.
+
+The reflection table reports:
 
 ```text
 I_no_LP   = multiplicity × |F_xray|²
 I_with_LP = I_no_LP × LP(θ)
-volume_normalized_intensity_with_lp = I_with_LP / V_cell²
-volume_normalized_intensity_no_lp   = I_no_LP / V_cell²
-legacy R_hkl aliases                 = the same two project-defined quantities
+J_with_LP = I_with_LP / V_cell²
+J_no_LP   = I_no_LP / V_cell²
 ```
 
-The `R_hkl` column names are retained as compatibility aliases for the earlier CIF2Peaks schema. They denote project-defined volume-normalized theoretical intensity channels. They are not crystallographic residual R factors, standardized quantitative-phase coefficients, or experimentally calibrated scattering factors. The continuous profile is a visualization aid generated from the discrete lines with a user-selected pseudo-Voigt width. It is not fitted to an instrument response.
+The legacy fields `material_scattering_factor_R_hkl` and `material_scattering_factor_R_hkl_no_lp` remain as compatibility aliases for the two project-defined `J` channels. They are not crystallographic residual factors, standardized quantitative-phase coefficients, or experimentally calibrated scattering factors.
 
-Full definitions and coordinate conventions are in [docs/SCIENTIFIC_CONTRACTS.md](docs/SCIENTIFIC_CONTRACTS.md).
+The continuous pseudo-Voigt profile is a visualization product with user-supplied width and mixing fraction. Resource guards cap both profile-grid size and the conservative reciprocal-lattice candidate estimate before memory-intensive work begins.
+
+Full equations, units, tensor convention, coordinate-frame rules, structure validation, and exclusions are defined in [docs/SCIENTIFIC_CONTRACTS.md](docs/SCIENTIFIC_CONTRACTS.md).
+
+## Reliability and validation
+
+The offline suite covers composition parsing, subsystem enumeration, CIF block and space-group resolution, crystallographic occupancy conversion, FCC systematic absences, analytic structure factors, Bragg geometry, intensity channels, resource limits, tensor validation, sidecar pairing, provider failure semantics, transactional replacement, spreadsheet safety, workbook schemas, end-to-end export, and strict bundle verification.
+
+GitHub Actions is configured for:
+
+- Ubuntu tests on Python 3.10–3.13 with coverage and Ruff;
+- Windows and macOS smoke tests;
+- a headless Linux GUI startup check under Xvfb;
+- wheel build and clean-environment installation;
+- the offline scientific demo and bundle verification;
+- Open Journals draft-PDF compilation.
+
+The synthetic suite validates declared numerical contracts. Real-material comparisons and research-use evidence required for a JOSS submission are tracked separately in [docs/VALIDATION.md](docs/VALIDATION.md) and [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md).
 
 ## Python API
 
@@ -157,39 +191,40 @@ result = analyze_cifs(
         energy_keV=83.0,
         two_theta_min_deg=0.5,
         two_theta_max_deg=15.0,
+        max_profile_points=500_000,
+        max_reflection_estimate=1_000_000,
     ),
 )
 print(result.manifest_path)
+print(result.diagnostics)
 ```
 
-Core API details are documented in [docs/API.md](docs/API.md).
+See [docs/API.md](docs/API.md) for provider and lower-level interfaces.
 
-## Graphical interface
+## Architecture and relationship to existing software
 
-```bash
-diffractscout-gui
-# equivalent:
-diffractscout gui
-```
+DiffractScout uses Gemmi for CIF and crystallographic computation, spglib for an independent symmetry cross-check, and optional `mp-api`/pymatgen for Materials Project access. GSAS-II, pyFAI, and related packages remain appropriate for experimental integration, calibration, fitting, and refinement. DiffractScout stops at candidate screening and auditable theoretical references.
 
-The GUI exposes local CIF analysis and the complete Materials Project pipeline. Numerical logic remains in the package API and is covered by headless tests.
-
-## Source lineage
-
-DiffractScout integrates and restructures ideas and functionality from two MIT-licensed projects maintained by the same author:
+The project integrates and restructures functionality from two MIT-licensed repositories maintained by the same author:
 
 - [`D-sudoasd/PhaseScout`](https://github.com/D-sudoasd/PhaseScout)
 - [`D-sudoasd/CIF2Peaks`](https://github.com/D-sudoasd/CIF2Peaks)
 
-The source repositories remain independent. The exact source snapshots, retained scientific behavior, changed architecture, and license notices are recorded in [docs/SOURCE_LINEAGE.md](docs/SOURCE_LINEAGE.md) and [NOTICE.md](NOTICE.md).
+Those repositories remain independent and unchanged by this project. Source snapshots, retained behavior, architectural changes, and license notices are documented in [docs/SOURCE_LINEAGE.md](docs/SOURCE_LINEAGE.md) and [NOTICE.md](NOTICE.md). The build-vs-contribute rationale is in [docs/COMPARISON.md](docs/COMPARISON.md).
 
 ## JOSS preparation status
 
-The repository includes package metadata, an OSI-approved license, automated tests, CI, installation and API documentation, examples, contribution and support routes, a release process, a JOSS-format paper draft, and an explicit AI usage disclosure. Current JOSS screening also requires sustained public development and concrete research-impact evidence. Those time- and use-dependent records must accumulate in the public repository and cannot be replaced by documentation alone. See [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md).
+The repository contains an OSI-approved license, installable package metadata, tests, CI, user and API documentation, examples, contribution and support routes, release instructions, a JOSS-format manuscript, and a specific AI usage disclosure. Formal submission still depends on public development history, archived releases, independent real-material validation, confirmed authorship metadata, and traceable research-impact evidence. See [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md).
 
-## Citation
+## Contributing, support, and citation
 
-Use [CITATION.cff](CITATION.cff) for software metadata. Create a tagged release and archive it before a formal JOSS submission; replace the placeholder archive field in the paper after a DOI exists.
+- Development and scientific-validation contributions: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Reproducible software bugs and feature requests: GitHub Issues
+- Security-sensitive reports: [SECURITY.md](SECURITY.md)
+- Citation metadata: [CITATION.cff](CITATION.cff)
+- Release procedure: [docs/RELEASE.md](docs/RELEASE.md)
+
+Create a tagged, archived release before citing a specific production version or submitting to JOSS.
 
 ## License
 

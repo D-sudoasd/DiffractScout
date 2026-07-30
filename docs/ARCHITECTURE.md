@@ -2,7 +2,7 @@
 
 ## Design objective
 
-DiffractScout represents candidate discovery, source acquisition, structural validation, theoretical diffraction, optional elasticity, and export as one traceable pipeline. The principal design constraint is that every numerical output can be connected to an input artifact, a calculation setting, a definition, and a software version.
+DiffractScout represents candidate discovery, source acquisition, structural validation, theoretical diffraction, optional elasticity, diagnostics, and export as one traceable pipeline. Every numerical output is connected to an input artifact, calculation setting, definition, software version, and integrity record.
 
 ## Layers
 
@@ -10,69 +10,119 @@ DiffractScout represents candidate discovery, source acquisition, structural val
 CLI / Tk GUI / Python API
           │
           ▼
-pipeline.py — orchestration and non-destructive output handling
+pipeline.py — orchestration, diagnostics, staged output, rollback
           │
-   ┌──────┴────────┐
-   ▼               ▼
-selection.py     providers/
-subsystems       Materials Project adapter
-ranking          provider protocol
-   │               │
-   └──────┬────────┘
-          ▼
-structure.py — CIF selection, parsing, hash, cell/space-group/occupancy checks
-          │
-          ├──────────────► elasticity.py — 6×6 validation and E(hkl normal)
-          ▼
-diffraction.py — systematic absences, multiplicity, d/2θ/q/g, |F|², LP, profile
-          │
-          ▼
-exporters.py — CSV/XLSX/provenance JSON/SHA-256 manifest
-          │
-          ▼
-validation.py — independent bundle integrity verification
+   ┌──────┴─────────┐
+   ▼                ▼
+selection.py      providers/
+subsystems        Materials Project adapter
+ranking           provider protocol
+validation        source acquisition status
+   │                │
+   └───────┬────────┘
+           ▼
+structure.py — CIF block, hash, cell, space group, occupancy, symmetry cross-check
+           │
+           ├──────────────► elasticity.py — sidecar identity, 6×6 validation, E(hkl normal)
+           ▼
+diffraction.py — absences, multiplicity, d/2θ/q/g, |F|², LP, resource guards, profile
+           │
+           ▼
+exporters.py — CSV/XLSX/provenance/diagnostics/SHA-256 manifest
+           │
+           ▼
+validation.py — strict independent bundle verification
 ```
+
+The GUI contains no separate numerical implementation. It creates `AnalysisSettings` and `DiscoverySettings`, calls the pipeline API, and renders returned diagnostics.
 
 ## Provider boundary
 
 The discovery layer depends on the `PhaseProvider` protocol. Materials Project is one optional implementation. A provider supplies:
 
-- candidate records for one chemical subsystem;
+- candidate records for one chemical subsystem or explicit provider IDs;
 - structure and optional property artifacts for selected candidates;
+- acquisition status and error semantics for each artifact;
 - provider metadata, including database version when available.
 
-The base package therefore performs local CIF analysis without `mp-api` or `pymatgen`. The optional Materials Project adapter imports those dependencies only when requested. Tests use a deterministic offline provider, which exercises the complete discovery-to-export path without a network call or API key.
+The base package performs local CIF analysis without `mp-api` or pymatgen. The optional Materials Project adapter imports those dependencies only when requested. Tests use a deterministic offline provider to exercise discovery, download, analysis, export, and verification without a network call or API key.
 
 ## Unified data contracts
 
-The two source projects previously exchanged files through naming conventions. DiffractScout promotes those conventions into explicit dataclasses and machine-readable schemas:
+The source projects previously exchanged files through naming conventions. DiffractScout promotes relevant concepts into typed records and versioned output schemas:
 
-- `CandidateRecord` stores database identity, stability metadata, query subsystem, space group and source URL.
-- `StructureRecord` stores the exact CIF hash, selected data block, cell, space group, occupancy state and warnings.
-- `ElasticTensor` stores the 6×6 matrix, unit, source, nature of data and coordinate frame.
-- `ReflectionRecord` stores geometry, structure-factor terms, both LP channels, ranks and optional directional modulus.
-- `manifest.json` stores a hash and size for every bundle file.
+- `CandidateRecord` stores provider identity, stability metadata, query subsystem, space group, structure tag, and source URL.
+- `DownloadArtifact` separates CIF status from elastic-query status and preserves both errors.
+- `StructureRecord` stores the exact CIF hash, selected data block, unit cell, resolved space group, occupancy state, diagnostics, and source metadata.
+- `ElasticTensor` stores the 6×6 matrix, unit, source, data nature, coordinate frame, validation status, and original sidecar path.
+- `ReflectionRecord` stores geometry, structure-factor terms, LP and no-LP channels, ranks, and optional directional modulus.
+- `DiagnosticRecord` stores stage, item, severity, and message for failures that do not need to abort the whole batch.
+- `manifest.json` stores a SHA-256 digest and byte size for every bundle file.
 
-This separation permits each layer to be unit-tested and allows new database providers or export formats without changing the diffraction engine.
+This separation permits independent testing and supports future providers or export formats without replacing the diffraction engine.
 
-## Important design choices
+## Structural validation
 
-### Gemmi as the offline crystallographic engine
+CIF loading is fail-closed for missing cell parameters, invalid cell geometry, zero/negative volume, missing atom sites, and unreadable structure blocks. Space-group resolution follows a recorded order:
 
-Gemmi reads CIF, expands unit-cell sites, supplies space-group operations, identifies systematic absences, enumerates unique Miller indices and calculates X-ray structure factors. This keeps the base installation compact and enables a complete offline validation example. Optional spglib support provides an independent space-group cross-check when installed.
+1. explicit CIF symbol;
+2. explicit International Tables number;
+3. Gemmi inference from a small structure;
+4. an explicit P1 fallback accompanied by a warning.
 
-### Conventional-cell contract for Materials Project elasticity
+Conflicting declarations produce diagnostics. spglib supplies an independent symmetry cross-check. The source structure used for validation remains separate from the Gemmi copy whose occupancies are converted to crystallographic occupancies for structure-factor calculation.
 
-The Materials Project adapter requests conventional-standard unit cells by default. Automatic directional coupling selects the raw/POSCAR-format tensor documented as consistent with that CIF setting and declares `materials_project_conventional_cif_cartesian`. The IEEE-format tensor remains in the sidecar for provenance. If the raw tensor is absent, the sidecar is marked `frame_transform_required`, and directional modulus values remain empty. Primitive-cell download is rejected while automatic elasticity coupling is enabled. Every usable 6×6 matrix must also pass finiteness, symmetry, invertibility, conditioning and positive-definiteness checks.
+## Diffraction engine and resource guards
 
-### Discrete reflections as the scientific result
+The indexed reflection table is the primary result. The continuous pseudo-Voigt profile is a display product with explicit width and mixing settings.
 
-The indexed line table is the primary diffraction result. The continuous pseudo-Voigt curve is a display product with explicit width and mixing parameters. This prevents a smooth plotted profile from being mistaken for an instrument model or fitted experiment.
+Before large arrays or Miller-index lists are allocated, the engine checks:
 
-### Fail-closed output handling
+- requested profile-grid point count;
+- a conservative reciprocal-space candidate estimate based on cell volume and minimum accessible spacing;
+- the actual generated Miller-candidate count.
 
-DiffractScout refuses to overwrite a non-empty directory unless it contains a recognized DiffractScout manifest and the user explicitly authorizes overwrite. Large Materials Project downloads require an explicit authorization flag once the candidate count exceeds a configurable threshold.
+These limits are configurable in the API, CLI, and GUI and are recorded in analysis metadata.
+
+## Elastic-tensor contract
+
+Automatic sidecar pairing requires an explicit, unique relation to the CIF filename or material identifier. A sidecar that declares a different paired CIF is rejected. Multiple plausible sidecars are reported as ambiguous. Malformed matrices remain explicit invalid records; missing tensors remain absent.
+
+For Materials Project acquisition, the adapter requests conventional-standard cells by default. Automatic directional coupling uses the raw/POSCAR-format tensor paired with that cell and declares `materials_project_conventional_cif_cartesian`. IEEE-format values remain in the sidecar for provenance. An IEEE-only record receives `frame_transform_required`, and directional values remain empty. Primitive-cell download is rejected while automatic elasticity coupling is enabled.
+
+## Transactional result writing
+
+The output path is validated before work begins. Input and output trees must be disjoint, output symlinks are rejected, and unrelated non-empty directories are never overwritten.
+
+A run writes into a unique sibling staging directory:
+
+```text
+query / copy / calculate
+        ↓
+write all CSV, XLSX, JSON, documentation
+        ↓
+create manifest
+        ↓
+verify hashes, sizes, paths, symlinks, unlisted files
+        ↓
+atomically move staged directory to requested target
+```
+
+When replacing an existing bundle, the current bundle must first pass integrity verification. The old directory is moved to a temporary backup, the verified staging directory is moved into place, and the backup is removed only after success. A failed query, calculation, export, verification, or final move retains or restores the previous valid bundle.
+
+## Export and integrity boundaries
+
+CSV and workbook writes use temporary files followed by atomic replacement. Text originating from external providers or CIF metadata is escaped when it begins with spreadsheet formula-control characters. Large profile tables remain available in CSV even when omitted from the workbook to respect the Excel row budget.
+
+`verify_bundle` rejects:
+
+- missing or modified files;
+- malformed SHA-256 or size entries;
+- duplicate, absolute, parent-traversal, empty, or manifest-self paths;
+- symbolic links;
+- paths escaping the bundle root;
+- files present on disk but absent from the manifest.
 
 ## Extension points
 
-A new provider implements `PhaseProvider`. A new calculation can consume `StructureRecord` and add fields to a versioned output schema. An incompatible schema change requires a major version increment after version 1.0. New numerical definitions require tests, documentation and a migration note.
+A new provider implements `PhaseProvider`. A new calculation can consume `StructureRecord` and add fields to a versioned schema. New scientific definitions require tests, documentation, changelog entries, and review by a contributor with relevant domain expertise. An incompatible output-schema change requires an explicit migration plan and a major version increment after 1.0.

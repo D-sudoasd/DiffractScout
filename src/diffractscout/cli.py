@@ -35,6 +35,8 @@ def _analysis_settings(args: argparse.Namespace) -> AnalysisSettings:
         fwhm_deg=args.fwhm,
         profile_eta=args.eta,
         include_elasticity=not args.no_elasticity,
+        max_profile_points=args.max_profile_points,
+        max_reflection_estimate=args.max_reflection_estimate,
     )
 
 
@@ -78,14 +80,17 @@ def _print_result(result: object, *, as_json: bool = False) -> None:
 
 def _add_analysis_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source", default="Cu Ka", choices=("Cu Ka", "Co Ka", "Fe Ka", "Mo Ka", "Ag Ka", "Custom"))
-    parser.add_argument("--energy-keV", type=float, default=None, help="Custom X-ray energy in keV.")
-    parser.add_argument("--wavelength-A", type=float, default=None, help="Custom wavelength in Angstrom.")
+    radiation = parser.add_mutually_exclusive_group()
+    radiation.add_argument("--energy-keV", type=float, default=None, help="Custom X-ray energy in keV.")
+    radiation.add_argument("--wavelength-A", type=float, default=None, help="Custom wavelength in Angstrom.")
     parser.add_argument("--two-theta-min", type=float, default=5.0)
     parser.add_argument("--two-theta-max", type=float, default=120.0)
     parser.add_argument("--step", type=float, default=0.02, help="Display-profile grid spacing in degrees.")
     parser.add_argument("--fwhm", type=float, default=0.15, help="Display-profile FWHM in degrees.")
     parser.add_argument("--eta", type=float, default=0.5, help="Pseudo-Voigt Lorentzian fraction in [0, 1].")
-    parser.add_argument("--no-elasticity", action="store_true", help="Do not pair or calculate hkl-normal elastic moduli.")
+    parser.add_argument("--no-elasticity", action="store_true", help="Do not discover, copy, or calculate paired elastic data.")
+    parser.add_argument("--max-profile-points", type=int, default=1_000_000, help="Safety limit for the generated display-profile grid.")
+    parser.add_argument("--max-reflection-estimate", type=int, default=2_000_000, help="Safety limit for reciprocal-lattice candidate generation.")
     parser.add_argument("--no-excel", action="store_true", help="Skip results.xlsx; CSV and JSON remain enabled.")
     parser.add_argument("--overwrite", action="store_true", help="Replace only an existing DiffractScout output bundle.")
     parser.add_argument("--json", action="store_true", help="Print the final summary as JSON.")

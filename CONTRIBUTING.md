@@ -34,7 +34,8 @@ Tests must not depend on a live Materials Project API unless they are explicitly
 - Update the schema version when a machine-readable output contract changes incompatibly.
 - Preserve missing values; do not replace absent scientific data with guessed numbers.
 - Add source and unit metadata for new numerical fields.
-- Run `pytest -q` and `python -m compileall -q src`.
+- Run `python scripts/check_release.py --skip-wheel`; use the full release check before a tagged release.
+- For GUI changes, run the Xvfb smoke command in `docs/GUI.md` and update reference screenshots when the layout changes.
 - Explain any result differences in the pull-request description.
 
 ## Scientific review
