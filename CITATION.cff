@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use DiffractScout in research, cite the archived software release and the associated JOSS paper when available."
+title: "DiffractScout: Provenance-first phase scouting and indexed powder diffraction references"
+type: software
+authors:
+  - family-names: Gong
+    given-names: Delun
+    email: dlgong17s@imr.ac.cn
+version: 0.1.0
+license: MIT
+repository-code: "https://github.com/D-sudoasd/DiffractScout"
+url: "https://github.com/D-sudoasd/DiffractScout"
+keywords:
+  - materials science
+  - powder diffraction
+  - crystallography
+  - Materials Project
+  - phase screening
+  - elasticity

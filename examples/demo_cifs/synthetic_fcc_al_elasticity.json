@@ -1,0 +1,35 @@
+{
+  "schema": "diffractscout_elasticity_v1",
+  "status": "ok",
+  "formula": "Al",
+  "cif_filename": "synthetic_fcc_al.cif",
+  "stiffness_GPa": [
+    [200.0, 120.0, 120.0, 0.0, 0.0, 0.0],
+    [120.0, 200.0, 120.0, 0.0, 0.0, 0.0],
+    [120.0, 120.0, 200.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 40.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 40.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 40.0]
+  ],
+  "provenance": {
+    "provider": "DiffractScout test fixture",
+    "material_id": "synthetic-isotropic-cubic",
+    "nature_of_data": "synthetic_test_fixture",
+    "numerical_cij": true,
+    "not_experimental": true,
+    "coordinate_frame": "crystal_cartesian_from_cif_lattice",
+    "paired_cif": "synthetic_fcc_al.cif"
+  },
+  "diffractscout": {
+    "stiffness_GPa": [
+      [200.0, 120.0, 120.0, 0.0, 0.0, 0.0],
+      [120.0, 200.0, 120.0, 0.0, 0.0, 0.0],
+      [120.0, 120.0, 200.0, 0.0, 0.0, 0.0],
+      [0.0, 0.0, 0.0, 40.0, 0.0, 0.0],
+      [0.0, 0.0, 0.0, 0.0, 40.0, 0.0],
+      [0.0, 0.0, 0.0, 0.0, 0.0, 40.0]
+    ],
+    "coordinate_frame": "crystal_cartesian_from_cif_lattice",
+    "paired_cif": "synthetic_fcc_al.cif"
+  }
+}

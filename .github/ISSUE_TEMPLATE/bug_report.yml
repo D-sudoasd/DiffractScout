@@ -1,0 +1,67 @@
+name: Bug report
+about: Report reproducible software behavior that differs from the documented contract
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not upload API keys, unpublished experimental data, proprietary CIF files, or restricted documents.
+  - type: input
+    id: version
+    attributes:
+      label: DiffractScout version or commit
+      placeholder: "0.1.0 or commit SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Affected workflow
+      options:
+        - Local CIF analysis
+        - Candidate discovery
+        - Complete discovery-to-export pipeline
+        - Elastic tensor loading
+        - Diffraction calculation
+        - CSV/XLSX/provenance export
+        - Bundle verification
+        - GUI
+        - Installation or packaging
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Include the exact command or Python call, sanitized inputs, and the smallest reproducible example.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result and traceback
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, Gemmi version, and optional mp-api/pymatgen versions.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed secrets and restricted data.
+          required: true
+        - label: I checked the scientific boundaries in docs/SCIENTIFIC_CONTRACTS.md.
+          required: true

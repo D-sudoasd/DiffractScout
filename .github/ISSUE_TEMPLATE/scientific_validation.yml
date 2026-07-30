@@ -1,0 +1,49 @@
+name: Scientific validation report
+about: Report an independent comparison, benchmark, convention mismatch, or suspected numerical problem
+labels: [validation]
+body:
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Scientific domain
+      options:
+        - CIF parsing and structure identity
+        - Space group or systematic absences
+        - d spacing, 2theta, q, or reciprocal spacing
+        - Structure factor or multiplicity
+        - Lorentz-polarization convention
+        - Elastic tensor convention or coordinate frame
+        - hkl-normal Young's modulus
+        - Candidate discovery semantics
+        - Provenance or units
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Independent reference
+      description: Name the software, analytical result, standard, paper, or dataset used for comparison, including version and citation.
+    validations:
+      required: true
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Inputs and settings
+      description: Provide a public or synthetic input and every setting needed to reproduce the comparison.
+    validations:
+      required: true
+  - type: textarea
+    id: comparison
+    attributes:
+      label: Numerical comparison
+      description: Report expected and observed values, units, absolute/relative differences, and the acceptance tolerance.
+    validations:
+      required: true
+  - type: textarea
+    id: interpretation
+    attributes:
+      label: Interpretation
+      description: State whether the difference appears to be an error, convention difference, model limitation, or unresolved result.
+    validations:
+      required: true

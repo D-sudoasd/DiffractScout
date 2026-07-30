@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">DiffractScout</title>
+  <desc id="desc">A provenance-first workflow from alloy composition to candidate phases, CIF structures, theoretical powder peaks, and hkl-resolved elasticity.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#102a43"/>
+      <stop offset="1" stop-color="#0b7285"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="360" rx="28" fill="url(#bg)"/>
+  <circle cx="1040" cy="82" r="125" fill="#ffffff" opacity="0.06"/>
+  <circle cx="1110" cy="295" r="180" fill="#ffffff" opacity="0.04"/>
+  <text x="72" y="112" font-family="Arial, Helvetica, sans-serif" font-size="64" font-weight="700" fill="#ffffff">DiffractScout</text>
+  <text x="74" y="158" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#d9f0f2">Provenance-first phase scouting and indexed powder diffraction references</text>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="18" text-anchor="middle">
+    <g transform="translate(80,220)"><rect width="175" height="70" rx="14" fill="#e3fafc"/><text x="87" y="31" fill="#0b3b4a">Alloy / chemsys</text><text x="87" y="53" fill="#0b3b4a">or MP IDs</text></g>
+    <text x="275" y="263" font-size="32" fill="#9ee8ee">→</text>
+    <g transform="translate(310,220)"><rect width="175" height="70" rx="14" fill="#e3fafc"/><text x="87" y="31" fill="#0b3b4a">Candidate phases</text><text x="87" y="53" fill="#0b3b4a">with provenance</text></g>
+    <text x="505" y="263" font-size="32" fill="#9ee8ee">→</text>
+    <g transform="translate(540,220)"><rect width="175" height="70" rx="14" fill="#e3fafc"/><text x="87" y="31" fill="#0b3b4a">CIF + optional Cij</text><text x="87" y="53" fill="#0b3b4a">validated and hashed</text></g>
+    <text x="735" y="263" font-size="32" fill="#9ee8ee">→</text>
+    <g transform="translate(770,220)"><rect width="175" height="70" rx="14" fill="#e3fafc"/><text x="87" y="31" fill="#0b3b4a">Indexed peaks</text><text x="87" y="53" fill="#0b3b4a">+ E(hkl normal)</text></g>
+    <text x="965" y="263" font-size="32" fill="#9ee8ee">→</text>
+    <g transform="translate(1000,220)"><rect width="145" height="70" rx="14" fill="#fff4e6"/><text x="72" y="31" fill="#7a3e00">CSV · XLSX</text><text x="72" y="53" fill="#7a3e00">JSON · hashes</text></g>
+  </g>
+</svg>

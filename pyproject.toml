@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diffractscout"
+version = "0.1.0"
+description = "Provenance-first phase scouting, CIF validation, theoretical powder diffraction, and hkl-resolved elasticity."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+  {name = "Delun Gong", email = "dlgong17s@imr.ac.cn"},
+]
+keywords = [
+  "materials science",
+  "powder diffraction",
+  "crystallography",
+  "phase screening",
+  "Materials Project",
+  "elasticity",
+  "XRD",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Chemistry",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+  "gemmi>=0.7.0",
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+mp = [
+  "mp-api>=0.43",
+  "pymatgen>=2024.11.13",
+]
+test = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+diffractscout = "diffractscout.cli:main"
+diffractscout-gui = "diffractscout.gui:main"
+
+[project.urls]
+Homepage = "https://github.com/D-sudoasd/DiffractScout"
+Repository = "https://github.com/D-sudoasd/DiffractScout"
+Issues = "https://github.com/D-sudoasd/DiffractScout/issues"
+Documentation = "https://github.com/D-sudoasd/DiffractScout/tree/main/docs"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E501"]

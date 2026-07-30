@@ -1,0 +1,30 @@
+name: Feature request
+about: Propose a research workflow, provider, output field, or numerical capability
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Research problem
+      description: Describe the scientific task and who needs it.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Existing methods or software
+      description: Identify relevant packages, publications, standards, or data formats and explain the remaining gap.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Required output and success criterion
+      description: Define units, provenance, uncertainty, validation data, and how completion can be checked.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and schema impact
+      description: Identify affected commands, APIs, providers, files, or machine-readable schemas.
