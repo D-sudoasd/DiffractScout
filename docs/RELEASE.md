@@ -76,6 +76,22 @@ python /home/oai/skills/pdfs/scripts/render_pdf.py paper/paper.pdf \
 
 ## 6. Publish
 
+The bundled publication helpers create the repository when it is absent, replace a local bundle/file `origin` with the intended GitHub URL, push the current branch, and configure repository topics:
+
+```bash
+DIFFRACTSCOUT_PUBLISH_DRY_RUN=1 bash scripts/publish_github.sh
+bash scripts/publish_github.sh D-sudoasd DiffractScout --private
+```
+
+```powershell
+$env:DIFFRACTSCOUT_PUBLISH_DRY_RUN = "1"
+.\scripts\publish_github.ps1
+Remove-Item Env:DIFFRACTSCOUT_PUBLISH_DRY_RUN
+.\scripts\publish_github.ps1 -Owner D-sudoasd -Repository DiffractScout -Visibility private
+```
+
+The dry run still checks GitHub CLI authentication and repository visibility, then prints the planned create/remote/push/edit commands without changing local or remote state.
+
 After CI passes on the release commit:
 
 1. merge the release pull request;

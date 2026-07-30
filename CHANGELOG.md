@@ -23,6 +23,7 @@ All notable changes are recorded here. The project follows semantic versioning a
 - Strengthened CIF validation and space-group resolution from symbols, International Tables numbers, Gemmi inference, and spglib cross-checks.
 - Made explicit CLI energy and wavelength inputs mutually exclusive.
 - Removed a duplicate `c_A` export mapping.
+- Corrected the GitHub publication helpers so a local bundle/file remote is replaced by the intended GitHub remote before push; added a non-destructive dry-run mode.
 
 ### Safety and reproducibility
 

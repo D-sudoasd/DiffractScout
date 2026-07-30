@@ -100,6 +100,9 @@ def main() -> int:
         raise SystemExit("Undefined bibliography keys: " + ", ".join(sorted(undefined)))
 
     _run([sys.executable, "-m", "compileall", "-q", "src", "tests", "scripts"])
+    bash = shutil.which("bash")
+    if bash:
+        _run([bash, "-n", "scripts/publish_github.sh"])
     if not args.skip_tests:
         _run([sys.executable, "-m", "pytest", "-q"])
 
