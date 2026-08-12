@@ -22,8 +22,10 @@ def _sha256(path: Path) -> str:
 def test_reproducible_archive_is_byte_identical(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "evidence"
     (source / "nested").mkdir(parents=True)
-    (source / "z.txt").write_text("zeta\n", encoding="utf-8")
-    (source / "nested" / "a.json").write_text('{"a": 1}\n', encoding="utf-8")
+    # Write exact fixture bytes so the archive contract is tested independently
+    # of platform-specific text newline translation.
+    (source / "z.txt").write_bytes(b"zeta\n")
+    (source / "nested" / "a.json").write_bytes(b'{"a": 1}\n')
     monkeypatch.setenv("SOURCE_DATE_EPOCH", "1786492800")
 
     first = MODULE.create_reproducible_zip(source, tmp_path / "first.zip", root_name="bundle")

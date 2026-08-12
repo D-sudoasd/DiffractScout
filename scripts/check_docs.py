@@ -7,8 +7,12 @@ import json
 from pathlib import Path
 import re
 import sys
-import tomllib
 from urllib.parse import unquote
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 try:
     import yaml
