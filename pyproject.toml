@@ -52,6 +52,7 @@ test = [
   "pytest-cov>=5.0",
   "ruff>=0.5",
   "PyYAML>=6.0",
+  "tomli>=2.0; python_version < '3.11'",
 ]
 paper = [
   "matplotlib>=3.7",
@@ -90,6 +91,12 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
 ignore = ["E501"]
+
+# The crystallographic h, k, l convention is part of the public result schema
+# and of the directional-elasticity equations in these domain modules.
+[tool.ruff.lint.per-file-ignores]
+"src/diffractscout/elasticity.py" = ["E741"]
+"src/diffractscout/models.py" = ["E741"]
 
 [tool.coverage.run]
 omit = [

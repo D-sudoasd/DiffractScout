@@ -71,15 +71,21 @@ jobs:
             SHA256SUMS.txt
           if-no-files-found: error
 
-      - name: Create GitHub release
+      - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            dist/* \
-            diffractscout-${GITHUB_REF_NAME}-*.zip \
-            SHA256SUMS.txt \
-            --verify-tag \
-            --generate-notes \
-            --title "DiffractScout ${GITHUB_REF_NAME}"
+          assets=(
+            dist/*
+            diffractscout-${GITHUB_REF_NAME}-*.zip
+            SHA256SUMS.txt
+          )
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
+              --verify-tag \
+              --generate-notes \
+              --title "DiffractScout ${GITHUB_REF_NAME}"
+          fi
