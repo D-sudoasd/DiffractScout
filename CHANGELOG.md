@@ -19,6 +19,7 @@ All notable changes are recorded here. The project follows semantic versioning a
 - Required explicit overwrite authorization for existing quick-export workbooks and replaced authorized workbooks atomically.
 - Rechecked bundle and benchmark targets immediately before commit so files created during a long-running calculation are not silently replaced.
 - Rejected malformed or non-finite provider elasticity matrices instead of truncating oversized arrays to 6×6.
+- Applied Materials Project stability thresholds before server-side result limits, with strict local verification so qualifying candidates are not lost to post-filtering.
 - Normalized common Unicode dash characters and case-insensitive chemical-system input during composition parsing.
 - Kept the optional spglib cross-check warning-only across its 2.7-to-2.8 exception transition without emitting repeated deprecation noise.
 - Exported an empty Cu Kα convenience angle, rather than a false `0°`, when a reflection is inaccessible at that wavelength.

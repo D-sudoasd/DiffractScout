@@ -199,6 +199,10 @@ class MaterialsProjectProvider:
         kwargs: dict[str, Any] = {"chemsys": chemsys, "fields": fields}
         if exclude_deprecated:
             kwargs["deprecated"] = False
+        if e_hull_max_eV_atom is not None:
+            # Filter before applying the page limit; otherwise a locally filtered
+            # first page can omit qualifying candidates from later pages.
+            kwargs["energy_above_hull"] = (0.0, e_hull_max_eV_atom)
         if max_results is not None and max_results > 0:
             kwargs.update({"chunk_size": max_results, "num_chunks": 1})
 
@@ -216,12 +220,10 @@ class MaterialsProjectProvider:
                 continue
             if exclude_deprecated and candidate.deprecated is True:
                 continue
-            if (
-                e_hull_max_eV_atom is not None
-                and candidate.energy_above_hull_eV_atom is not None
-                and candidate.energy_above_hull_eV_atom > e_hull_max_eV_atom
-            ):
-                continue
+            if e_hull_max_eV_atom is not None:
+                energy = candidate.energy_above_hull_eV_atom
+                if energy is None or energy > e_hull_max_eV_atom:
+                    continue
             output.append(candidate)
             if max_results is not None and len(output) >= max_results:
                 break

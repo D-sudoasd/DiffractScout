@@ -55,6 +55,55 @@ def test_matrix_conversion() -> None:
     assert _matrix(matrix) is None
 
 
+def test_subsystem_query_filters_energy_before_page_limit() -> None:
+    calls: list[dict[str, object]] = []
+
+    class SummaryEndpoint:
+        def search(self, **kwargs: object) -> list[dict[str, object]]:
+            calls.append(kwargs)
+            return [
+                {
+                    "material_id": "mp-1",
+                    "formula_pretty": "Al",
+                    "energy_above_hull": 0.02,
+                    "deprecated": False,
+                },
+                {
+                    "material_id": "mp-unknown",
+                    "formula_pretty": "Al",
+                    "energy_above_hull": None,
+                    "deprecated": False,
+                },
+            ]
+
+    class Materials:
+        summary = SummaryEndpoint()
+
+    class Client:
+        materials = Materials()
+
+        def __enter__(self) -> "Client":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get_database_version(self) -> str:
+            return "test"
+
+    provider = _provider_without_client()
+    provider.api_key = "test"
+    provider._mpr_cls = lambda _api_key: Client()
+    provider._metadata = {}
+
+    candidates = provider.search_subsystem("Al", max_results=5, e_hull_max_eV_atom=0.05)
+
+    assert [candidate.material_id for candidate in candidates] == ["mp-1"]
+    assert calls[0]["energy_above_hull"] == (0.0, 0.05)
+    assert calls[0]["chunk_size"] == 5
+    assert calls[0]["num_chunks"] == 1
+
+
 def test_elasticity_sidecar_prefers_raw_tensor_for_conventional_cif(tmp_path: Path) -> None:
     cif_path = tmp_path / "mp-123_Al.cif"
     cif_path.write_text("data_test\n", encoding="utf-8")
