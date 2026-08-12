@@ -79,6 +79,16 @@ def test_invalid_discovery_limits_fail_before_provider_access() -> None:
         raise AssertionError("Expected invalid max_total to be rejected")
 
 
+def test_unknown_discovery_mode_fails_before_provider_access() -> None:
+    parsed = parse_composition_text("Ti-Al")
+    with pytest.raises(ValueError, match="Unknown discovery mode"):
+        search_candidates(
+            FakeProvider(),
+            parsed,
+            DiscoverySettings(mode="typo"),  # type: ignore[arg-type]
+        )
+
+
 def test_subsystem_expansion_limit_fails_before_provider_access() -> None:
     parsed = parse_composition_text("Ti-Al-V-Cu")
     with pytest.raises(ValueError, match="above max_subsystems=10"):

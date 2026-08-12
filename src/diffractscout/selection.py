@@ -13,6 +13,13 @@ from .providers.base import PhaseProvider
 def validate_discovery_settings(settings: DiscoverySettings) -> None:
     """Reject ambiguous or unsafe discovery limits before provider access."""
 
+    valid_modes = {"possible_phases", "near_stable", "single_chemsys", "mpids_only"}
+    if settings.mode not in valid_modes:
+        raise ValueError(
+            f"Unknown discovery mode {settings.mode!r}; choose one of: "
+            + ", ".join(sorted(valid_modes))
+            + "."
+        )
     if settings.e_hull_max_eV_atom is not None:
         value = float(settings.e_hull_max_eV_atom)
         if not math.isfinite(value) or value < 0:

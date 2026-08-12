@@ -14,6 +14,17 @@ def test_formula_and_mpids_can_coexist() -> None:
     assert parsed.material_ids == ("mp-23", "mp-149")
 
 
+def test_common_unicode_dashes_and_lowercase_chemsys_are_normalized() -> None:
+    alloy = parse_composition_text("Ti–10V–2Fe–3Al")
+    assert set(alloy.elements) == {"Ti", "V", "Fe", "Al"}
+
+    chemsys = parse_composition_text("ti-al-v")
+    assert set(chemsys.elements) == {"Ti", "Al", "V"}
+
+    material = parse_composition_text("MP‑149")
+    assert material.material_ids == ("mp-149",)
+
+
 def test_subsystem_order_limit() -> None:
     systems = chemsys_subsystems(["Ti", "Al", "V", "Cu"], max_order=2)
     assert len(systems) == 10

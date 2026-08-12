@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 import tempfile
 from typing import Any, Sequence
@@ -52,14 +53,17 @@ def _plain(value: object) -> object:
 
 def _matrix(value: object) -> list[list[float]] | None:
     plain = _plain(value)
-    if not isinstance(plain, list) or len(plain) < 6:
+    if not isinstance(plain, list) or len(plain) != 6:
         return None
     output: list[list[float]] = []
     try:
-        for row in plain[:6]:
-            if not isinstance(row, list) or len(row) < 6:
+        for row in plain:
+            if not isinstance(row, list) or len(row) != 6:
                 return None
-            output.append([float(item) for item in row[:6]])
+            converted = [float(item) for item in row]
+            if not all(math.isfinite(item) for item in converted):
+                return None
+            output.append(converted)
     except (TypeError, ValueError):
         return None
     return output
@@ -85,6 +89,8 @@ def _candidate_from_doc(doc: object, chemsys: str) -> CandidateRecord:
     try:
         e_hull = float(e_hull_raw) if e_hull_raw is not None else None
     except (TypeError, ValueError):
+        e_hull = None
+    if e_hull is not None and not math.isfinite(e_hull):
         e_hull = None
     structure_type = infer_structure_type(formula, symbol, number)
     return CandidateRecord(
@@ -193,6 +199,10 @@ class MaterialsProjectProvider:
         kwargs: dict[str, Any] = {"chemsys": chemsys, "fields": fields}
         if exclude_deprecated:
             kwargs["deprecated"] = False
+        if e_hull_max_eV_atom is not None:
+            # Filter before applying the page limit; otherwise a locally filtered
+            # first page can omit qualifying candidates from later pages.
+            kwargs["energy_above_hull"] = (0.0, e_hull_max_eV_atom)
         if max_results is not None and max_results > 0:
             kwargs.update({"chunk_size": max_results, "num_chunks": 1})
 
@@ -210,12 +220,10 @@ class MaterialsProjectProvider:
                 continue
             if exclude_deprecated and candidate.deprecated is True:
                 continue
-            if (
-                e_hull_max_eV_atom is not None
-                and candidate.energy_above_hull_eV_atom is not None
-                and candidate.energy_above_hull_eV_atom > e_hull_max_eV_atom
-            ):
-                continue
+            if e_hull_max_eV_atom is not None:
+                energy = candidate.energy_above_hull_eV_atom
+                if energy is None or energy > e_hull_max_eV_atom:
+                    continue
             output.append(candidate)
             if max_results is not None and len(output) >= max_results:
                 break

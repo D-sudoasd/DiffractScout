@@ -29,14 +29,15 @@ for diagnostic in result.diagnostics:
 
 `analyze_cifs`:
 
-1. resolves and deduplicates CIF inputs;
-2. rejects overlap between input and output trees;
-3. copies source artifacts into a staging result directory;
-4. pairs elastic sidecars only when `include_elasticity=True`;
-5. analyzes each readable phase while recording per-phase diagnostics;
-6. writes CSV, optional XLSX, provenance, and a manifest;
-7. verifies the staged bundle;
-8. atomically moves it into the requested target.
+1. validates run-wide radiation, scan, profile, and resource settings before writes;
+2. resolves and deduplicates CIF inputs;
+3. rejects overlap between input and output trees;
+4. copies source artifacts into a staging result directory;
+5. pairs elastic sidecars only when `include_elasticity=True`;
+6. analyzes each readable phase while recording per-phase diagnostics;
+7. writes CSV, optional XLSX, provenance, and a manifest;
+8. verifies the staged bundle;
+9. atomically moves it into the requested target.
 
 It returns a `PipelineResult`. An invalid phase can be recorded in `diagnostics` while other phases complete. CLI exit status is `0` when all analyzable items complete, `3` when a usable bundle contains error diagnostics for one or more items, and `2` when no phase is analyzable or a fatal input/configuration error occurs.
 
@@ -139,6 +140,7 @@ Downloads above `confirm_above` require `authorize_large_download=True`. Automat
 - `diffractscout.composition.parse_composition_text(text)`
 - `diffractscout.composition.chemsys_subsystems(elements, max_order=None)`
 - `diffractscout.selection.validate_discovery_settings(settings)`
+- `diffractscout.diffraction.validate_analysis_settings(settings)`
 - `diffractscout.structure.load_structure(path)`
 - `diffractscout.elasticity.discover_elastic_tensor(cif_path)`
 - `diffractscout.elasticity.validate_elastic_tensor(matrix_GPa, ...)`

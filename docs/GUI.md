@@ -17,6 +17,10 @@ A normal Python installation with Tk support is required. On Linux, the operatin
 
 Optional extra `.[gui-dnd]` installs `tkinterdnd2` for future drag-and-drop enhancements; the current GUI does not require it.
 
+## Layout and scrolling
+
+Dense forms (radiation, Cij, export options) live in **vertically scrollable** columns: use the mouse wheel or the right-hand scrollbar. Primary **Analyze / Run** actions stay **pinned under** the scroll area so they remain visible. The Activity log is in a **resizable vertical split** under the notebook—drag the sash to give the form more height on small screens. Default window size is about `1200×820` with a lower minimum (`900×640`).
+
 ## Local CIF analysis
 
 ![Local CIF analysis interface](assets/gui-local.png)
@@ -99,6 +103,8 @@ diffractscout quick-export path/to/cifs -o path/to/bundle_dir
 
 On Windows, drag CIF files or folders onto `quick_export_diffractscout.bat`. The script writes `<first-stem>_diffractscout.xlsx` next to the first input (bundle: `<stem>_diffractscout_bundle/`).
 
+An existing workbook is never replaced implicitly. Choose a different path or enable the explicit overwrite option; an authorized replacement is written through a temporary file so a failed copy does not expose a partial workbook.
+
 ## Activity log and completion states
 
 The Activity panel reports timestamps and separates informational, warning, and error diagnostics. A completed bundle can contain diagnostic errors for individual phases that failed while other phases succeeded. Completion messages therefore distinguish:
@@ -111,7 +117,7 @@ The `Open result folder` action is enabled after a result bundle has been writte
 
 ## Threading and window closure
 
-One pipeline task can run at a time. Run buttons are disabled while a worker thread is active, preventing duplicate downloads or simultaneous writes to the same target. Closing the window during a task requires confirmation. The scientific output transaction remains responsible for preserving an existing valid bundle when a run fails.
+One pipeline task can run at a time. Run buttons are disabled while a worker thread is active, preventing duplicate downloads or simultaneous writes to the same target. All run options are validated and snapshotted on the GUI thread before the worker starts, so later interface edits cannot change an in-flight run and the worker never reads Tk state. Closing the window during a task requires confirmation. The scientific output transaction remains responsible for preserving an existing valid bundle when a run fails.
 
 ## Headless smoke test
 

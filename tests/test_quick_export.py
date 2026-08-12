@@ -4,6 +4,7 @@ import pytest
 from openpyxl import load_workbook
 
 from diffractscout.elasticity_input import parse_cubic_cij
+from diffractscout.models import AnalysisSettings
 from diffractscout.pipeline import analyze_cifs
 from diffractscout.quick_export import main as quick_export_main
 from diffractscout.quick_export import quick_export
@@ -23,12 +24,51 @@ def test_quick_export_xlsx_writes_excel_and_bundle(demo_inputs: Path, tmp_path: 
     assert "Peaks" in workbook.sheetnames
 
 
+def test_quick_export_does_not_replace_existing_excel_without_authorization(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    excel = tmp_path / "existing.xlsx"
+    excel.write_bytes(b"user workbook")
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        quick_export([demo_inputs], excel)
+
+    assert excel.read_bytes() == b"user workbook"
+    assert not (tmp_path / "existing_bundle").exists()
+
+
+def test_quick_export_can_atomically_replace_existing_excel_when_authorized(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    excel = tmp_path / "existing.xlsx"
+    excel.write_bytes(b"old workbook")
+
+    result = quick_export([demo_inputs], excel, overwrite=True)
+
+    assert result.output_dir == (tmp_path / "existing_bundle").resolve()
+    assert excel.read_bytes() != b"old workbook"
+    assert load_workbook(excel, read_only=True).sheetnames
+
+
 def test_quick_export_directory_mode(demo_inputs: Path, tmp_path: Path) -> None:
     output = tmp_path / "lab_bundle"
     result = quick_export([demo_inputs], output)
     assert result.output_dir == output.resolve()
     assert (output / "results.xlsx").is_file()
     assert result.analyses[0].metadata.get("export_lab_views") is True
+
+
+def test_quick_export_keyword_overrides_apply_to_explicit_settings(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "overrides",
+        settings=AnalysisSettings(step_deg=0.02),
+        step_deg=0.05,
+        include_excel=False,
+    )
+    assert result.analyses[0].metadata["step_deg"] == pytest.approx(0.05)
 
 
 def test_quick_export_cli_entry(demo_inputs: Path, tmp_path: Path) -> None:

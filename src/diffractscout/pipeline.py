@@ -11,7 +11,7 @@ from typing import Iterable, Mapping, Sequence
 from uuid import uuid4
 
 from .composition import parse_composition_text
-from .diffraction import simulate_powder_pattern
+from .diffraction import simulate_powder_pattern, validate_analysis_settings
 from .elasticity import discover_elastic_tensor, validate_elastic_tensor
 from .exporters import export_result_bundle
 from .models import (
@@ -260,12 +260,16 @@ def _diagnostic_warnings(diagnostics: list[DiagnosticRecord]) -> list[str]:
     )
 
 
-def _verify_and_commit(target: Path, staging: Path) -> Path:
+def _verify_and_commit(target: Path, staging: Path, *, overwrite: bool) -> Path:
     report = verify_bundle(staging)
     if not report["ok"]:
         raise RuntimeError(
             "Generated bundle failed its integrity check: " + "; ".join(report["errors"])
         )
+    # Close the long-running transaction's time-of-check/time-of-use gap. A
+    # target created or modified during analysis must satisfy the same overwrite
+    # policy as it did before the run started.
+    _validate_output_target(target, overwrite=overwrite)
     _commit_staging_output(target, staging)
     return target / "manifest.json"
 
@@ -281,6 +285,7 @@ def analyze_cifs(
     elastic_overrides: Mapping[str, ElasticTensor] | None = None,
 ) -> PipelineResult:
     settings = settings or AnalysisSettings()
+    validate_analysis_settings(settings)
     _validate_input_output_separation(inputs, output_dir)
     paths = collect_cif_paths(inputs, recursive=recursive)
     if not paths:
@@ -312,7 +317,7 @@ def analyze_cifs(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
-        manifest = _verify_and_commit(target, staging)
+        manifest = _verify_and_commit(target, staging, overwrite=overwrite)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -346,12 +351,12 @@ def export_discovery(
     include_excel: bool = True,
     overwrite: bool = False,
 ) -> PipelineResult:
+    target = _validate_output_target(output_dir, overwrite=overwrite)
     discovery = discover_candidates(
         composition,
         provider,
         settings=discovery_settings,
     )
-    target = _validate_output_target(output_dir, overwrite=overwrite)
     staging = _create_staging_output(target)
     diagnostics = [
         DiagnosticRecord("discovery", "query", "warning", warning)
@@ -367,7 +372,7 @@ def export_discovery(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
-        manifest = _verify_and_commit(target, staging)
+        manifest = _verify_and_commit(target, staging, overwrite=overwrite)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -396,6 +401,14 @@ def run_pipeline(
     confirm_above: int = 200,
     authorize_large_download: bool = False,
 ) -> PipelineResult:
+    requested_analysis_settings = analysis_settings or AnalysisSettings(
+        include_elasticity=include_elasticity
+    )
+    if requested_analysis_settings.include_elasticity != include_elasticity:
+        requested_analysis_settings = replace(
+            requested_analysis_settings, include_elasticity=include_elasticity
+        )
+    validate_analysis_settings(requested_analysis_settings)
     if include_elasticity and not conventional_unit_cell:
         raise ValueError(
             "Primitive-cell downloads cannot be paired automatically with Materials Project "
@@ -404,6 +417,7 @@ def run_pipeline(
     if isinstance(confirm_above, bool) or not isinstance(confirm_above, int) or confirm_above < 1:
         raise ValueError("confirm_above must be a positive integer.")
 
+    target = _validate_output_target(output_dir, overwrite=overwrite)
     discovery = discover_candidates(
         composition,
         provider,
@@ -415,7 +429,6 @@ def run_pipeline(
             "without explicit authorization. Set authorize_large_download=True or reduce the query."
         )
 
-    target = _validate_output_target(output_dir, overwrite=overwrite)
     staging = _create_staging_output(target)
     diagnostics = [
         DiagnosticRecord("discovery", "query", "warning", warning)
@@ -429,11 +442,7 @@ def run_pipeline(
             conventional_unit_cell=conventional_unit_cell,
             include_elasticity=include_elasticity,
         )
-        settings = analysis_settings or AnalysisSettings(
-            include_elasticity=include_elasticity
-        )
-        if settings.include_elasticity != include_elasticity:
-            settings = replace(settings, include_elasticity=include_elasticity)
+        settings = requested_analysis_settings
 
         path_pairs: list[tuple[Path, ElasticTensor | None]] = []
         for item in downloads:
@@ -486,7 +495,7 @@ def run_pipeline(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
-        manifest = _verify_and_commit(target, staging)
+        manifest = _verify_and_commit(target, staging, overwrite=overwrite)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise

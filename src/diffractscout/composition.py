@@ -32,6 +32,20 @@ PERCENT_PAIR_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*([A-Z][a-z]?))\s*(?:wt%|at%|mass%|%)?",
     re.IGNORECASE,
 )
+_INPUT_TRANSLATION = str.maketrans(
+    {
+        "‐": "-",  # hyphen
+        "‑": "-",  # non-breaking hyphen
+        "‒": "-",  # figure dash
+        "–": "-",  # en dash
+        "—": "-",  # em dash
+        "−": "-",  # mathematical minus
+        "－": "-",  # full-width hyphen-minus
+        "＋": "+",
+        "，": ",",
+        "；": ";",
+    }
+)
 
 
 def normalize_element(symbol: str) -> str | None:
@@ -89,10 +103,11 @@ def parse_composition_text(text: str) -> ParsedComposition:
     elements: list[str] = []
     labels: list[str] = []
     notes: list[str] = []
-    material_ids = [item.lower() for item in MP_ID_RE.findall(raw)]
+    normalized_raw = raw.translate(_INPUT_TRANSLATION)
+    material_ids = [item.lower() for item in MP_ID_RE.findall(normalized_raw)]
     material_ids = list(dict.fromkeys(material_ids))
 
-    normalized_text = raw.lower().replace("＋", "+").replace("，", ",")
+    normalized_text = normalized_raw.lower()
     compact = re.sub(r"[^a-z0-9]+", "", normalized_text)
     for alias, alias_elements in ALLOY_ALIASES.items():
         if alias in compact:
@@ -100,21 +115,30 @@ def parse_composition_text(text: str) -> ParsedComposition:
             labels.append(alias)
             notes.append(f"alias_element_set_only:{alias}")
 
-    for match in CHEMSYS_RE.finditer(raw):
+    # Accept a complete chemical-system expression case-insensitively while
+    # keeping formula/prose token parsing conservative.
+    if re.fullmatch(r"[A-Za-z]{1,2}(?:-[A-Za-z]{1,2})+", normalized_raw):
+        parts = normalized_raw.split("-")
+        normalized = [normalize_element(part) for part in parts]
+        if normalized and all(normalized):
+            _append_unique(elements, [item for item in normalized if item])
+            labels.append("".join(item for item in normalized if item))
+
+    for match in CHEMSYS_RE.finditer(normalized_raw):
         parts = match.group(1).split("-")
         normalized = [normalize_element(part) for part in parts]
         if normalized and all(normalized):
             _append_unique(elements, [item for item in normalized if item])
             labels.append(match.group(1).replace("-", ""))
 
-    for match in PERCENT_PAIR_RE.finditer(raw):
+    for match in PERCENT_PAIR_RE.finditer(normalized_raw):
         symbol = match.group(1) or match.group(4) or ""
         normalized = normalize_element(symbol)
         if normalized:
             _append_unique(elements, [normalized])
 
     # Formula/grade tokens such as Ti6Al4V. Require at least two recognized elements.
-    for match in FORMULA_TOKEN_RE.finditer(raw.replace("-", "")):
+    for match in FORMULA_TOKEN_RE.finditer(normalized_raw.replace("-", "")):
         token = match.group(0)
         parsed = formula_elements(token)
         if len(parsed) >= 2:
@@ -124,7 +148,7 @@ def parse_composition_text(text: str) -> ParsedComposition:
     # Explicit additive notation, e.g. Ti-6Al-4V + Cu.
     for match in re.finditer(
         r"(?:\+|＋|/|、|和|加|with)\s*([A-Z][a-z]?)\b",
-        raw,
+        normalized_raw,
         flags=re.IGNORECASE,
     ):
         normalized = normalize_element(match.group(1))
@@ -133,7 +157,7 @@ def parse_composition_text(text: str) -> ParsedComposition:
 
     # Last-resort token parse for input such as "Ti Al V".
     if not elements and not material_ids:
-        for token in re.findall(r"\b[A-Z][a-z]?\b", raw):
+        for token in re.findall(r"\b[A-Z][a-z]?\b", normalized_raw):
             normalized = normalize_element(token)
             if normalized:
                 _append_unique(elements, [normalized])
