@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 import tempfile
@@ -53,7 +54,18 @@ def _copy_excel_atomic(source: Path, target: Path, *, overwrite: bool) -> None:
             temporary_name = handle.name
         temporary = Path(temporary_name)
         shutil.copy2(source, temporary)
-        temporary.replace(target)
+        if overwrite:
+            temporary.replace(target)
+        else:
+            try:
+                # Publish the completed file atomically without replacing a
+                # target created after the preflight check.
+                os.link(temporary, target)
+            except FileExistsError as exc:
+                raise FileExistsError(
+                    f"Excel output was created while exporting: {target}. "
+                    "The new file was preserved; rerun with overwrite=True only if intended."
+                ) from exc
     finally:
         if temporary_name:
             Path(temporary_name).unlink(missing_ok=True)

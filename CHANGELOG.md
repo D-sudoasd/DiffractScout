@@ -17,6 +17,7 @@ All notable changes are recorded here. The project follows semantic versioning a
 - Validated run-wide diffraction and discovery settings before copying local inputs, contacting providers, or starting GUI workers.
 - Snapshotted GUI run options on the Tk thread so background workers do not access mutable Tk state.
 - Required explicit overwrite authorization for existing quick-export workbooks and replaced authorized workbooks atomically.
+- Preserved workbooks created by another process during quick export when overwrite was not authorized.
 - Rechecked bundle and benchmark targets immediately before commit so files created during a long-running calculation are not silently replaced.
 - Rejected malformed or non-finite provider elasticity matrices instead of truncating oversized arrays to 6×6.
 - Applied Materials Project stability thresholds before server-side result limits, with strict local verification so qualifying candidates are not lost to post-filtering.
