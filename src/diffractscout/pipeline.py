@@ -7,12 +7,12 @@ import shutil
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 from uuid import uuid4
 
 from .composition import parse_composition_text
 from .diffraction import simulate_powder_pattern
-from .elasticity import discover_elastic_tensor
+from .elasticity import discover_elastic_tensor, validate_elastic_tensor
 from .exporters import export_result_bundle
 from .models import (
     AnalysisSettings,
@@ -161,17 +161,60 @@ def _commit_staging_output(target: Path, staging: Path) -> None:
             shutil.rmtree(backup, ignore_errors=True)
 
 
+def _lookup_elastic_override(
+    cif_path: Path,
+    overrides: Mapping[str, ElasticTensor] | None,
+) -> ElasticTensor | None:
+    """Match an override by CIF filename or stem (case-sensitive keys)."""
+
+    if not overrides:
+        return None
+    for key in (cif_path.name, cif_path.stem):
+        if key in overrides:
+            return overrides[key]
+    return None
+
+
+def _revalidate_user_tensor(tensor: ElasticTensor) -> ElasticTensor:
+    """Re-run validation so overrides cannot bypass stiffness checks."""
+
+    return validate_elastic_tensor(
+        tensor.stiffness_GPa,
+        source_provider=tensor.source_provider or "user_input",
+        source_record_id=tensor.source_record_id,
+        source_url=tensor.source_url,
+        methodology_url=tensor.methodology_url,
+        nature_of_data=tensor.nature_of_data or "user_input",
+        coordinate_frame=tensor.coordinate_frame,
+        raw_payload_path=tensor.raw_payload_path,
+    )
+
+
 def _copy_local_input(
     cif_path: Path,
     inputs_dir: Path,
     *,
     include_elasticity: bool,
+    elastic_override: ElasticTensor | None = None,
 ) -> tuple[Path, ElasticTensor | None]:
     digest = sha256_file(cif_path)
     target = _unique_input_target(cif_path, inputs_dir, digest)
     shutil.copy2(cif_path, target)
 
-    tensor = discover_elastic_tensor(cif_path) if include_elasticity else None
+    if not include_elasticity:
+        return target, None
+
+    if elastic_override is not None:
+        tensor = _revalidate_user_tensor(elastic_override)
+        if tensor.raw_payload_path is not None and tensor.raw_payload_path.is_file():
+            sidecar_target = target.with_name(
+                f"{target.stem}_elasticity{tensor.raw_payload_path.suffix}"
+            )
+            shutil.copy2(tensor.raw_payload_path, sidecar_target)
+            tensor.raw_payload_path = sidecar_target
+        return target, tensor
+
+    tensor = discover_elastic_tensor(cif_path)
     if tensor is not None and tensor.raw_payload_path is not None and tensor.raw_payload_path.is_file():
         sidecar_target = target.with_name(
             f"{target.stem}_elasticity{tensor.raw_payload_path.suffix}"
@@ -235,6 +278,7 @@ def analyze_cifs(
     recursive: bool = True,
     include_excel: bool = True,
     overwrite: bool = False,
+    elastic_overrides: Mapping[str, ElasticTensor] | None = None,
 ) -> PipelineResult:
     settings = settings or AnalysisSettings()
     _validate_input_output_separation(inputs, output_dir)
@@ -251,6 +295,11 @@ def analyze_cifs(
                 path,
                 inputs_dir,
                 include_elasticity=settings.include_elasticity,
+                elastic_override=(
+                    _lookup_elastic_override(path, elastic_overrides)
+                    if settings.include_elasticity
+                    else None
+                ),
             )
             for path in paths
         ]

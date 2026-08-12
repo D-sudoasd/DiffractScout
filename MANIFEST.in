@@ -1,6 +1,7 @@
 include pyproject.toml MANIFEST.in
 include README.md README.zh-CN.md LICENSE NOTICE.md AUTHORS.md CITATION.cff CHANGELOG.md
 include CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md GOVERNANCE.md SUPPORT.md ROADMAP.md
+include 启动DiffractScout.bat quick_export_diffractscout.bat
 recursive-include docs *.md *.svg *.png *.json
 recursive-include paper *.md *.bib *.svg *.png *.sh *.py
 recursive-include examples *.cif *.json *.md

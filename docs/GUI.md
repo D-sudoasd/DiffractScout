@@ -8,9 +8,14 @@ DiffractScout provides a Tk desktop interface for researchers who prefer to conf
 diffractscout-gui
 # equivalent
 diffractscout gui
+# or: python -m diffractscout gui
 ```
 
+On Windows, after an editable or environment install, double-click `启动DiffractScout.bat` in the repository root (it `cd`s to the script directory and tries `py -3 -m diffractscout gui`, then `diffractscout-gui`).
+
 A normal Python installation with Tk support is required. On Linux, the operating-system package is commonly named `python3-tk` or `tk`.
+
+Optional extra `.[gui-dnd]` installs `tkinterdnd2` for future drag-and-drop enhancements; the current GUI does not require it.
 
 ## Local CIF analysis
 
@@ -63,8 +68,36 @@ Energy and wavelength inputs must be finite and positive. The CLI also makes exp
 - `Profile points` rejects a requested grid above the configured count before allocation.
 - `Reciprocal candidates` rejects a conservative Miller-candidate estimate, and then the actual candidate list, above the configured limit.
 - Elasticity pairing calculates a directional modulus only for a valid 6×6 stiffness tensor with an explicitly compatible coordinate frame.
+- **Pair numerical elasticity sidecars** / **Evaluate frame-compatible elasticity** and **Write Excel workbook** appear under Outputs on each tab.
 
 The discrete indexed reflection table remains the primary scientific result. Profile parameters do not represent an inferred instrument function.
+
+## Parity and lab-oriented options (CLI / API)
+
+Several CIF2Peaks-parity settings are available on the shared analysis model. The desktop form currently exposes radiation, angular window, profile spacing, pseudo-Voigt η, resource guards, elasticity pairing, and Excel. The following are configured via CLI or Python `AnalysisSettings` (defaults apply when the GUI omits a control):
+
+| Control | Default in GUI path | CLI / settings |
+|---|---|---|
+| *d*-spacing filter | off (`d_min_A` / `d_max_A` = `None`) | `--d-min`, `--d-max` |
+| Profile lineshape | `pseudo_voigt` | `--profile-model` (`pseudo_voigt`, `gaussian`, `lorentzian`) |
+| Pattern axis label | `two_theta` | `--pattern-axis` (`two_theta`, `d_spacing`, `q`, `g`) |
+| Laboratory Excel views | on (`export_lab_views=True`) | `--no-lab-views` to disable Chinese `推荐峰表` / `使用说明` sheets |
+| Continuous pattern series | on | `--no-patterns` |
+| Figure generation request | off | `--figures`, `--figure-preset` (requires optional `.[figures]` when exporters draw plots) |
+
+Laboratory views add bilingual convenience sheets to `results.xlsx` without changing the English canonical CSV columns. See [SCHEMA_ALIASES.md](SCHEMA_ALIASES.md) and [ENGINE_PARITY.md](ENGINE_PARITY.md).
+
+## Quick export (no full form)
+
+For a Cu Kα, 5–120° lab-default one-shot export without opening the notebook UI:
+
+```bash
+diffractscout-quick-export path/to/sample.cif -o path/to/sample_out.xlsx
+# or
+diffractscout quick-export path/to/cifs -o path/to/bundle_dir
+```
+
+On Windows, drag CIF files or folders onto `quick_export_diffractscout.bat`. The script writes `<first-stem>_diffractscout.xlsx` next to the first input (bundle: `<stem>_diffractscout_bundle/`).
 
 ## Activity log and completion states
 

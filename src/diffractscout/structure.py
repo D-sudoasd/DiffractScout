@@ -14,6 +14,9 @@ import numpy as np
 from .models import StructureRecord
 from .utils import sha256_file
 
+# CODATA 2018 Avogadro constant; density uses Å³ → cm³ via 1e-24.
+AVOGADRO_PER_MOL = 6.02214076e23
+
 CELL_TAGS = (
     "_cell_length_a",
     "_cell_length_b",
@@ -221,6 +224,61 @@ def _spglib_crosscheck(
     symbol = str(dataset.international)
     status = "match" if number == declared_number else "mismatch"
     return number, symbol, status
+
+
+def unit_cell_formula_weight_g_mol(small: gemmi.SmallStructure) -> float | None:
+    """Sum elemental atomic weights × occupancy over expanded unit-cell sites.
+
+    Uses ``gemmi.Element.weight`` (IUPAC conventional atomic weights). Returns
+    None when no occupied sites contribute a finite mass.
+    """
+
+    total = 0.0
+    counted = False
+    for site in small.get_all_unit_cell_sites():
+        occ = float(site.occ)
+        if occ <= 0:
+            continue
+        try:
+            mass = float(site.element.weight)
+        except Exception:
+            return None
+        if not math.isfinite(mass) or mass <= 0:
+            return None
+        total += occ * mass
+        counted = True
+    if not counted or not math.isfinite(total) or total <= 0:
+        return None
+    return float(total)
+
+
+def density_g_cm3(formula_weight_g_mol: float, volume_A3: float) -> float | None:
+    """Crystallographic density ρ = M / (N_A · V) with V in cm³ from Å³."""
+
+    if not math.isfinite(formula_weight_g_mol) or formula_weight_g_mol <= 0:
+        return None
+    if not math.isfinite(volume_A3) or volume_A3 <= 0:
+        return None
+    # V_cm3 = V_A3 * 1e-24; ρ = M / (N_A * V_cm3) = M * 1e24 / (N_A * V_A3)
+    return float(formula_weight_g_mol * 1.0e24 / (AVOGADRO_PER_MOL * volume_A3))
+
+
+def structure_mass_metadata(structure: StructureRecord) -> dict[str, float | None]:
+    """Return unit-cell formula weight and density for analysis metadata."""
+
+    small = structure.small_structure
+    volume = float(small.cell.volume) if small is not None else float("nan")
+    formula_weight = unit_cell_formula_weight_g_mol(small) if small is not None else None
+    density = (
+        density_g_cm3(formula_weight, volume)
+        if formula_weight is not None and math.isfinite(volume)
+        else None
+    )
+    return {
+        "cell_volume_A3": float(volume) if math.isfinite(volume) else None,
+        "formula_weight_g_mol": formula_weight,
+        "density_g_cm3": density,
+    }
 
 
 def load_structure(cif_path: str | Path) -> StructureRecord:

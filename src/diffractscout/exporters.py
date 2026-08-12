@@ -14,6 +14,12 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .diffraction import SCIENTIFIC_BOUNDARY
+from .export_views import (
+    BEGINNER_PEAK_HEADERS_ZH,
+    beginner_peak_rows_zh,
+    safe_excel_sheet_title,
+    user_guide_rows,
+)
 from .models import (
     AnalysisSettings,
     CandidateRecord,
@@ -62,6 +68,9 @@ PHASE_HEADERS = [
     "wavelength_A",
     "energy_keV",
     "wavelength_source",
+    "formula_weight_g_mol",
+    "density_g_cm3",
+    "cell_volume_A3",
     "elastic_status",
     "elastic_source_provider",
     "elastic_source_record_id",
@@ -77,6 +86,7 @@ PEAK_HEADERS = [
     "space_group",
     "h",
     "k",
+    "i",
     "l",
     "hkl",
     "family_label",
@@ -84,9 +94,16 @@ PEAK_HEADERS = [
     "d_spacing_A",
     "theta_deg",
     "two_theta_deg",
+    "two_theta_cu_ka_deg",
     "q_invA",
     "g_invA",
+    "sin_theta",
+    "cos_theta",
+    "sin_theta_over_lambda",
+    "sin2_theta_over_lambda2",
     "structure_factor_sq",
+    "mean_structure_factor_sq_per_multiplicity",
+    "mean_structure_factor_abs_per_multiplicity",
     "intensity_no_lp",
     "lp_factor",
     "intensity_with_lp",
@@ -95,14 +112,24 @@ PEAK_HEADERS = [
     "volume_normalized_intensity_no_lp",
     "material_scattering_factor_R_hkl",
     "material_scattering_factor_R_hkl_no_lp",
+    "inverse_R_hkl",
+    "inverse_R_hkl_no_lp",
+    "phase_relative_R_hkl_pct",
+    "phase_relative_R_hkl_no_lp_pct",
     "rank_by_intensity",
     "rank_by_R_hkl",
     "rank_by_R_hkl_no_lp",
+    "is_multi_family_peak",
+    "coincident_hkl_family_count",
     "young_modulus_hkl_normal_GPa",
     "elastic_status",
     "elastic_note",
     "wavelength_A",
     "energy_keV",
+    "formula_weight_g_mol",
+    "density_g_cm3",
+    "cell_volume_A3",
+    "r_hkl_model_note",
     "scientific_boundary",
 ]
 ELASTICITY_HEADERS = [
@@ -124,6 +151,11 @@ PATTERN_HEADERS = [
     "phase_name",
     "cif_name",
     "two_theta_deg",
+    "d_A",
+    "q_invA",
+    "g_invA",
+    "x_axis_mode",
+    "x",
     "relative_intensity",
     "wavelength_A",
 ]
@@ -246,6 +278,7 @@ def phase_rows(analyses: list[PhaseAnalysis]) -> list[dict[str, Any]]:
         structure = analysis.structure
         cell = structure.cell_parameters
         tensor = analysis.elastic_tensor
+        meta = analysis.metadata
         rows.append(
             {
                 "phase_name": analysis.phase_name,
@@ -269,11 +302,14 @@ def phase_rows(analyses: list[PhaseAnalysis]) -> list[dict[str, Any]]:
                 "wavelength_A": analysis.wavelength_A,
                 "energy_keV": analysis.energy_keV,
                 "wavelength_source": analysis.wavelength_source,
+                "formula_weight_g_mol": meta.get("formula_weight_g_mol"),
+                "density_g_cm3": meta.get("density_g_cm3"),
+                "cell_volume_A3": meta.get("cell_volume_A3"),
                 "elastic_status": (
                     tensor.status
                     if tensor
                     else "not_requested"
-                    if analysis.metadata.get("elasticity_requested") is False
+                    if meta.get("elasticity_requested") is False
                     else "not_available"
                 ),
                 "elastic_source_provider": tensor.source_provider if tensor else "",
@@ -290,7 +326,12 @@ def peak_rows(analyses: list[PhaseAnalysis]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for analysis in analyses:
         structure = analysis.structure
+        meta = analysis.metadata
         for reflection in analysis.reflections:
+            if reflection.i is not None:
+                hkl_label = f"({reflection.h} {reflection.k} {reflection.i} {reflection.l})"
+            else:
+                hkl_label = f"({reflection.h} {reflection.k} {reflection.l})"
             rows.append(
                 {
                     "phase_name": analysis.phase_name,
@@ -300,16 +341,28 @@ def peak_rows(analyses: list[PhaseAnalysis]) -> list[dict[str, Any]]:
                     "space_group": structure.space_group_symbol,
                     "h": reflection.h,
                     "k": reflection.k,
+                    "i": reflection.i,
                     "l": reflection.l,
-                    "hkl": f"({reflection.h} {reflection.k} {reflection.l})",
+                    "hkl": hkl_label,
                     "family_label": reflection.family_label,
                     "multiplicity": reflection.multiplicity,
                     "d_spacing_A": reflection.d_spacing_A,
                     "theta_deg": reflection.theta_deg,
                     "two_theta_deg": reflection.two_theta_deg,
+                    "two_theta_cu_ka_deg": reflection.two_theta_cu_ka_deg,
                     "q_invA": reflection.q_invA,
                     "g_invA": reflection.g_invA,
+                    "sin_theta": reflection.sin_theta,
+                    "cos_theta": reflection.cos_theta,
+                    "sin_theta_over_lambda": reflection.sin_theta_over_lambda,
+                    "sin2_theta_over_lambda2": reflection.sin2_theta_over_lambda2,
                     "structure_factor_sq": reflection.structure_factor_sq,
+                    "mean_structure_factor_sq_per_multiplicity": (
+                        reflection.mean_structure_factor_sq_per_multiplicity
+                    ),
+                    "mean_structure_factor_abs_per_multiplicity": (
+                        reflection.mean_structure_factor_abs_per_multiplicity
+                    ),
                     "intensity_no_lp": reflection.intensity_no_lp,
                     "lp_factor": reflection.lp_factor,
                     "intensity_with_lp": reflection.intensity_with_lp,
@@ -318,14 +371,24 @@ def peak_rows(analyses: list[PhaseAnalysis]) -> list[dict[str, Any]]:
                     "volume_normalized_intensity_no_lp": reflection.material_scattering_factor_R_hkl_no_lp,
                     "material_scattering_factor_R_hkl": reflection.material_scattering_factor_R_hkl,
                     "material_scattering_factor_R_hkl_no_lp": reflection.material_scattering_factor_R_hkl_no_lp,
+                    "inverse_R_hkl": reflection.inverse_R_hkl,
+                    "inverse_R_hkl_no_lp": reflection.inverse_R_hkl_no_lp,
+                    "phase_relative_R_hkl_pct": reflection.phase_relative_R_hkl_pct,
+                    "phase_relative_R_hkl_no_lp_pct": reflection.phase_relative_R_hkl_no_lp_pct,
                     "rank_by_intensity": reflection.rank_by_intensity,
                     "rank_by_R_hkl": reflection.rank_by_R_hkl,
                     "rank_by_R_hkl_no_lp": reflection.rank_by_R_hkl_no_lp,
+                    "is_multi_family_peak": reflection.is_multi_family_peak,
+                    "coincident_hkl_family_count": reflection.coincident_hkl_family_count,
                     "young_modulus_hkl_normal_GPa": reflection.young_modulus_hkl_normal_GPa,
                     "elastic_status": reflection.elastic_status,
                     "elastic_note": reflection.elastic_note,
                     "wavelength_A": analysis.wavelength_A,
                     "energy_keV": analysis.energy_keV,
+                    "formula_weight_g_mol": meta.get("formula_weight_g_mol"),
+                    "density_g_cm3": meta.get("density_g_cm3"),
+                    "cell_volume_A3": meta.get("cell_volume_A3"),
+                    "r_hkl_model_note": reflection.r_hkl_model_note,
                     "scientific_boundary": SCIENTIFIC_BOUNDARY,
                 }
             )
@@ -360,19 +423,67 @@ def elasticity_rows(analyses: list[PhaseAnalysis]) -> list[dict[str, Any]]:
     return rows
 
 
+def _pattern_axis_coordinates(
+    two_theta_deg: float,
+    wavelength_A: float,
+    x_axis_mode: str,
+) -> tuple[float | None, float | None, float | None, float | None]:
+    """Return d_A, q_invA, g_invA, and selected x for a profile sample."""
+
+    theta_rad = math.radians(float(two_theta_deg) / 2.0)
+    sin_theta = math.sin(theta_rad)
+    if not math.isfinite(sin_theta) or sin_theta <= 0 or not math.isfinite(wavelength_A) or wavelength_A <= 0:
+        d_A = None
+    else:
+        d_A = float(wavelength_A) / (2.0 * sin_theta)
+        if not math.isfinite(d_A) or d_A <= 0:
+            d_A = None
+    if d_A is None:
+        q_invA = None
+        g_invA = None
+    else:
+        q_invA = float(2.0 * math.pi / d_A)
+        g_invA = float(1.0 / d_A)
+        if not math.isfinite(q_invA):
+            q_invA = None
+        if not math.isfinite(g_invA):
+            g_invA = None
+    mode = str(x_axis_mode or "two_theta")
+    if mode == "d_spacing":
+        x_value = d_A
+    elif mode == "q":
+        x_value = q_invA
+    elif mode == "g":
+        x_value = g_invA
+    else:
+        x_value = float(two_theta_deg)
+    return d_A, q_invA, g_invA, x_value
+
+
 def pattern_rows(analyses: list[PhaseAnalysis]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for analysis in analyses:
+        x_axis_mode = str(analysis.metadata.get("pattern_axis") or "two_theta")
+        wavelength = float(analysis.wavelength_A)
         for angle, intensity in zip(
             analysis.two_theta_grid,
             analysis.intensity_profile,
             strict=True,
         ):
+            two_theta = float(angle)
+            d_A, q_invA, g_invA, x_value = _pattern_axis_coordinates(
+                two_theta, wavelength, x_axis_mode
+            )
             rows.append(
                 {
                     "phase_name": analysis.phase_name,
                     "cif_name": analysis.structure.cif_path.name,
-                    "two_theta_deg": float(angle),
+                    "two_theta_deg": two_theta,
+                    "d_A": d_A,
+                    "q_invA": q_invA,
+                    "g_invA": g_invA,
+                    "x_axis_mode": x_axis_mode,
+                    "x": x_value,
                     "relative_intensity": float(intensity),
                     "wavelength_A": analysis.wavelength_A,
                 }
@@ -417,6 +528,31 @@ def _add_sheet(
             cell.alignment = Alignment(vertical="top", wrap_text=True)
 
 
+def _add_guide_sheet(workbook: Workbook, title: str, rows: list[list[str]]) -> None:
+    sheet = workbook.create_sheet(title=title)
+    if not rows:
+        sheet.append(["no rows", ""])
+    else:
+        for row in rows:
+            sheet.append([_cell_value(cell) for cell in row])
+    sheet.freeze_panes = "A2"
+    header_fill = PatternFill("solid", fgColor="16324F")
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for column_index in range(1, 3):
+        sampled = [
+            str(_cell_value(row[column_index - 1]) if column_index - 1 < len(row) else "")
+            for row in rows[:200]
+        ] or [""]
+        width = min(max(max(len(value) for value in sampled) + 2, 12), 72)
+        sheet.column_dimensions[get_column_letter(column_index)].width = width
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+
 def write_excel_workbook(
     path: Path,
     *,
@@ -428,6 +564,9 @@ def write_excel_workbook(
     downloads: list[dict[str, Any]],
     diagnostics: list[dict[str, Any]],
     patterns: list[dict[str, Any]],
+    analyses: list[PhaseAnalysis] | None = None,
+    export_lab_views: bool = False,
+    include_patterns: bool = True,
 ) -> Path:
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -438,7 +577,23 @@ def write_excel_workbook(
     _add_sheet(workbook, "Candidates", candidates, CANDIDATE_HEADERS)
     _add_sheet(workbook, "Downloads", downloads, DOWNLOAD_HEADERS)
     _add_sheet(workbook, "Diagnostics", diagnostics, DIAGNOSTIC_HEADERS)
-    _add_sheet(workbook, "Patterns", patterns, PATTERN_HEADERS)
+    if include_patterns:
+        _add_sheet(workbook, "Patterns", patterns, PATTERN_HEADERS)
+    if export_lab_views:
+        zh_headers = list(BEGINNER_PEAK_HEADERS_ZH.keys())
+        _add_sheet(workbook, "推荐峰表", beginner_peak_rows_zh(peaks), zh_headers)
+        _add_guide_sheet(workbook, "使用说明", user_guide_rows())
+        analysis_list = analyses or []
+        if 0 < len(analysis_list) <= 20:
+            used_titles: set[str] = set(workbook.sheetnames)
+            for analysis in analysis_list:
+                if not analysis.reflections:
+                    continue
+                phase_peaks = [row for row in peaks if row.get("phase_name") == analysis.phase_name]
+                if not phase_peaks:
+                    continue
+                title = safe_excel_sheet_title(f"峰_{analysis.phase_name}", used=used_titles)
+                _add_sheet(workbook, title, phase_peaks, PEAK_HEADERS)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -465,6 +620,11 @@ def _summary_rows(
         {"key": "input_mode", "value": settings.input_mode},
         {"key": "source_preset", "value": settings.source_preset},
         {"key": "two_theta_range_deg", "value": [settings.two_theta_min_deg, settings.two_theta_max_deg]},
+        {"key": "profile_model", "value": settings.profile_model},
+        {"key": "d_min_A", "value": settings.d_min_A},
+        {"key": "d_max_A", "value": settings.d_max_A},
+        {"key": "pattern_axis", "value": settings.pattern_axis},
+        {"key": "export_lab_views", "value": settings.export_lab_views},
         {"key": "scientific_boundary", "value": SCIENTIFIC_BOUNDARY},
     ]
 
@@ -528,7 +688,7 @@ def export_result_bundle(
     phases = phase_rows(analyses)
     peaks = peak_rows(analyses)
     elasticity = elasticity_rows(analyses)
-    patterns = pattern_rows(analyses)
+    patterns = pattern_rows(analyses) if settings.include_patterns else []
     if include_excel:
         workbook_tables = {
             "Phases": phases,
@@ -536,8 +696,9 @@ def export_result_bundle(
             "Elasticity": elasticity,
             "Candidates": candidates,
             "Downloads": download_table,
-            "Patterns": patterns,
         }
+        if settings.include_patterns:
+            workbook_tables["Patterns"] = patterns
         for title, rows in workbook_tables.items():
             if len(rows) > EXCEL_DATA_ROW_LIMIT:
                 diagnostics.append(
@@ -555,7 +716,8 @@ def export_result_bundle(
 
     _write_csv(output / "phase_summary.csv", phases, PHASE_HEADERS)
     _write_csv(output / "peak_reference.csv", peaks, PEAK_HEADERS)
-    _write_csv(output / "pattern_profiles.csv", patterns, PATTERN_HEADERS)
+    if settings.include_patterns:
+        _write_csv(output / "pattern_profiles.csv", patterns, PATTERN_HEADERS)
     _write_csv(output / "elasticity.csv", elasticity, ELASTICITY_HEADERS)
     _write_csv(output / "candidate_index.csv", candidates, CANDIDATE_HEADERS)
     _write_csv(output / "download_index.csv", download_table, DOWNLOAD_HEADERS)
@@ -596,6 +758,16 @@ def export_result_bundle(
                 "they are not crystallographic residual factors or standardized QPA coefficients"
             ),
             "elastic_modulus": "E(n) = 1 / (q(n)^T S q(n)) under engineering-shear Voigt convention",
+            "lab_views_schema": (
+                "When export_lab_views is true, results.xlsx adds 推荐峰表 (Chinese beginner headers "
+                "mapped by BEGINNER_PEAK_HEADERS_ZH), 使用说明 (two-column guide), and optional "
+                "per-phase peak sheets (≤20 phases). Canonical English sheets and CSV columns remain "
+                "the machine-readable schema; lab views are additive presentation only."
+            ),
+            "pattern_axis_columns": (
+                "pattern_profiles.csv always includes two_theta_deg, d_A, q_invA, g_invA, "
+                "x_axis_mode (settings.pattern_axis), x (selected axis value), and relative_intensity"
+            ),
         },
         "scientific_boundary": SCIENTIFIC_BOUNDARY,
         "excel_data_row_limit": EXCEL_DATA_ROW_LIMIT,
@@ -615,7 +787,25 @@ def export_result_bundle(
             downloads=download_table,
             diagnostics=diagnostic_table,
             patterns=patterns,
+            analyses=analyses,
+            export_lab_views=bool(settings.export_lab_views),
+            include_patterns=bool(settings.include_patterns),
         )
+
+    if settings.include_figures and analyses:
+        from .plotting import export_phase_figures
+
+        figures_dir = output / "figures"
+        figure_preset = settings.figure_preset or "publication"
+        multi = len(analyses) > 1
+        for index, analysis in enumerate(analyses, start=1):
+            export_phase_figures(
+                analysis,
+                figures_dir,
+                preset=figure_preset,
+                formats=("svg", "png"),
+                index=index if multi else None,
+            )
 
     files: list[dict[str, Any]] = []
     for path in sorted(output.rglob("*")):
@@ -624,20 +814,23 @@ def export_result_bundle(
         if not path.is_file() or path.name == "manifest.json":
             continue
         relative = path.relative_to(output).as_posix()
+        suffix = path.suffix.lower()
+        if relative.startswith("inputs/"):
+            role = "source_input"
+        elif relative.startswith("figures/") or suffix in {".svg", ".png", ".pdf", ".eps", ".tif", ".tiff"}:
+            role = "figure"
+        elif suffix in {".csv", ".xlsx"}:
+            role = "tabular_result"
+        elif suffix == ".json":
+            role = "provenance"
+        else:
+            role = "documentation"
         files.append(
             {
                 "path": relative,
                 "sha256": sha256_file(path),
                 "size_bytes": path.stat().st_size,
-                "role": (
-                    "source_input"
-                    if relative.startswith("inputs/")
-                    else "tabular_result"
-                    if path.suffix.lower() in {".csv", ".xlsx"}
-                    else "provenance"
-                    if path.suffix.lower() == ".json"
-                    else "documentation"
-                ),
+                "role": role,
             }
         )
     manifest = {

@@ -38,6 +38,14 @@ def _analysis_settings(args: argparse.Namespace) -> AnalysisSettings:
         include_elasticity=not args.no_elasticity,
         max_profile_points=args.max_profile_points,
         max_reflection_estimate=args.max_reflection_estimate,
+        d_min_A=args.d_min,
+        d_max_A=args.d_max,
+        profile_model=args.profile_model,
+        pattern_axis=args.pattern_axis,
+        include_figures=bool(args.figures),
+        figure_preset=args.figure_preset,
+        export_lab_views=not args.no_lab_views,
+        include_patterns=not args.no_patterns,
     )
 
 
@@ -108,6 +116,32 @@ def _add_analysis_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-elasticity", action="store_true", help="Do not discover, copy, or calculate paired elastic data.")
     parser.add_argument("--max-profile-points", type=int, default=1_000_000, help="Safety limit for the generated display-profile grid.")
     parser.add_argument("--max-reflection-estimate", type=int, default=2_000_000, help="Safety limit for reciprocal-lattice candidate generation.")
+    parser.add_argument("--d-min", type=float, default=None, dest="d_min", help="Minimum d-spacing filter in Å.")
+    parser.add_argument("--d-max", type=float, default=None, dest="d_max", help="Maximum d-spacing filter in Å.")
+    parser.add_argument(
+        "--profile-model",
+        choices=("pseudo_voigt", "gaussian", "lorentzian"),
+        default="pseudo_voigt",
+        help="Display-profile lineshape model.",
+    )
+    parser.add_argument(
+        "--pattern-axis",
+        choices=("two_theta", "d_spacing", "q", "g"),
+        default="two_theta",
+        help="Primary axis label for continuous pattern exports.",
+    )
+    parser.add_argument("--figures", action="store_true", help="Request figure generation when exporters support it.")
+    parser.add_argument("--figure-preset", default="publication", help="Named figure style preset.")
+    parser.add_argument(
+        "--no-lab-views",
+        action="store_true",
+        help="Skip laboratory convenience views in the result bundle.",
+    )
+    parser.add_argument(
+        "--no-patterns",
+        action="store_true",
+        help="Skip continuous powder-pattern series in exports.",
+    )
     parser.add_argument("--no-excel", action="store_true", help="Skip results.xlsx; CSV and JSON remain enabled.")
     parser.add_argument("--overwrite", action="store_true", help="Replace only an existing DiffractScout output bundle.")
     parser.add_argument("--json", action="store_true", help="Print the final summary as JSON.")
@@ -185,6 +219,15 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("-o", "--output", required=True)
     benchmark.add_argument("--overwrite", action="store_true")
     benchmark.add_argument("--json", action="store_true")
+
+    quick = subparsers.add_parser(
+        "quick-export",
+        help="One-shot local CIF analysis with lab-friendly defaults (Excel + verifiable bundle).",
+    )
+    quick.add_argument("inputs", nargs="+", help="CIF files or directories.")
+    quick.add_argument("-o", "--output", required=True, help="Bundle directory or .xlsx path.")
+    quick.add_argument("--no-recursive", action="store_true")
+    _add_analysis_options(quick)
 
     subparsers.add_parser("gui", help="Launch the optional Tk desktop interface.")
     return parser
@@ -274,6 +317,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"Manifest: {report['manifest_path']}")
                 print("PASS" if report["all_passed"] and verification["ok"] else "FAIL")
             return 0 if report["all_passed"] and verification["ok"] else 2
+
+        if args.command == "quick-export":
+            from .quick_export import quick_export
+
+            result = quick_export(
+                args.inputs,
+                args.output,
+                settings=_analysis_settings(args),
+                recursive=not args.no_recursive,
+                include_excel=not args.no_excel,
+                overwrite=args.overwrite,
+            )
+            _print_result(result, as_json=args.json)
+            return _pipeline_exit_code(result)
 
         if args.command == "gui":
             from .gui import main as gui_main
