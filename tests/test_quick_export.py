@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 
 import pytest
 from openpyxl import load_workbook
@@ -7,7 +8,7 @@ from diffractscout.elasticity_input import parse_cubic_cij
 from diffractscout.models import AnalysisSettings
 from diffractscout.pipeline import analyze_cifs
 from diffractscout.quick_export import main as quick_export_main
-from diffractscout.quick_export import quick_export
+from diffractscout.quick_export import _copy_excel_atomic, quick_export
 from diffractscout.validation import verify_bundle
 
 
@@ -35,6 +36,29 @@ def test_quick_export_does_not_replace_existing_excel_without_authorization(
 
     assert excel.read_bytes() == b"user workbook"
     assert not (tmp_path / "existing_bundle").exists()
+
+
+def test_atomic_excel_copy_preserves_target_created_during_export(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source.xlsx"
+    target = tmp_path / "result.xlsx"
+    source.write_bytes(b"completed-workbook")
+
+    real_copy2 = shutil.copy2
+
+    def racing_copy(source_path: Path, temporary_path: Path) -> Path:
+        copied = real_copy2(source_path, temporary_path)
+        target.write_bytes(b"external-file")
+        return copied
+
+    monkeypatch.setattr("diffractscout.quick_export.shutil.copy2", racing_copy)
+
+    with pytest.raises(FileExistsError, match="created while exporting"):
+        _copy_excel_atomic(source, target, overwrite=False)
+
+    assert target.read_bytes() == b"external-file"
+    assert not list(tmp_path.glob(".result.xlsx.*.tmp"))
 
 
 def test_quick_export_can_atomically_replace_existing_excel_when_authorized(
