@@ -35,6 +35,20 @@ The source projects were connected by adjacent files and naming conventions. Dif
 - Voigt engineering-shear convention for hkl-normal Young's modulus.
 - CSV/Excel export intended for Origin, Excel and Python workflows.
 
+## CIF2Peaks UX → module mapping
+
+Desktop and lab-facing behaviour from CIF2Peaks was reimplemented (not vendored as Tk UI) into headless modules consumed by CLI, GUI, and `quick_export`:
+
+| DiffractScout module | Role relative to CIF2Peaks UX |
+|---|---|
+| `hkl.py` | Miller / Miller–Bravais labels and family helpers for peak tables |
+| `export_views.py` | Laboratory Excel views: Chinese beginner peak headers and usage-guide sheets |
+| `plotting` / figure flags | Optional figure request path (`include_figures`, `figure_preset`; exporters may no-op until matplotlib extras are used) |
+| `elasticity_input.py` | User-supplied Cij parsing helpers without Tk (cubic / matrix text) |
+| `quick_export.py` | One-shot local export with Cu Kα lab defaults and optional `.xlsx` path shortcut |
+
+Canonical intensity names and legacy `R_hkl` aliases are documented in `SCHEMA_ALIASES.md`; engine differences versus CIF2Peaks/pymatgen are in `ENGINE_PARITY.md`.
+
 ## Attribution
 
 Both source repositories were licensed under MIT with copyright `2026 D-sudoasd`. DiffractScout is licensed under MIT and retains the source notice in `NOTICE.md`. Git history in the new repository records subsequent modifications; the source snapshot table provides the audit trail for the initial merge.

@@ -4,6 +4,16 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ## [Unreleased]
 
+### Added
+
+- Windows launchers: `启动DiffractScout.bat` (GUI) and `quick_export_diffractscout.bat` (drag-and-drop quick-export with Excel next to the first input).
+- Packaging stub `scripts/package_windows_portable.py` documenting a future PyInstaller portable layout (`--help` / `--print-recipe`; no freeze yet).
+- Optional dependencies `figures` (matplotlib) and `gui-dnd` (tkinterdnd2); `paper` remains as a matplotlib alias.
+- Console entry point `diffractscout-quick-export` and GUI entry point `diffractscout-gui` documented alongside `diffractscout`.
+- Documentation for CIF2Peaks parity features (lab Excel views, *d*-range filters, bilingual lab sheets, quick-export, figures) in README / README.zh-CN, GUI controls in `docs/GUI.md`, and module mapping in `docs/SOURCE_LINEAGE.md`.
+
+### Notes
+
 - Awaiting the first public GitHub release, archived software DOI, and external validation cases.
 
 ## [0.3.0] - 2026-08-12

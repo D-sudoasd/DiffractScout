@@ -54,12 +54,22 @@ test = [
   "PyYAML>=6.0",
   "tomli>=2.0; python_version < '3.11'",
 ]
+# Optional display figures and JOSS paper figure regeneration.
+figures = [
+  "matplotlib>=3.7",
+]
+# Alias kept for existing paper/build docs.
 paper = [
   "matplotlib>=3.7",
+]
+# Optional Tk drag-and-drop helpers for future desktop UX (not required by core GUI).
+"gui-dnd" = [
+  "tkinterdnd2>=0.3.0",
 ]
 
 [project.scripts]
 diffractscout = "diffractscout.cli:main"
+diffractscout-quick-export = "diffractscout.quick_export:main"
 
 [project.gui-scripts]
 diffractscout-gui = "diffractscout.gui:main"

@@ -11,7 +11,9 @@ import gemmi
 import numpy as np
 
 from .elasticity import SUPPORTED_DIRECTIONAL_FRAMES, young_modulus_hkl_normal_GPa
+from .hkl import family_label_hkl, miller_bravais_i, uses_miller_bravais
 from .models import AnalysisSettings, ElasticTensor, PhaseAnalysis, ReflectionRecord, StructureRecord
+from .structure import structure_mass_metadata
 from .utils import package_versions, utc_now_iso
 
 ENERGY_WAVELENGTH_KEV_A = 12.398419843320026
@@ -23,6 +25,9 @@ X_RAY_SOURCES_A: dict[str, float | None] = {
     "Ag Ka": 0.5594,
     "Custom": None,
 }
+CU_KA_WAVELENGTH_A = float(X_RAY_SOURCES_A["Cu Ka"])  # type: ignore[arg-type]
+PROFILE_MODELS = frozenset({"pseudo_voigt", "gaussian", "lorentzian"})
+PATTERN_AXES = frozenset({"two_theta", "d_spacing", "q", "g"})
 
 SCIENTIFIC_BOUNDARY = (
     "The output is a kinematic theoretical powder reference. It is not phase identification, "
@@ -64,6 +69,57 @@ def resolve_wavelength(settings: AnalysisSettings) -> tuple[float, float | None,
     return wavelength, ENERGY_WAVELENGTH_KEV_A / wavelength, f"source_preset:{settings.source_preset}"
 
 
+def two_theta_for_d(d_spacing_A: float, wavelength_A: float) -> float | None:
+    """Bragg 2θ (degrees) for spacing d and wavelength λ, or None if inaccessible."""
+
+    if not np.isfinite(d_spacing_A) or not np.isfinite(wavelength_A):
+        return None
+    if d_spacing_A <= 0 or wavelength_A <= 0:
+        return None
+    argument = wavelength_A / (2.0 * d_spacing_A)
+    if argument <= 0 or argument > 1.0:
+        return None
+    return float(np.rad2deg(2.0 * np.arcsin(argument)))
+
+
+def apply_d_range_to_settings(settings: AnalysisSettings) -> AnalysisSettings:
+    """Narrow the 2θ window by intersection with Bragg angles from d bounds.
+
+    Larger d maps to smaller 2θ. When ``d_min_A`` / ``d_max_A`` are set, the
+    search window becomes the intersection of the user 2θ range with the Bragg
+    interval implied by those d limits. Reflection-level d filtering is still
+    applied after geometry so peaks outside the d window are dropped even if
+    the angular intersection cannot fully express a one-sided bound.
+    """
+
+    if settings.d_min_A is None and settings.d_max_A is None:
+        return settings
+    wavelength, _, _ = resolve_wavelength(settings)
+    tmin = float(settings.two_theta_min_deg)
+    tmax = float(settings.two_theta_max_deg)
+    if settings.d_max_A is not None:
+        # d_max → lower 2θ bound
+        tt = two_theta_for_d(float(settings.d_max_A), wavelength)
+        if tt is not None:
+            tmin = max(tmin, tt)
+    if settings.d_min_A is not None:
+        # d_min → upper 2θ bound
+        tt = two_theta_for_d(float(settings.d_min_A), wavelength)
+        if tt is not None:
+            tmax = min(tmax, tt)
+    if not (0.0 <= tmin < tmax <= 180.0):
+        # Empty intersection: keep original angles; d filters will drop peaks.
+        return settings
+    return replace(settings, two_theta_min_deg=tmin, two_theta_max_deg=tmax)
+
+
+def _safe_inverse(value: float) -> float | None:
+    if not np.isfinite(value) or value == 0.0:
+        return None
+    inverse = 1.0 / float(value)
+    return float(inverse) if np.isfinite(inverse) else None
+
+
 def _validate_settings(settings: AnalysisSettings) -> None:
     values = (
         settings.two_theta_min_deg,
@@ -80,6 +136,28 @@ def _validate_settings(settings: AnalysisSettings) -> None:
         raise ValueError("step_deg and fwhm_deg must be positive.")
     if not 0 <= settings.profile_eta <= 1:
         raise ValueError("profile_eta must lie in [0, 1].")
+    if settings.profile_model not in PROFILE_MODELS:
+        raise ValueError(
+            f"Unknown profile_model {settings.profile_model!r}; "
+            f"choose one of: {', '.join(sorted(PROFILE_MODELS))}."
+        )
+    if settings.pattern_axis not in PATTERN_AXES:
+        raise ValueError(
+            f"Unknown pattern_axis {settings.pattern_axis!r}; "
+            f"choose one of: {', '.join(sorted(PATTERN_AXES))}."
+        )
+    for name in ("d_min_A", "d_max_A"):
+        value = getattr(settings, name)
+        if value is None:
+            continue
+        if not np.isfinite(value) or float(value) <= 0:
+            raise ValueError(f"{name} must be a finite positive number when set.")
+    if (
+        settings.d_min_A is not None
+        and settings.d_max_A is not None
+        and float(settings.d_min_A) > float(settings.d_max_A)
+    ):
+        raise ValueError("d_min_A must be <= d_max_A when both are set.")
     for name in ("max_profile_points", "max_reflection_estimate"):
         value = getattr(settings, name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -166,6 +244,19 @@ def _pseudo_voigt(grid: np.ndarray, center: float, fwhm: float, eta: float) -> n
     return eta * _lorentzian(grid, center, fwhm) + (1.0 - eta) * _gaussian(grid, center, fwhm)
 
 
+def _peak_profile(
+    grid: np.ndarray,
+    center: float,
+    fwhm: float,
+    settings: AnalysisSettings,
+) -> np.ndarray:
+    if settings.profile_model == "gaussian":
+        return _gaussian(grid, center, fwhm)
+    if settings.profile_model == "lorentzian":
+        return _lorentzian(grid, center, fwhm)
+    return _pseudo_voigt(grid, center, fwhm, settings.profile_eta)
+
+
 def _rank_desc(values: list[float]) -> list[int]:
     ordered = sorted(
         enumerate(values),
@@ -218,6 +309,8 @@ def simulate_powder_pattern(
 ) -> PhaseAnalysis:
     _validate_settings(settings)
     wavelength, energy, wavelength_source = resolve_wavelength(settings)
+    # Narrow 2θ by Bragg intersection with optional d bounds, then filter by d.
+    settings = apply_d_range_to_settings(settings)
     point_count = _profile_point_count(settings)
     if point_count > settings.max_profile_points:
         raise ValueError(
@@ -231,6 +324,8 @@ def simulate_powder_pattern(
         float(np.nextafter(d_min, 0.0)),
         float(d_min) * (1.0 - DMIN_SEARCH_RELATIVE_MARGIN),
     )
+    # If user d_min is stricter (larger) than Bragg d_min, still search to Bragg
+    # d_min but filter reflections; if user d_min is smaller, Bragg already limits.
     cell_volume = float(structure.small_structure.cell.volume)
     reflection_estimate = _reflection_search_estimate(cell_volume, float(d_min_search))
     if reflection_estimate > settings.max_reflection_estimate:
@@ -252,6 +347,7 @@ def simulate_powder_pattern(
             f"max_reflection_estimate={settings.max_reflection_estimate:,}."
         )
     calculator = gemmi.StructureFactorCalculatorX(structure.small_structure.cell)
+    four_index = uses_miller_bravais(structure.space_group_object)
     reflections: list[ReflectionRecord] = []
 
     for raw_hkl in miller_array:
@@ -260,6 +356,10 @@ def simulate_powder_pattern(
             continue
         d_spacing = float(structure.small_structure.cell.calculate_d(hkl))
         if not np.isfinite(d_spacing) or d_spacing <= 0:
+            continue
+        if settings.d_min_A is not None and d_spacing < float(settings.d_min_A) - 1e-12:
+            continue
+        if settings.d_max_A is not None and d_spacing > float(settings.d_max_A) + 1e-12:
             continue
         argument = wavelength / (2.0 * d_spacing)
         if argument <= 0 or argument > 1:
@@ -286,12 +386,26 @@ def simulate_powder_pattern(
             representative,
             requested=settings.include_elasticity,
         )
+        sin_theta = float(np.sin(theta_rad))
+        cos_theta = float(np.cos(theta_rad))
+        sin_over_lambda = float(sin_theta / wavelength) if wavelength > 0 else float("nan")
+        sin2_over_lambda2 = float(sin_over_lambda**2) if np.isfinite(sin_over_lambda) else float("nan")
+        mean_sf_sq = structure_factor_sq
+        mean_sf_abs = float(math.sqrt(mean_sf_sq)) if mean_sf_sq >= 0 and np.isfinite(mean_sf_sq) else float("nan")
+        index_i = miller_bravais_i(representative[0], representative[1]) if four_index else None
+        cu_ka_two_theta = two_theta_for_d(d_spacing, CU_KA_WAVELENGTH_A)
         reflections.append(
             ReflectionRecord(
                 h=representative[0],
                 k=representative[1],
                 l=representative[2],
-                family_label="{" + " ".join(str(value) for value in representative) + "}",
+                family_label=family_label_hkl(
+                    representative[0],
+                    representative[1],
+                    representative[2],
+                    use_four_index=four_index,
+                    i=index_i,
+                ),
                 multiplicity=multiplicity,
                 d_spacing_A=d_spacing,
                 theta_deg=float(np.rad2deg(theta_rad)),
@@ -308,15 +422,56 @@ def simulate_powder_pattern(
                 young_modulus_hkl_normal_GPa=modulus,
                 elastic_status=elastic_status,
                 elastic_note=elastic_note,
+                i=index_i,
+                two_theta_cu_ka_deg=float(cu_ka_two_theta) if cu_ka_two_theta is not None else 0.0,
+                inverse_R_hkl=_safe_inverse(r_with_lp),
+                inverse_R_hkl_no_lp=_safe_inverse(r_no_lp),
+                sin_theta=sin_theta,
+                cos_theta=cos_theta,
+                sin_theta_over_lambda=sin_over_lambda,
+                sin2_theta_over_lambda2=sin2_over_lambda2,
+                mean_structure_factor_sq_per_multiplicity=mean_sf_sq,
+                mean_structure_factor_abs_per_multiplicity=mean_sf_abs,
+                r_hkl_model_note="R_hkl := I / V_cell^2 (project-defined; not a residual factor)",
             )
         )
 
     reflections.sort(key=lambda item: (item.two_theta_deg, item.h, item.k, item.l))
+
+    # Mark coincident families that share the same peak position within 1e-8 deg.
+    if reflections:
+        groups: dict[float, list[int]] = {}
+        for index, item in enumerate(reflections):
+            key = round(item.two_theta_deg, 8)
+            groups.setdefault(key, []).append(index)
+        for indices in groups.values():
+            count = len(indices)
+            if count <= 1:
+                continue
+            for index in indices:
+                reflections[index] = replace(
+                    reflections[index],
+                    is_multi_family_peak=True,
+                    coincident_hkl_family_count=count,
+                )
+
     finite_intensities = [item.intensity_with_lp for item in reflections if np.isfinite(item.intensity_with_lp)]
     maximum = max(finite_intensities) if finite_intensities else 0.0
     intensity_ranks = _rank_desc([item.intensity_with_lp for item in reflections])
     r_ranks = _rank_desc([item.material_scattering_factor_R_hkl for item in reflections])
     r_no_lp_ranks = _rank_desc([item.material_scattering_factor_R_hkl_no_lp for item in reflections])
+    finite_r = [
+        item.material_scattering_factor_R_hkl
+        for item in reflections
+        if np.isfinite(item.material_scattering_factor_R_hkl)
+    ]
+    finite_r_no_lp = [
+        item.material_scattering_factor_R_hkl_no_lp
+        for item in reflections
+        if np.isfinite(item.material_scattering_factor_R_hkl_no_lp)
+    ]
+    max_r = max(finite_r) if finite_r else 0.0
+    max_r_no_lp = max(finite_r_no_lp) if finite_r_no_lp else 0.0
     reflections = [
         replace(
             item,
@@ -326,6 +481,16 @@ def simulate_powder_pattern(
             rank_by_intensity=intensity_ranks[index],
             rank_by_R_hkl=r_ranks[index],
             rank_by_R_hkl_no_lp=r_no_lp_ranks[index],
+            phase_relative_R_hkl_pct=(
+                100.0 * item.material_scattering_factor_R_hkl / max_r
+                if max_r > 0 and np.isfinite(item.material_scattering_factor_R_hkl)
+                else 0.0
+            ),
+            phase_relative_R_hkl_no_lp_pct=(
+                100.0 * item.material_scattering_factor_R_hkl_no_lp / max_r_no_lp
+                if max_r_no_lp > 0 and np.isfinite(item.material_scattering_factor_R_hkl_no_lp)
+                else 0.0
+            ),
         )
         for index, item in enumerate(reflections)
     ]
@@ -335,11 +500,11 @@ def simulate_powder_pattern(
     profile = np.zeros_like(grid)
     for item in reflections:
         if np.isfinite(item.intensity_with_lp):
-            profile += item.intensity_with_lp * _pseudo_voigt(
+            profile += item.intensity_with_lp * _peak_profile(
                 grid,
                 item.two_theta_deg,
                 settings.fwhm_deg,
-                settings.profile_eta,
+                settings,
             )
     if profile.size and float(np.max(profile)) > 0:
         profile = profile / float(np.max(profile)) * 100.0
@@ -353,6 +518,7 @@ def simulate_powder_pattern(
     if active_elastic_tensor is not None:
         warnings.extend(item for item in active_elastic_tensor.warnings if item not in warnings)
 
+    mass_meta = structure_mass_metadata(structure)
     metadata = {
         "generated_at_utc": utc_now_iso(),
         "cif_sha256": structure.cif_sha256,
@@ -362,13 +528,22 @@ def simulate_powder_pattern(
         "two_theta_range_deg": [settings.two_theta_min_deg, settings.two_theta_max_deg],
         "step_deg": settings.step_deg,
         "fwhm_deg": settings.fwhm_deg,
-        "profile_model": "pseudo_voigt",
+        "profile_model": settings.profile_model,
         "profile_eta": settings.profile_eta,
+        "pattern_axis": settings.pattern_axis,
         "profile_point_count": int(grid.size),
         "max_profile_points": settings.max_profile_points,
+        # Geometric Bragg d-min from the (possibly narrowed) 2θ max — existing contract.
         "d_min_A": float(d_min),
         "d_min_search_A": float(d_min_search),
         "d_min_search_relative_margin": DMIN_SEARCH_RELATIVE_MARGIN,
+        "filter_d_min_A": settings.d_min_A,
+        "filter_d_max_A": settings.d_max_A,
+        "d_max_A": settings.d_max_A,
+        "cell_volume_A3": mass_meta["cell_volume_A3"],
+        "formula_weight_g_mol": mass_meta["formula_weight_g_mol"],
+        "density_g_cm3": mass_meta["density_g_cm3"],
+        "cu_ka_wavelength_A": CU_KA_WAVELENGTH_A,
         "reflection_search_estimate": reflection_estimate,
         "miller_candidates_generated": len(miller_array),
         "max_reflection_estimate": settings.max_reflection_estimate,
@@ -381,6 +556,10 @@ def simulate_powder_pattern(
         ),
         "q_definition": "2*pi/d = 4*pi*sin(theta)/lambda",
         "elasticity_requested": settings.include_elasticity,
+        "include_figures": settings.include_figures,
+        "figure_preset": settings.figure_preset,
+        "export_lab_views": settings.export_lab_views,
+        "include_patterns": settings.include_patterns,
         "scientific_boundary": SCIENTIFIC_BOUNDARY,
         "software_versions": package_versions(),
     }

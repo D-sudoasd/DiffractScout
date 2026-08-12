@@ -10,6 +10,8 @@ import numpy as np
 SearchMode = Literal["possible_phases", "near_stable", "single_chemsys", "mpids_only"]
 XrayInputMode = Literal["source", "wavelength", "energy"]
 DiagnosticLevel = Literal["info", "warning", "error"]
+ProfileModel = Literal["pseudo_voigt", "gaussian", "lorentzian"]
+PatternAxis = Literal["two_theta", "d_spacing", "q", "g"]
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,16 @@ class AnalysisSettings:
     include_elasticity: bool = True
     max_profile_points: int = 1_000_000
     max_reflection_estimate: int = 2_000_000
+    # Optional d-spacing filter (Å). When set, reflections outside the range are
+    # dropped and the 2θ search window is narrowed by Bragg intersection.
+    d_min_A: float | None = None
+    d_max_A: float | None = None
+    profile_model: ProfileModel = "pseudo_voigt"
+    pattern_axis: PatternAxis = "two_theta"
+    include_figures: bool = False
+    figure_preset: str = "publication"
+    export_lab_views: bool = True
+    include_patterns: bool = True
 
 
 @dataclass(frozen=True)
@@ -156,6 +168,22 @@ class ReflectionRecord:
     young_modulus_hkl_normal_GPa: float | None = None
     elastic_status: str = "not_requested"
     elastic_note: str = ""
+    # Optional parity / export enrichment fields (defaults preserve lean callers).
+    i: int | None = None  # Miller–Bravais i = -(h+k) for hex/trigonal
+    two_theta_cu_ka_deg: float = 0.0
+    inverse_R_hkl: float | None = None
+    inverse_R_hkl_no_lp: float | None = None
+    phase_relative_R_hkl_pct: float = 0.0
+    phase_relative_R_hkl_no_lp_pct: float = 0.0
+    sin_theta: float = 0.0
+    cos_theta: float = 0.0
+    sin_theta_over_lambda: float = 0.0
+    sin2_theta_over_lambda2: float = 0.0
+    mean_structure_factor_sq_per_multiplicity: float = 0.0
+    mean_structure_factor_abs_per_multiplicity: float = 0.0
+    is_multi_family_peak: bool = False
+    coincident_hkl_family_count: int = 1
+    r_hkl_model_note: str = ""
 
     @property
     def hkl(self) -> tuple[int, int, int]:

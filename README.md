@@ -41,6 +41,22 @@ diffractscout-gui
 
 The desktop interface exposes the scientific controls used by the Python API: radiation definition, angular window, profile spacing, pseudo-Voigt parameters, elastic-tensor pairing, candidate limits, reciprocal-space resource guards, overwrite authorization, progress, structured diagnostics, and result-folder access. The API key remains in memory and is not written to project files. See [docs/GUI.md](docs/GUI.md).
 
+On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export.
+
+## CIF2Peaks parity features
+
+DiffractScout reimplements the CIF2Peaks desktop workflow inside a provenance-first package (Gemmi engine; not bit-identical intensities). Practical parity includes:
+
+| Capability | Where |
+|---|---|
+| Laboratory Excel views (Chinese beginner peak table + usage guide sheets) | `export_lab_views` / CLI `--no-lab-views` to disable |
+| Optional *d*-spacing window (intersects the 2θ search) | CLI/API `--d-min` / `--d-max` |
+| Bilingual lab-facing tables with English canonical CSV/XLSX | Excel `推荐峰表` / `使用说明` plus English `Peaks` |
+| One-shot quick export (Cu Kα lab defaults, optional `.xlsx` shortcut) | `diffractscout-quick-export`, `diffractscout quick-export`, Windows drag-drop bat |
+| Optional figure generation request | CLI `--figures` / `.[figures]` (matplotlib) |
+
+Column-name mapping and intensity-channel aliases: [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md). Engine semantics vs CIF2Peaks/pymatgen: [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md).
+
 ## Installation
 
 ### Local CIF analysis
@@ -56,6 +72,14 @@ python -m pip install -e .
 ```bash
 python -m pip install -e ".[mp]"
 export MP_API_KEY="your-key"     # PowerShell: $env:MP_API_KEY = "your-key"
+```
+
+### Optional extras
+
+```bash
+python -m pip install -e ".[figures]"   # matplotlib for figure request / paper figures
+python -m pip install -e ".[gui-dnd]"   # optional Tk drag-and-drop helper (future UX)
+python -m pip install -e ".[mp]"        # Materials Project
 ```
 
 ### Development environment

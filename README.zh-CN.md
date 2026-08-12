@@ -30,7 +30,23 @@ diffractscout-gui
   <img src="docs/assets/gui-materials-project.png" width="49%" alt="DiffractScout Materials Project 流程界面">
 </p>
 
-界面提供：CIF 文件与文件夹批量选择、递归扫描、光源/能量/波长、`2θ` 范围、步长、FWHM、伪 Voigt 混合参数、弹性配对、候选相数量上限、倒易空间资源限制、覆盖授权、运行状态、结构化日志和结果目录入口。API 密钥只保存在当前进程内存中，不写入项目文件。
+界面提供：CIF 文件与文件夹批量选择、递归扫描、光源/能量/波长、`2θ` 范围、步长、FWHM、伪 Voigt 混合参数、弹性配对、候选相数量上限、倒易空间资源限制、覆盖授权、运行状态、结构化日志和结果目录入口。API 密钥只保存在当前进程内存中，不写入项目文件。详见 [docs/GUI.md](docs/GUI.md)。
+
+Windows 下可在可编辑安装后双击 `启动DiffractScout.bat` 启动界面；或将 CIF 拖到 `quick_export_diffractscout.bat` 进行一次实验室默认导出。
+
+## 已吸收 CIF2Peaks 桌面能力
+
+DiffractScout 在可追溯结果包中重实现了 CIF2Peaks 的主要桌面工作流（离线引擎为 Gemmi，强度为语义对齐而非逐字节一致）：
+
+| 能力 | 入口 |
+|---|---|
+| 实验室 Excel 视图（中文推荐峰表 + 使用说明） | `export_lab_views`；CLI `--no-lab-views` 可关闭 |
+| *d* 间距过滤窗口（与 2θ 搜索求交） | CLI/API `--d-min` / `--d-max` |
+| 中英双语：中文实验室表 + 英文规范列名 CSV/XLSX | 工作簿 `推荐峰表` / `使用说明` 与 `Peaks` |
+| 一键快速导出（Cu Kα 实验室默认，可选 `.xlsx` 快捷路径） | `diffractscout-quick-export`、`diffractscout quick-export`、Windows 拖放 bat |
+| 可选图件生成请求 | CLI `--figures` / 可选依赖 `.[figures]` |
+
+列名与强度通道别名见 [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md)；与 CIF2Peaks/pymatgen 引擎差异见 [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md)。
 
 ## 安装
 
@@ -46,6 +62,14 @@ Materials Project 支持：
 
 ```bash
 python -m pip install -e ".[mp]"
+```
+
+可选依赖：
+
+```bash
+python -m pip install -e ".[figures]"   # matplotlib（图件请求 / 论文图）
+python -m pip install -e ".[gui-dnd]"   # 可选 Tk 拖放辅助（后续 UX）
+python -m pip install -e ".[mp]"        # Materials Project
 ```
 
 开发与测试：
