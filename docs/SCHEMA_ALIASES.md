@@ -49,7 +49,7 @@ DiffractScout therefore:
 | `d_A` | `d_spacing_A` | \(d\)-spacing in Å |
 | `theta_deg` | `theta_deg` | Bragg angle \(\theta\) |
 | `two_theta_current_deg` / `two_theta_deg` | `two_theta_deg` | \(2\theta\) for the active wavelength |
-| `two_theta_cu_ka_deg` | `two_theta_cu_ka_deg` | Convenience \(2\theta\) at Cu Kα (\(\lambda=1.5406\) Å) |
+| `two_theta_cu_ka_deg` | `two_theta_cu_ka_deg` | Convenience \(2\theta\) at Cu Kα (\(\lambda=1.5406\) Å); blank when the reflection is inaccessible at that wavelength |
 | `q_1_over_A` | `q_invA` | \(q = 2\pi / d\) |
 | `g_1_over_A` | `g_invA` | \(g = 1 / d\) |
 

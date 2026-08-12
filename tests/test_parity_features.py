@@ -104,6 +104,25 @@ def test_two_theta_cu_ka_present_and_finite(demo_inputs: Path) -> None:
     assert result.metadata["density_g_cm3"] == pytest.approx(dens)
 
 
+def test_cu_ka_convenience_angle_is_missing_when_reflection_is_inaccessible(
+    demo_inputs: Path,
+) -> None:
+    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    result = simulate_powder_pattern(
+        structure,
+        AnalysisSettings(
+            source_preset="Ag Ka",
+            two_theta_min_deg=5.0,
+            two_theta_max_deg=170.0,
+        ),
+    )
+    inaccessible = [
+        item for item in result.reflections if item.d_spacing_A < CU_KA_WAVELENGTH_A / 2.0
+    ]
+    assert inaccessible
+    assert all(item.two_theta_cu_ka_deg is None for item in inaccessible)
+
+
 def test_hexagonal_miller_bravais_labeling(tmp_path: Path) -> None:
     cif_path = tmp_path / "synthetic_hex_mg.cif"
     cif_path.write_text(HEX_MG_CIF, encoding="utf-8")

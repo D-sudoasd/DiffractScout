@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 
 from diffractscout.elasticity import MP_CONVENTIONAL_CIF_FRAME, MP_IEEE_CONVENTIONAL_FRAME
@@ -49,6 +50,9 @@ def test_matrix_conversion() -> None:
     matrix = [[float(i == j) for j in range(6)] for i in range(6)]
     assert _matrix(matrix) == matrix
     assert _matrix([[1, 2]]) is None
+    assert _matrix([[float(i == j) for j in range(7)] for i in range(7)]) is None
+    matrix[0][0] = math.nan
+    assert _matrix(matrix) is None
 
 
 def test_elasticity_sidecar_prefers_raw_tensor_for_conventional_cif(tmp_path: Path) -> None:

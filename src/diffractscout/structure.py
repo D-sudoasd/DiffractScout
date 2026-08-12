@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import warnings as warning_control
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
@@ -217,7 +218,22 @@ def _spglib_crosscheck(
     lattice = np.asarray(small.cell.orth.mat, dtype=float).T
     positions = np.asarray([[site.fract.x, site.fract.y, site.fract.z] for site in sites], dtype=float)
     atomic_numbers = np.asarray([site.element.atomic_number for site in sites], dtype=int)
-    dataset = spglib.get_symmetry_dataset((lattice, positions, atomic_numbers), symprec=1e-3)
+    try:
+        with warning_control.catch_warnings():
+            # spglib 2.7 warns before its 2.8 exception-mode transition. The
+            # cross-check already handles failure explicitly, so suppress only
+            # that upstream compatibility warning and keep all other warnings.
+            warning_control.filterwarnings(
+                "ignore",
+                message="Set OLD_ERROR_HANDLING to false and catch the errors directly.",
+                category=DeprecationWarning,
+                module=r"spglib(?:\..*)?",
+            )
+            dataset = spglib.get_symmetry_dataset(
+                (lattice, positions, atomic_numbers), symprec=1e-3
+            )
+    except Exception:
+        return None, None, "failed"
     if dataset is None:
         return None, None, "failed"
     number = int(dataset.number)

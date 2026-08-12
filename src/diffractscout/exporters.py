@@ -15,6 +15,7 @@ from openpyxl.utils import get_column_letter
 
 from .diffraction import SCIENTIFIC_BOUNDARY
 from .export_views import (
+    ANALYSIS_PEAK_COLUMNS,
     BEGINNER_PEAK_HEADERS_ZH,
     beginner_peak_rows_zh,
     safe_excel_sheet_title,
@@ -78,12 +79,16 @@ PHASE_HEADERS = [
     "warnings",
     "source_metadata",
 ]
+# Analysis-first order: identity → hkl → geometry → intensity → ranks → SF extras → elastic → meta.
+# All historical column names retained (additive reordering only).
 PEAK_HEADERS = [
+    # Identity (multi-phase filter)
     "phase_name",
     "cif_name",
     "cif_sha256",
     "formula",
     "space_group",
+    # Miller
     "h",
     "k",
     "i",
@@ -91,23 +96,20 @@ PEAK_HEADERS = [
     "hkl",
     "family_label",
     "multiplicity",
+    # Geometry
     "d_spacing_A",
     "theta_deg",
     "two_theta_deg",
     "two_theta_cu_ka_deg",
     "q_invA",
     "g_invA",
-    "sin_theta",
-    "cos_theta",
-    "sin_theta_over_lambda",
-    "sin2_theta_over_lambda2",
-    "structure_factor_sq",
-    "mean_structure_factor_sq_per_multiplicity",
-    "mean_structure_factor_abs_per_multiplicity",
+    # Display + LP channels
+    "normalized_intensity",
+    "rank_by_intensity",
+    "intensity_with_lp",
     "intensity_no_lp",
     "lp_factor",
-    "intensity_with_lp",
-    "normalized_intensity",
+    # Volume-normalized J (+ legacy R_hkl aliases)
     "volume_normalized_intensity_with_lp",
     "volume_normalized_intensity_no_lp",
     "material_scattering_factor_R_hkl",
@@ -116,11 +118,19 @@ PEAK_HEADERS = [
     "inverse_R_hkl_no_lp",
     "phase_relative_R_hkl_pct",
     "phase_relative_R_hkl_no_lp_pct",
-    "rank_by_intensity",
     "rank_by_R_hkl",
     "rank_by_R_hkl_no_lp",
+    # Structure-factor detail
+    "structure_factor_sq",
+    "mean_structure_factor_sq_per_multiplicity",
+    "mean_structure_factor_abs_per_multiplicity",
+    "sin_theta",
+    "cos_theta",
+    "sin_theta_over_lambda",
+    "sin2_theta_over_lambda2",
     "is_multi_family_peak",
     "coincident_hkl_family_count",
+    # Elastic + run meta
     "young_modulus_hkl_normal_GPa",
     "elastic_status",
     "elastic_note",
@@ -512,8 +522,11 @@ def _add_sheet(
             sheet.append([_cell_value(row.get(header)) for header in headers])
     else:
         sheet.append(["no rows", *([""] * (len(headers) - 1))])
+    # Frozen header + autofilter: required for analysis-ready long tables.
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = sheet.dimensions
+    last_col = get_column_letter(max(len(headers), 1))
+    last_row = max(sheet.max_row, 1)
+    sheet.auto_filter.ref = f"A1:{last_col}{last_row}"
     header_fill = PatternFill("solid", fgColor="16324F")
     for cell in sheet[1]:
         cell.font = Font(bold=True, color="FFFFFF")
@@ -521,7 +534,8 @@ def _add_sheet(
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for column_index, header in enumerate(headers, start=1):
         sampled = [str(header)] + [str(_cell_value(row.get(header))) for row in rows[:200]]
-        width = min(max(max(len(value) for value in sampled) + 2, 10), 42)
+        # Slightly wider for analysis headers with units in the name.
+        width = min(max(max(len(value) for value in sampled) + 2, 10), 48)
         sheet.column_dimensions[get_column_letter(column_index)].width = width
     for row in sheet.iter_rows(min_row=2):
         for cell in row:
@@ -570,9 +584,14 @@ def write_excel_workbook(
 ) -> Path:
     workbook = Workbook()
     workbook.remove(workbook.active)
+    # Lab-first when enabled: guide → Chinese long table → full Peaks, then metadata sheets.
+    if export_lab_views:
+        _add_guide_sheet(workbook, "使用说明", user_guide_rows())
+        zh_headers = list(BEGINNER_PEAK_HEADERS_ZH.keys())
+        _add_sheet(workbook, "推荐峰表", beginner_peak_rows_zh(peaks), zh_headers)
     _add_sheet(workbook, "Summary", summary, SUMMARY_HEADERS)
-    _add_sheet(workbook, "Phases", phases, PHASE_HEADERS)
     _add_sheet(workbook, "Peaks", peaks, PEAK_HEADERS)
+    _add_sheet(workbook, "Phases", phases, PHASE_HEADERS)
     _add_sheet(workbook, "Elasticity", elasticity, ELASTICITY_HEADERS)
     _add_sheet(workbook, "Candidates", candidates, CANDIDATE_HEADERS)
     _add_sheet(workbook, "Downloads", downloads, DOWNLOAD_HEADERS)
@@ -580,9 +599,6 @@ def write_excel_workbook(
     if include_patterns:
         _add_sheet(workbook, "Patterns", patterns, PATTERN_HEADERS)
     if export_lab_views:
-        zh_headers = list(BEGINNER_PEAK_HEADERS_ZH.keys())
-        _add_sheet(workbook, "推荐峰表", beginner_peak_rows_zh(peaks), zh_headers)
-        _add_guide_sheet(workbook, "使用说明", user_guide_rows())
         analysis_list = analyses or []
         if 0 < len(analysis_list) <= 20:
             used_titles: set[str] = set(workbook.sheetnames)
@@ -594,6 +610,9 @@ def write_excel_workbook(
                     continue
                 title = safe_excel_sheet_title(f"峰_{analysis.phase_name}", used=used_titles)
                 _add_sheet(workbook, title, phase_peaks, PEAK_HEADERS)
+        # Open on the Chinese analysis long table when present.
+        if "推荐峰表" in workbook.sheetnames:
+            workbook.active = workbook["推荐峰表"]
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -625,6 +644,17 @@ def _summary_rows(
         {"key": "d_max_A", "value": settings.d_max_A},
         {"key": "pattern_axis", "value": settings.pattern_axis},
         {"key": "export_lab_views", "value": settings.export_lab_views},
+        {
+            "key": "peak_longtable_note",
+            "value": (
+                "Peaks sheet: analysis-first column order; freeze header + autofilter; "
+                "filter phase_name for multi-phase. Lab views add 推荐峰表 + 使用说明."
+            ),
+        },
+        {
+            "key": "analysis_peak_columns",
+            "value": list(ANALYSIS_PEAK_COLUMNS),
+        },
         {"key": "scientific_boundary", "value": SCIENTIFIC_BOUNDARY},
     ]
 
@@ -759,11 +789,12 @@ def export_result_bundle(
             ),
             "elastic_modulus": "E(n) = 1 / (q(n)^T S q(n)) under engineering-shear Voigt convention",
             "lab_views_schema": (
-                "When export_lab_views is true, results.xlsx adds 推荐峰表 (Chinese beginner headers "
-                "mapped by BEGINNER_PEAK_HEADERS_ZH), 使用说明 (two-column guide), and optional "
-                "per-phase peak sheets (≤20 phases). Canonical English sheets and CSV columns remain "
-                "the machine-readable schema; lab views are additive presentation only."
+                "When export_lab_views is true, results.xlsx opens on 推荐峰表 after 使用说明: "
+                "analysis-first Chinese long table (BEGINNER_PEAK_HEADERS_ZH) with freeze+autofilter, "
+                "optional per-phase peak sheets (≤20 phases). Peaks/CSV remain the English machine schema "
+                "with the same peak_rows values; R_hkl names are volume-normalized J aliases, not residuals."
             ),
+            "analysis_peak_columns": list(ANALYSIS_PEAK_COLUMNS),
             "pattern_axis_columns": (
                 "pattern_profiles.csv always includes two_theta_deg, d_A, q_invA, g_invA, "
                 "x_axis_mode (settings.pattern_axis), x (selected axis value), and relative_intensity"

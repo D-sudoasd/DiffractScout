@@ -170,7 +170,7 @@ class ReflectionRecord:
     elastic_note: str = ""
     # Optional parity / export enrichment fields (defaults preserve lean callers).
     i: int | None = None  # Miller–Bravais i = -(h+k) for hex/trigonal
-    two_theta_cu_ka_deg: float = 0.0
+    two_theta_cu_ka_deg: float | None = None
     inverse_R_hkl: float | None = None
     inverse_R_hkl_no_lp: float | None = None
     phase_relative_R_hkl_pct: float = 0.0

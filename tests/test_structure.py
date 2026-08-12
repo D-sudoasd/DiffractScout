@@ -1,10 +1,14 @@
 from pathlib import Path
+import warnings
 
 from diffractscout.structure import load_structure
 
 
 def test_load_synthetic_fcc(demo_inputs: Path) -> None:
-    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    assert not any("OLD_ERROR_HANDLING" in str(item.message) for item in caught)
     assert structure.formula == "Al"
     assert structure.space_group_number == 225
     assert structure.space_group_symbol.replace(" ", "") == "Fm-3m"

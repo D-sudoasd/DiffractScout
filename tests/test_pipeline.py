@@ -3,9 +3,10 @@ from pathlib import Path
 import shutil
 
 from openpyxl import load_workbook
+import pytest
 
 from diffractscout.models import AnalysisSettings
-from diffractscout.pipeline import analyze_cifs, collect_cif_paths
+from diffractscout.pipeline import analyze_cifs, collect_cif_paths, run_pipeline
 from diffractscout.validation import verify_bundle
 
 
@@ -125,6 +126,40 @@ def test_input_output_overlap_is_rejected_before_writes(demo_inputs: Path) -> No
     assert not output.exists()
 
 
+def test_invalid_run_settings_fail_before_output_writes(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    output = tmp_path / "invalid-settings"
+    with pytest.raises(ValueError, match="2theta range"):
+        analyze_cifs(
+            [demo_inputs],
+            output,
+            settings=AnalysisSettings(
+                two_theta_min_deg=120.0,
+                two_theta_max_deg=5.0,
+            ),
+            include_excel=False,
+        )
+    assert not output.exists()
+
+
+def test_invalid_figure_preset_fails_before_output_writes(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    output = tmp_path / "invalid-figure-preset"
+    with pytest.raises(ValueError, match="Unknown figure export preset"):
+        analyze_cifs(
+            [demo_inputs],
+            output,
+            settings=AnalysisSettings(
+                include_figures=True,
+                figure_preset="not-a-preset",
+            ),
+            include_excel=False,
+        )
+    assert not output.exists()
+
+
 def test_workbook_contains_structured_diagnostics_sheet(demo_inputs: Path, tmp_path: Path) -> None:
     output = tmp_path / "diagnostic-workbook"
     analyze_cifs([demo_inputs], output)
@@ -170,3 +205,47 @@ def test_failed_staged_export_preserves_previous_verified_bundle(
         raise AssertionError("Expected staged export failure")
     assert (output / "manifest.json").read_bytes() == original_manifest
     assert verify_bundle(output)["ok"]
+
+
+def test_target_created_during_run_is_not_silently_replaced(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    output = tmp_path / "raced-target"
+    original_export = pipeline.export_result_bundle
+
+    def export_then_occupy(*args, **kwargs):
+        manifest = original_export(*args, **kwargs)
+        output.mkdir()
+        (output / "user.txt").write_text("keep", encoding="utf-8")
+        return manifest
+
+    monkeypatch.setattr(pipeline, "export_result_bundle", export_then_occupy)
+    with pytest.raises(FileExistsError, match="not empty"):
+        analyze_cifs([demo_inputs], output, include_excel=False)
+
+    assert (output / "user.txt").read_text(encoding="utf-8") == "keep"
+    assert not list(tmp_path.glob(".raced-target.diffractscout-*"))
+
+
+def test_remote_provider_is_not_contacted_when_output_is_unsafe(tmp_path: Path) -> None:
+    class Provider:
+        name = "not-called"
+
+        def search_subsystem(self, *_args, **_kwargs):
+            raise AssertionError("provider should not be contacted")
+
+        def download_candidates(self, *_args, **_kwargs):
+            raise AssertionError("provider should not be contacted")
+
+        def metadata(self):
+            raise AssertionError("provider should not be contacted")
+
+    output = tmp_path / "occupied"
+    output.mkdir()
+    (output / "user.txt").write_text("keep", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="not empty"):
+        run_pipeline("Ti-Al", Provider(), output)
+    assert (output / "user.txt").read_text(encoding="utf-8") == "keep"

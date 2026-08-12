@@ -120,7 +120,13 @@ def _safe_inverse(value: float) -> float | None:
     return float(inverse) if np.isfinite(inverse) else None
 
 
-def _validate_settings(settings: AnalysisSettings) -> None:
+def validate_analysis_settings(settings: AnalysisSettings) -> None:
+    """Validate run-wide diffraction settings before any input or provider work.
+
+    This is intentionally structure-independent so callers can fail fast before
+    copying local inputs or downloading provider records.
+    """
+
     values = (
         settings.two_theta_min_deg,
         settings.two_theta_max_deg,
@@ -162,6 +168,17 @@ def _validate_settings(settings: AnalysisSettings) -> None:
         value = getattr(settings, name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ValueError(f"{name} must be a positive integer.")
+    # Validate the mode-specific radiation value as part of the same preflight.
+    resolve_wavelength(settings)
+    if settings.include_figures:
+        from .plotting import FIGURE_EXPORT_PRESETS
+
+        preset = settings.figure_preset or "publication"
+        if preset not in FIGURE_EXPORT_PRESETS:
+            raise ValueError(
+                f"Unknown figure export preset: {preset}. Valid presets: "
+                + ", ".join(sorted(FIGURE_EXPORT_PRESETS))
+            )
 
 
 def _profile_point_count(settings: AnalysisSettings) -> int:
@@ -307,7 +324,7 @@ def simulate_powder_pattern(
     *,
     elastic_tensor: ElasticTensor | None = None,
 ) -> PhaseAnalysis:
-    _validate_settings(settings)
+    validate_analysis_settings(settings)
     wavelength, energy, wavelength_source = resolve_wavelength(settings)
     # Narrow 2θ by Bragg intersection with optional d bounds, then filter by d.
     settings = apply_d_range_to_settings(settings)
@@ -423,7 +440,9 @@ def simulate_powder_pattern(
                 elastic_status=elastic_status,
                 elastic_note=elastic_note,
                 i=index_i,
-                two_theta_cu_ka_deg=float(cu_ka_two_theta) if cu_ka_two_theta is not None else 0.0,
+                two_theta_cu_ka_deg=(
+                    float(cu_ka_two_theta) if cu_ka_two_theta is not None else None
+                ),
                 inverse_R_hkl=_safe_inverse(r_with_lp),
                 inverse_R_hkl_no_lp=_safe_inverse(r_no_lp),
                 sin_theta=sin_theta,

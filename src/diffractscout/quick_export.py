@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import tempfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -18,6 +20,43 @@ from .utils import to_jsonable
 
 # Keyword names accepted as AnalysisSettings fields when building defaults.
 _SETTINGS_KEYS = frozenset(AnalysisSettings.__dataclass_fields__)
+
+
+def _validate_excel_target(path: Path, *, overwrite: bool) -> None:
+    """Protect a user-selected workbook before the bundle run starts."""
+
+    if path.is_symlink():
+        raise FileExistsError(f"Refusing to replace a symbolic-link Excel target: {path}")
+    if not path.exists():
+        return
+    if not path.is_file():
+        raise FileExistsError(f"Excel output exists and is not a file: {path}")
+    if not overwrite:
+        raise FileExistsError(
+            f"Excel output already exists: {path}. Choose a new path or pass overwrite=True."
+        )
+
+
+def _copy_excel_atomic(source: Path, target: Path, *, overwrite: bool) -> None:
+    """Copy a completed bundle workbook without exposing a partial target."""
+
+    _validate_excel_target(target, overwrite=overwrite)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            dir=target.parent,
+            delete=False,
+        ) as handle:
+            temporary_name = handle.name
+        temporary = Path(temporary_name)
+        shutil.copy2(source, temporary)
+        temporary.replace(target)
+    finally:
+        if temporary_name:
+            Path(temporary_name).unlink(missing_ok=True)
 
 
 def _default_settings(**overrides: object) -> AnalysisSettings:
@@ -73,6 +112,7 @@ def quick_export(
                 "Unexpected keyword arguments for quick_export: "
                 + ", ".join(sorted(map(str, leftover)))
             )
+        settings = replace(settings, **kwargs)
 
     if elastic_overrides is not None and not isinstance(elastic_overrides, Mapping):
         raise TypeError("elastic_overrides must be a mapping of name -> ElasticTensor.")
@@ -85,6 +125,7 @@ def quick_export(
     excel_target: Path | None = None
     if output_path.suffix.lower() == ".xlsx":
         excel_target = output_path if output_path.is_absolute() else output_path.resolve()
+        _validate_excel_target(excel_target, overwrite=overwrite)
         bundle_dir = excel_target.with_name(f"{excel_target.stem}_bundle")
         # Excel shortcut always materializes the workbook in the bundle first.
         include_excel = True
@@ -107,8 +148,7 @@ def quick_export(
             raise RuntimeError(
                 f"Expected results.xlsx in bundle {result.output_dir}, but it is missing."
             )
-        excel_target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_xlsx, excel_target)
+        _copy_excel_atomic(source_xlsx, excel_target, overwrite=overwrite)
 
     return result
 

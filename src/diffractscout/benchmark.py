@@ -518,6 +518,7 @@ def run_reference_benchmarks(
                 "Analytic benchmark bundle failed integrity verification: "
                 + "; ".join(verification["errors"])
             )
+        _prepare_target(output_dir, overwrite=overwrite)
         _commit_directory(target, staging)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)

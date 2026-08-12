@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 import tempfile
 from typing import Any, Sequence
@@ -52,14 +53,17 @@ def _plain(value: object) -> object:
 
 def _matrix(value: object) -> list[list[float]] | None:
     plain = _plain(value)
-    if not isinstance(plain, list) or len(plain) < 6:
+    if not isinstance(plain, list) or len(plain) != 6:
         return None
     output: list[list[float]] = []
     try:
-        for row in plain[:6]:
-            if not isinstance(row, list) or len(row) < 6:
+        for row in plain:
+            if not isinstance(row, list) or len(row) != 6:
                 return None
-            output.append([float(item) for item in row[:6]])
+            converted = [float(item) for item in row]
+            if not all(math.isfinite(item) for item in converted):
+                return None
+            output.append(converted)
     except (TypeError, ValueError):
         return None
     return output
@@ -85,6 +89,8 @@ def _candidate_from_doc(doc: object, chemsys: str) -> CandidateRecord:
     try:
         e_hull = float(e_hull_raw) if e_hull_raw is not None else None
     except (TypeError, ValueError):
+        e_hull = None
+    if e_hull is not None and not math.isfinite(e_hull):
         e_hull = None
     structure_type = infer_structure_type(formula, symbol, number)
     return CandidateRecord(

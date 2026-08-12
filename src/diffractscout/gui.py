@@ -14,11 +14,13 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from . import __version__
+from .diffraction import validate_analysis_settings
 from .elasticity_input import parse_cij_matrix_6x6, parse_cij_paste_text, parse_cubic_cij
 from .gui_i18n import DEFAULT_LANG, t
 from .models import AnalysisSettings, DiscoverySettings, ElasticTensor, PipelineResult
 from .pipeline import analyze_cifs, run_pipeline
 from .providers.materials_project import MaterialsProjectProvider
+from .selection import validate_discovery_settings
 
 try:  # Tk remains optional on minimal/headless Python installations.
     import tkinter as tk
@@ -114,7 +116,7 @@ def analysis_settings_from_form(values: Mapping[str, object]) -> AnalysisSetting
     pattern_axis = str(values.get("pattern_axis", "two_theta")).strip()
     if pattern_axis not in _PATTERN_AXES:
         raise ValueError(f"Pattern axis must be one of: {', '.join(_PATTERN_AXES)}.")
-    return AnalysisSettings(
+    settings = AnalysisSettings(
         input_mode=mode,  # type: ignore[arg-type]
         source_preset=str(values.get("source_preset", "Cu Ka")),
         wavelength_A=radiation
@@ -141,13 +143,15 @@ def analysis_settings_from_form(values: Mapping[str, object]) -> AnalysisSetting
         export_lab_views=_as_bool(values.get("export_lab_views", True), True),
         include_patterns=_as_bool(values.get("include_patterns", True), True),
     )
+    validate_analysis_settings(settings)
+    return settings
 
 
 def discovery_settings_from_form(values: Mapping[str, object]) -> DiscoverySettings:
     mode = str(values.get("mode", "possible_phases")).strip()
     if mode not in {"possible_phases", "near_stable", "single_chemsys", "mpids_only"}:
         raise ValueError("Unknown discovery mode.")
-    return DiscoverySettings(
+    settings = DiscoverySettings(
         mode=mode,  # type: ignore[arg-type]
         e_hull_max_eV_atom=_optional_float(values.get("e_hull_max"), "Maximum energy above hull"),
         max_subsystem_order=_optional_int(values.get("max_subsystem_order"), "Maximum subsystem order"),
@@ -155,6 +159,8 @@ def discovery_settings_from_form(values: Mapping[str, object]) -> DiscoverySetti
         max_total=_optional_int(values.get("max_total"), "Maximum candidates"),
         exclude_deprecated=not bool(values.get("include_deprecated", False)),
     )
+    validate_discovery_settings(settings)
+    return settings
 
 
 def open_path(path: str | Path) -> None:
@@ -190,8 +196,9 @@ if tk is not None:
         def __init__(self) -> None:
             super().__init__()
             self.title(f"DiffractScout {__version__}")
-            self.geometry("1180x920")
-            self.minsize(980, 780)
+            # Prefer a size that fits common 1080p / laptop viewports; content scrolls.
+            self.geometry("1200x820")
+            self.minsize(900, 640)
             self.configure(background=BG)
             self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -208,17 +215,19 @@ if tk is not None:
             self._title_pairs: list[tuple[Any, Any, str, str]] = []
             self._labelframes: list[tuple[Any, str]] = []
             self._notebook_tabs: list[tuple[int, str]] = []
+            self._wrap_labels: list[tuple[Any, int]] = []
+            self._scroll_canvases: list[Any] = []
             self._syncing_shortcut = False
 
             self._configure_style()
             self._create_variables()
             self._build_header()
             self._build_status_bar()
-            self._build_activity_panel()
-            self._build_body()
+            self._build_main_split()
             self._sync_radiation_controls()
             self._refresh_cij_status()
             self._apply_language()
+            self.bind("<Configure>", self._on_root_configure, add="+")
             self.after(120, self._poll)
             self._log(self._t("log_ready"), "info")
 
@@ -241,11 +250,11 @@ if tk is not None:
             style.configure("Title.TLabel", background=CARD, foreground=NAVY, font=("Segoe UI Semibold", 12))
             style.configure("Hint.TLabel", background=CARD, foreground=MUTED, font=("Segoe UI", 8))
             style.configure("Header.TLabel", background=NAVY_DARK, foreground="white")
-            style.configure("HeaderTitle.TLabel", background=NAVY_DARK, foreground="white", font=("Segoe UI Semibold", 22))
-            style.configure("HeaderSub.TLabel", background=NAVY_DARK, foreground="#BFD3E5", font=("Segoe UI", 10))
-            style.configure("Badge.TLabel", background=TEAL, foreground="white", font=("Segoe UI Semibold", 9), padding=(9, 4))
+            style.configure("HeaderTitle.TLabel", background=NAVY_DARK, foreground="white", font=("Segoe UI Semibold", 18))
+            style.configure("HeaderSub.TLabel", background=NAVY_DARK, foreground="#BFD3E5", font=("Segoe UI", 9))
+            style.configure("Badge.TLabel", background=TEAL, foreground="white", font=("Segoe UI Semibold", 9), padding=(8, 3))
             style.configure("TNotebook", background=BG, borderwidth=0)
-            style.configure("TNotebook.Tab", background="#DCE6EE", foreground=NAVY, padding=(18, 9), font=("Segoe UI Semibold", 9))
+            style.configure("TNotebook.Tab", background="#DCE6EE", foreground=NAVY, padding=(14, 6), font=("Segoe UI Semibold", 9))
             style.map("TNotebook.Tab", background=[("selected", CARD)], foreground=[("selected", TEAL_DARK)])
             style.configure("Primary.TButton", background=TEAL_DARK, foreground="white", padding=(14, 9), font=("Segoe UI Semibold", 10), borderwidth=0)
             style.map("Primary.TButton", background=[("active", TEAL), ("disabled", "#9FB3C3")])
@@ -310,26 +319,26 @@ if tk is not None:
             self.input_count_text = tk.StringVar(value=self._t("inputs_none"))
 
         def _build_header(self) -> None:
-            header = tk.Frame(self, bg=NAVY_DARK, height=102)
+            header = tk.Frame(self, bg=NAVY_DARK, height=78)
             header.pack(fill="x")
             header.pack_propagate(False)
-            logo = tk.Canvas(header, width=70, height=70, bg=NAVY_DARK, highlightthickness=0)
-            logo.pack(side="left", padx=(24, 10), pady=15)
-            logo.create_oval(8, 8, 62, 62, outline=TEAL, width=3)
-            for x, y in ((21, 24), (48, 22), (28, 48), (50, 47)):
-                logo.create_oval(x - 4, y - 4, x + 4, y + 4, fill="white", outline="")
-            logo.create_line(21, 24, 48, 22, 50, 47, 28, 48, 21, 24, fill="#8BC6D5", width=2)
+            logo = tk.Canvas(header, width=52, height=52, bg=NAVY_DARK, highlightthickness=0)
+            logo.pack(side="left", padx=(18, 8), pady=12)
+            logo.create_oval(4, 4, 48, 48, outline=TEAL, width=2)
+            for x, y in ((16, 18), (36, 16), (20, 36), (38, 35)):
+                logo.create_oval(x - 3, y - 3, x + 3, y + 3, fill="white", outline="")
+            logo.create_line(16, 18, 36, 16, 38, 35, 20, 36, 16, 18, fill="#8BC6D5", width=2)
 
             text = tk.Frame(header, bg=NAVY_DARK)
-            text.pack(side="left", fill="y", pady=15)
+            text.pack(side="left", fill="y", pady=10)
             ttk.Label(text, text="DiffractScout", style="HeaderTitle.TLabel").pack(anchor="w")
             self.header_sub = ttk.Label(text, text=self._t("app_subtitle"), style="HeaderSub.TLabel")
-            self.header_sub.pack(anchor="w", pady=(3, 0))
+            self.header_sub.pack(anchor="w", pady=(2, 0))
             self._i18n_targets.append((self.header_sub, "app_subtitle", "text"))
 
             right = tk.Frame(header, bg=NAVY_DARK)
-            right.pack(side="right", padx=24)
-            ttk.Label(right, text=f"v{__version__}", style="Badge.TLabel").pack(anchor="e", pady=(8, 6))
+            right.pack(side="right", padx=18)
+            ttk.Label(right, text=f"v{__version__}", style="Badge.TLabel").pack(anchor="e", pady=(6, 4))
             lang_row = tk.Frame(right, bg=NAVY_DARK)
             lang_row.pack(anchor="e")
             self.lang_label = ttk.Label(lang_row, text=self._t("lang_label"), style="HeaderSub.TLabel")
@@ -345,28 +354,108 @@ if tk is not None:
             lang_box.pack(side="left")
             lang_box.bind("<<ComboboxSelected>>", lambda _e: self._set_language(self.lang_var.get()))
 
-        def _build_body(self) -> None:
-            body = ttk.Frame(self, padding=(18, 14, 18, 4))
-            body.pack(fill="both", expand=True)
-            notebook = ttk.Notebook(body)
+        def _build_main_split(self) -> None:
+            """Notebook above, resizable activity log below; both share remaining height."""
+
+            paned = ttk.Panedwindow(self, orient="vertical")
+            paned.pack(fill="both", expand=True)
+            self._main_paned = paned
+
+            body_host = ttk.Frame(paned, padding=(14, 10, 14, 4))
+            activity_host = ttk.Frame(paned, padding=(14, 2, 14, 0))
+            paned.add(body_host, weight=5)
+            paned.add(activity_host, weight=1)
+
+            notebook = ttk.Notebook(body_host)
             self.notebook = notebook
             notebook.pack(fill="both", expand=True)
-            local = ttk.Frame(notebook, style="Card.TFrame", padding=16)
-            mp = ttk.Frame(notebook, style="Card.TFrame", padding=16)
+            local = ttk.Frame(notebook, style="Card.TFrame", padding=10)
+            mp = ttk.Frame(notebook, style="Card.TFrame", padding=10)
             notebook.add(local, text=self._t("tab_local"))
             notebook.add(mp, text=self._t("tab_mp"))
             self._notebook_tabs = [(0, "tab_local"), (1, "tab_mp")]
             self._build_local_tab(local)
             self._build_mp_tab(mp)
+            self._build_activity_panel(activity_host)
+            # Give the form most of the space after first layout pass.
+            self.after(80, self._set_default_sash)
+
+        def _set_default_sash(self) -> None:
+            try:
+                height = max(self.winfo_height(), 640)
+                # Leave ~150–200 px for the activity log band.
+                sash = max(360, height - 220)
+                self._main_paned.sashpos(0, sash)
+            except Exception:  # pragma: no cover - geometry timing
+                return
+
+        def _make_scrollable(self, parent: Any, *, bg: str = CARD) -> tuple[Any, Any]:
+            """Return (outer_frame, interior_frame) with vertical scrollbar + mouse wheel."""
+
+            outer = ttk.Frame(parent, style="Card.TFrame")
+            canvas = tk.Canvas(outer, bg=bg, highlightthickness=0, bd=0)
+            scrollbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+            canvas.configure(yscrollcommand=scrollbar.set)
+            scrollbar.pack(side="right", fill="y")
+            canvas.pack(side="left", fill="both", expand=True)
+
+            interior = ttk.Frame(canvas, style="Card.TFrame")
+            window_id = canvas.create_window((0, 0), window=interior, anchor="nw")
+            self._scroll_canvases.append(canvas)
+
+            def _sync_scrollregion(_event: object | None = None) -> None:
+                canvas.configure(scrollregion=canvas.bbox("all"))
+
+            def _sync_width(event: Any) -> None:
+                canvas.itemconfigure(window_id, width=max(int(event.width), 1))
+
+            interior.bind("<Configure>", _sync_scrollregion)
+            canvas.bind("<Configure>", _sync_width)
+
+            def _on_wheel(event: Any) -> str | None:
+                if not canvas.winfo_exists():
+                    return None
+                # Only scroll if content overflows.
+                if canvas.bbox("all") is None:
+                    return None
+                top, bottom = canvas.yview()
+                if top <= 0.0 and bottom >= 1.0:
+                    return None
+                delta = int(getattr(event, "delta", 0) or 0)
+                if delta:
+                    canvas.yview_scroll(int(-delta / 120), "units")
+                elif getattr(event, "num", None) == 4:
+                    canvas.yview_scroll(-3, "units")
+                elif getattr(event, "num", None) == 5:
+                    canvas.yview_scroll(3, "units")
+                return "break"
+
+            def _bind_recursive(widget: Any) -> None:
+                widget.bind("<MouseWheel>", _on_wheel, add="+")
+                widget.bind("<Button-4>", _on_wheel, add="+")
+                widget.bind("<Button-5>", _on_wheel, add="+")
+                for child in widget.winfo_children():
+                    _bind_recursive(child)
+
+            def _bind_tree(_event: object | None = None) -> None:
+                _bind_recursive(interior)
+                canvas.bind("<MouseWheel>", _on_wheel, add="+")
+                canvas.bind("<Button-4>", _on_wheel, add="+")
+                canvas.bind("<Button-5>", _on_wheel, add="+")
+
+            interior.bind("<Map>", lambda _e: self.after_idle(_bind_tree), add="+")
+            self.after_idle(_bind_tree)
+            return outer, interior
 
         def _card_title(self, parent: Any, title_key: str, hint_key: str) -> None:
             title = ttk.Label(parent, text=self._t(title_key), style="Title.TLabel")
             title.pack(anchor="w")
-            hint = ttk.Label(parent, text=self._t(hint_key), style="Hint.TLabel", wraplength=480)
-            hint.pack(anchor="w", pady=(2, 10))
+            hint = ttk.Label(parent, text=self._t(hint_key), style="Hint.TLabel", wraplength=420)
+            hint.pack(anchor="w", pady=(2, 8))
             self._title_pairs.append((title, hint, title_key, hint_key))
             self._i18n_targets.append((title, title_key, "text"))
             self._i18n_targets.append((hint, hint_key, "text"))
+            self._wrap_labels.append((hint, 420))
 
         def _labeled_frame(self, parent: Any, key: str, **kwargs: Any) -> ttk.LabelFrame:
             frame = ttk.LabelFrame(parent, text=self._t(key), **kwargs)
@@ -374,16 +463,19 @@ if tk is not None:
             return frame
 
         def _build_local_tab(self, frame: ttk.Frame) -> None:
-            frame.columnconfigure(0, weight=1)
-            frame.columnconfigure(1, weight=1)
+            frame.columnconfigure(0, weight=1, minsize=280)
+            frame.columnconfigure(1, weight=2, minsize=360)
             frame.rowconfigure(0, weight=1)
 
-            left = ttk.Frame(frame, style="Card.TFrame", padding=(0, 0, 12, 0))
-            right = ttk.Frame(frame, style="Card.TFrame", padding=(12, 0, 0, 0))
+            left = ttk.Frame(frame, style="Card.TFrame", padding=(0, 0, 10, 0))
+            right_shell = ttk.Frame(frame, style="Card.TFrame", padding=(10, 0, 0, 0))
             left.grid(row=0, column=0, sticky="nsew")
-            right.grid(row=0, column=1, sticky="nsew")
-            self._card_title(left, "local_select_title", "local_select_hint")
+            right_shell.grid(row=0, column=1, sticky="nsew")
+            right_shell.rowconfigure(0, weight=1)
+            right_shell.columnconfigure(0, weight=1)
 
+            # Left: list grows; buttons stay visible.
+            self._card_title(left, "local_select_title", "local_select_hint")
             list_frame = tk.Frame(left, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
             list_frame.pack(fill="both", expand=True)
             self.input_list = tk.Listbox(
@@ -405,47 +497,55 @@ if tk is not None:
             ttk.Label(left, textvariable=self.input_count_text, style="Hint.TLabel").pack(anchor="w", pady=(5, 4))
 
             buttons = ttk.Frame(left, style="Card.TFrame")
-            buttons.pack(fill="x", pady=(0, 12))
+            buttons.pack(fill="x", pady=(0, 8))
+            buttons.columnconfigure(0, weight=1)
+            buttons.columnconfigure(1, weight=1)
             self.btn_add_cif = ttk.Button(
                 buttons, text=self._t("btn_add_cif"), style="Secondary.TButton", command=self._add_cif_files
             )
-            self.btn_add_cif.pack(side="left", padx=(0, 6))
+            self.btn_add_cif.grid(row=0, column=0, sticky="ew", padx=(0, 4), pady=2)
             self._register_text(self.btn_add_cif, "btn_add_cif")
             self.btn_add_folder = ttk.Button(
                 buttons, text=self._t("btn_add_folder"), style="Secondary.TButton", command=self._add_cif_folder
             )
-            self.btn_add_folder.pack(side="left", padx=6)
+            self.btn_add_folder.grid(row=0, column=1, sticky="ew", padx=(4, 0), pady=2)
             self._register_text(self.btn_add_folder, "btn_add_folder")
             self.btn_remove = ttk.Button(
                 buttons, text=self._t("btn_remove"), style="Danger.TButton", command=self._remove_inputs
             )
-            self.btn_remove.pack(side="left", padx=6)
+            self.btn_remove.grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=2)
             self._register_text(self.btn_remove, "btn_remove")
             self.btn_clear = ttk.Button(
                 buttons, text=self._t("btn_clear"), style="Secondary.TButton", command=self._clear_inputs
             )
-            self.btn_clear.pack(side="left", padx=6)
+            self.btn_clear.grid(row=1, column=1, sticky="ew", padx=(4, 0), pady=2)
             self._register_text(self.btn_clear, "btn_clear")
 
-            output_box = self._labeled_frame(left, "result_bundle", padding=10)
+            output_box = self._labeled_frame(left, "result_bundle", padding=8)
             output_box.pack(fill="x")
             self._path_entry(output_box, self.local_output, self._choose_local_output)
             self.chk_recursive = ttk.Checkbutton(
                 output_box, text=self._t("scan_recursive"), variable=self.local_recursive
             )
-            self.chk_recursive.pack(anchor="w", pady=(8, 0))
+            self.chk_recursive.pack(anchor="w", pady=(6, 0))
             self._register_text(self.chk_recursive, "scan_recursive")
             self.chk_overwrite_local = ttk.Checkbutton(
                 output_box, text=self._t("overwrite_bundle"), variable=self.overwrite
             )
-            self.chk_overwrite_local.pack(anchor="w", pady=(4, 0))
+            self.chk_overwrite_local.pack(anchor="w", pady=(2, 0))
             self._register_text(self.chk_overwrite_local, "overwrite_bundle")
+
+            # Right: scrollable form + pinned primary action.
+            scroll_outer, right = self._make_scrollable(right_shell)
+            scroll_outer.grid(row=0, column=0, sticky="nsew")
+            footer = ttk.Frame(right_shell, style="Card.TFrame")
+            footer.grid(row=1, column=0, sticky="ew", pady=(8, 0))
 
             self._card_title(right, "scientific_title", "scientific_hint")
             self._analysis_controls(right)
             self._build_cij_panel(right)
-            options = self._labeled_frame(right, "outputs", padding=10)
-            options.pack(fill="x", pady=(10, 0))
+            options = self._labeled_frame(right, "outputs", padding=8)
+            options.pack(fill="x", pady=(8, 0))
             self.chk_elasticity_local = ttk.Checkbutton(
                 options, text=self._t("pair_elasticity"), variable=self.include_elasticity
             )
@@ -471,70 +571,83 @@ if tk is not None:
             )
             self.chk_figures.pack(anchor="w")
             self._register_text(self.chk_figures, "include_figures")
+
             button = ttk.Button(
-                right, text=self._t("analyze_local"), style="Primary.TButton", command=self._run_local
+                footer, text=self._t("analyze_local"), style="Primary.TButton", command=self._run_local
             )
-            button.pack(fill="x", pady=(14, 0))
+            button.pack(fill="x")
             self._register_text(button, "analyze_local")
             self._run_buttons.append(button)
 
         def _build_mp_tab(self, frame: ttk.Frame) -> None:
-            frame.columnconfigure(0, weight=1)
-            frame.columnconfigure(1, weight=1)
+            frame.columnconfigure(0, weight=1, minsize=280)
+            frame.columnconfigure(1, weight=2, minsize=360)
             frame.rowconfigure(0, weight=1)
-            left = ttk.Frame(frame, style="Card.TFrame", padding=(0, 0, 12, 0))
-            right = ttk.Frame(frame, style="Card.TFrame", padding=(12, 0, 0, 0))
-            left.grid(row=0, column=0, sticky="nsew")
-            right.grid(row=0, column=1, sticky="nsew")
+
+            left_shell = ttk.Frame(frame, style="Card.TFrame", padding=(0, 0, 10, 0))
+            right_shell = ttk.Frame(frame, style="Card.TFrame", padding=(10, 0, 0, 0))
+            left_shell.grid(row=0, column=0, sticky="nsew")
+            right_shell.grid(row=0, column=1, sticky="nsew")
+            left_shell.rowconfigure(0, weight=1)
+            left_shell.columnconfigure(0, weight=1)
+            right_shell.rowconfigure(0, weight=1)
+            right_shell.columnconfigure(0, weight=1)
+
+            left_scroll, left = self._make_scrollable(left_shell)
+            left_scroll.grid(row=0, column=0, sticky="nsew")
+            right_scroll, right = self._make_scrollable(right_shell)
+            right_scroll.grid(row=0, column=0, sticky="nsew")
+            footer = ttk.Frame(right_shell, style="Card.TFrame")
+            footer.grid(row=1, column=0, sticky="ew", pady=(8, 0))
 
             self._card_title(left, "mp_discover_title", "mp_discover_hint")
-            form = self._labeled_frame(left, "mp_query", padding=12)
+            form = self._labeled_frame(left, "mp_query", padding=10)
             form.pack(fill="x")
             self.lbl_composition = ttk.Label(form, text=self._t("composition"), style="Card.TLabel")
-            self.lbl_composition.grid(row=0, column=0, sticky="w", pady=5)
+            self.lbl_composition.grid(row=0, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_composition, "composition")
             ttk.Entry(form, textvariable=self.mp_composition).grid(
-                row=0, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=5
+                row=0, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=4
             )
             self.lbl_api_key = ttk.Label(form, text=self._t("api_key"), style="Card.TLabel")
-            self.lbl_api_key.grid(row=1, column=0, sticky="w", pady=5)
+            self.lbl_api_key.grid(row=1, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_api_key, "api_key")
             self.mp_key_entry = ttk.Entry(form, textvariable=self.mp_key, show="" if self.mp_show_key.get() else "•")
-            self.mp_key_entry.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=5)
+            self.mp_key_entry.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=4)
             self.chk_show_key = ttk.Checkbutton(
                 form, text=self._t("show_key"), variable=self.mp_show_key, command=self._toggle_key
             )
             self.chk_show_key.grid(row=1, column=3, sticky="w")
             self._register_text(self.chk_show_key, "show_key")
             self.lbl_mode = ttk.Label(form, text=self._t("mode"), style="Card.TLabel")
-            self.lbl_mode.grid(row=2, column=0, sticky="w", pady=5)
+            self.lbl_mode.grid(row=2, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_mode, "mode")
             ttk.Combobox(
                 form,
                 textvariable=self.mp_mode,
                 values=("possible_phases", "near_stable", "single_chemsys", "mpids_only"),
                 state="readonly",
-            ).grid(row=2, column=1, sticky="ew", padx=(8, 12), pady=5)
+            ).grid(row=2, column=1, sticky="ew", padx=(8, 12), pady=4)
             self.lbl_ehull = ttk.Label(form, text=self._t("e_hull_max"), style="Card.TLabel")
-            self.lbl_ehull.grid(row=2, column=2, sticky="w", pady=5)
+            self.lbl_ehull.grid(row=2, column=2, sticky="w", pady=4)
             self._register_text(self.lbl_ehull, "e_hull_max")
-            ttk.Entry(form, textvariable=self.mp_e_hull).grid(row=2, column=3, sticky="ew", padx=(8, 0), pady=5)
+            ttk.Entry(form, textvariable=self.mp_e_hull).grid(row=2, column=3, sticky="ew", padx=(8, 0), pady=4)
             self.lbl_sub_order = ttk.Label(form, text=self._t("subsystem_order"), style="Card.TLabel")
-            self.lbl_sub_order.grid(row=3, column=0, sticky="w", pady=5)
+            self.lbl_sub_order.grid(row=3, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_sub_order, "subsystem_order")
             ttk.Entry(form, textvariable=self.mp_subsystem_order).grid(
-                row=3, column=1, sticky="ew", padx=(8, 12), pady=5
+                row=3, column=1, sticky="ew", padx=(8, 12), pady=4
             )
             self.lbl_per_sub = ttk.Label(form, text=self._t("per_subsystem"), style="Card.TLabel")
-            self.lbl_per_sub.grid(row=3, column=2, sticky="w", pady=5)
+            self.lbl_per_sub.grid(row=3, column=2, sticky="w", pady=4)
             self._register_text(self.lbl_per_sub, "per_subsystem")
             ttk.Entry(form, textvariable=self.mp_per_subsystem).grid(
-                row=3, column=3, sticky="ew", padx=(8, 0), pady=5
+                row=3, column=3, sticky="ew", padx=(8, 0), pady=4
             )
             self.lbl_max_cand = ttk.Label(form, text=self._t("max_candidates"), style="Card.TLabel")
-            self.lbl_max_cand.grid(row=4, column=0, sticky="w", pady=5)
+            self.lbl_max_cand.grid(row=4, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_max_cand, "max_candidates")
-            ttk.Entry(form, textvariable=self.mp_limit).grid(row=4, column=1, sticky="ew", padx=(8, 12), pady=5)
+            ttk.Entry(form, textvariable=self.mp_limit).grid(row=4, column=1, sticky="ew", padx=(8, 12), pady=4)
             self.chk_deprecated = ttk.Checkbutton(
                 form, text=self._t("include_deprecated"), variable=self.mp_include_deprecated
             )
@@ -543,46 +656,48 @@ if tk is not None:
             form.columnconfigure(1, weight=1)
             form.columnconfigure(3, weight=1)
 
-            output_box = self._labeled_frame(left, "result_bundle", padding=10)
-            output_box.pack(fill="x", pady=(12, 0))
+            output_box = self._labeled_frame(left, "result_bundle", padding=8)
+            output_box.pack(fill="x", pady=(10, 0))
             self._path_entry(output_box, self.mp_output, self._choose_mp_output)
             self.chk_conventional = ttk.Checkbutton(
                 output_box, text=self._t("conventional_cells"), variable=self.mp_conventional
             )
-            self.chk_conventional.pack(anchor="w", pady=(8, 0))
+            self.chk_conventional.pack(anchor="w", pady=(6, 0))
             self._register_text(self.chk_conventional, "conventional_cells")
             self.chk_overwrite_mp = ttk.Checkbutton(
                 output_box, text=self._t("overwrite_bundle"), variable=self.overwrite
             )
-            self.chk_overwrite_mp.pack(anchor="w", pady=(4, 0))
+            self.chk_overwrite_mp.pack(anchor="w", pady=(2, 0))
             self._register_text(self.chk_overwrite_mp, "overwrite_bundle")
             self.mp_key_hint = ttk.Label(
                 left,
                 text=self._t("mp_key_hint"),
                 style="Hint.TLabel",
-                wraplength=480,
+                wraplength=400,
             )
-            self.mp_key_hint.pack(anchor="w", pady=(10, 0))
+            self.mp_key_hint.pack(anchor="w", pady=(8, 4))
             self._register_text(self.mp_key_hint, "mp_key_hint")
+            self._wrap_labels.append((self.mp_key_hint, 400))
 
             self._card_title(right, "mp_analyze_title", "mp_analyze_hint")
             self._analysis_controls(right)
-            options = self._labeled_frame(right, "outputs", padding=10)
-            options.pack(fill="x", pady=(10, 0))
+            options = self._labeled_frame(right, "outputs", padding=8)
+            options.pack(fill="x", pady=(8, 0))
             self.chk_elasticity_mp = ttk.Checkbutton(
                 options, text=self._t("eval_elasticity"), variable=self.include_elasticity
             )
-            self.chk_elasticity_mp.pack(side="left", padx=(0, 14))
+            self.chk_elasticity_mp.pack(anchor="w")
             self._register_text(self.chk_elasticity_mp, "eval_elasticity")
             self.chk_excel_mp = ttk.Checkbutton(
                 options, text=self._t("write_excel"), variable=self.include_excel
             )
-            self.chk_excel_mp.pack(side="left")
+            self.chk_excel_mp.pack(anchor="w")
             self._register_text(self.chk_excel_mp, "write_excel")
+
             button = ttk.Button(
-                right, text=self._t("run_mp"), style="Primary.TButton", command=self._run_mp
+                footer, text=self._t("run_mp"), style="Primary.TButton", command=self._run_mp
             )
-            button.pack(fill="x", pady=(14, 0))
+            button.pack(fill="x")
             self._register_text(button, "run_mp")
             self._run_buttons.append(button)
 
@@ -689,7 +804,7 @@ if tk is not None:
             limits.columnconfigure(3, weight=1)
 
         def _build_cij_panel(self, parent: ttk.Frame) -> None:
-            box = self._labeled_frame(parent, "cij_panel", padding=10)
+            box = self._labeled_frame(parent, "cij_panel", padding=8)
             box.pack(fill="x", pady=(8, 0))
 
             cubic = ttk.Frame(box, style="Card.TFrame")
@@ -698,26 +813,37 @@ if tk is not None:
                 lbl = ttk.Label(cubic, text=self._t(key), style="Card.TLabel")
                 lbl.pack(side="left")
                 self._register_text(lbl, key)
-                ttk.Entry(cubic, textvariable=var, width=8).pack(side="left", padx=(4, 10))
+                ttk.Entry(cubic, textvariable=var, width=7).pack(side="left", padx=(4, 8))
             btn_cubic = ttk.Button(
                 cubic, text=self._t("apply_cubic"), style="Secondary.TButton", command=self._apply_cubic_cij
             )
             btn_cubic.pack(side="left")
             self._register_text(btn_cubic, "apply_cubic")
 
-            paste_lbl = ttk.Label(box, text=self._t("cij_paste_hint"), style="Hint.TLabel")
+            paste_lbl = ttk.Label(box, text=self._t("cij_paste_hint"), style="Hint.TLabel", wraplength=400)
             paste_lbl.pack(anchor="w", pady=(8, 2))
             self._register_text(paste_lbl, "cij_paste_hint")
+            self._wrap_labels.append((paste_lbl, 400))
+
+            paste_frame = ttk.Frame(box, style="Card.TFrame")
+            paste_frame.pack(fill="x")
             self.cij_paste = tk.Text(
-                box,
-                height=4,
+                paste_frame,
+                height=3,
                 wrap="none",
                 font=("Cascadia Mono", 8),
                 relief="solid",
                 borderwidth=1,
                 highlightthickness=0,
             )
-            self.cij_paste.pack(fill="x")
+            yscroll = ttk.Scrollbar(paste_frame, orient="vertical", command=self.cij_paste.yview)
+            xscroll = ttk.Scrollbar(paste_frame, orient="horizontal", command=self.cij_paste.xview)
+            self.cij_paste.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+            self.cij_paste.grid(row=0, column=0, sticky="nsew")
+            yscroll.grid(row=0, column=1, sticky="ns")
+            xscroll.grid(row=1, column=0, sticky="ew")
+            paste_frame.columnconfigure(0, weight=1)
+            paste_frame.rowconfigure(0, weight=1)
 
             actions = ttk.Frame(box, style="Card.TFrame")
             actions.pack(fill="x", pady=(6, 0))
@@ -731,9 +857,9 @@ if tk is not None:
             )
             btn_clear.pack(side="left", padx=(8, 0))
             self._register_text(btn_clear, "clear_cij")
-            ttk.Label(box, textvariable=self.cij_status, style="Hint.TLabel", wraplength=420).pack(
-                anchor="w", pady=(6, 0)
-            )
+            status = ttk.Label(box, textvariable=self.cij_status, style="Hint.TLabel", wraplength=400)
+            status.pack(anchor="w", pady=(6, 0))
+            self._wrap_labels.append((status, 400))
 
         def _path_entry(self, parent: Any, variable: Any, command: Callable[[], None]) -> None:
             row = ttk.Frame(parent, style="Card.TFrame")
@@ -743,9 +869,10 @@ if tk is not None:
             btn.pack(side="left", padx=(8, 0))
             self._register_text(btn, "browse")
 
-        def _build_activity_panel(self) -> None:
-            panel = ttk.Frame(self, padding=(18, 4, 18, 0))
-            panel.pack(fill="x", side="bottom")
+        def _build_activity_panel(self, parent: Any | None = None) -> None:
+            host = parent if parent is not None else self
+            panel = ttk.Frame(host)
+            panel.pack(fill="both", expand=True)
             title_row = ttk.Frame(panel)
             title_row.pack(fill="x")
             self.activity_label = ttk.Label(
@@ -764,10 +891,10 @@ if tk is not None:
             btn_clear.pack(side="right")
             self._register_text(btn_clear, "clear_log")
             log_frame = tk.Frame(panel, bg=LOG_BG, highlightbackground=BORDER, highlightthickness=1)
-            log_frame.pack(fill="both", expand=True, pady=(5, 6))
+            log_frame.pack(fill="both", expand=True, pady=(4, 4))
             self.log = tk.Text(
                 log_frame,
-                height=4,
+                height=5,
                 wrap="word",
                 state="disabled",
                 bg=LOG_BG,
@@ -786,16 +913,30 @@ if tk is not None:
             self.log.tag_configure("success", foreground="#7CE3A1")
             self.log.tag_configure("warning", foreground="#FFD166")
             self.log.tag_configure("error", foreground="#FF8F88")
+            # Mouse wheel over the log scrolls the log itself.
+            def _log_wheel(event: Any) -> str | None:
+                delta = int(getattr(event, "delta", 0) or 0)
+                if delta:
+                    self.log.yview_scroll(int(-delta / 120), "units")
+                elif getattr(event, "num", None) == 4:
+                    self.log.yview_scroll(-3, "units")
+                elif getattr(event, "num", None) == 5:
+                    self.log.yview_scroll(3, "units")
+                return "break"
+
+            self.log.bind("<MouseWheel>", _log_wheel)
+            self.log.bind("<Button-4>", _log_wheel)
+            self.log.bind("<Button-5>", _log_wheel)
 
         def _build_status_bar(self) -> None:
-            bar = tk.Frame(self, bg="#E5EDF3", height=38)
+            bar = tk.Frame(self, bg="#E5EDF3", height=34)
             bar.pack(fill="x", side="bottom")
             bar.pack_propagate(False)
             ttk.Label(bar, textvariable=self.status_text, background="#E5EDF3", foreground=NAVY).pack(
-                side="left", padx=18
+                side="left", padx=14
             )
-            self.progress = ttk.Progressbar(bar, mode="indeterminate", length=170)
-            self.progress.pack(side="right", padx=(8, 18), pady=9)
+            self.progress = ttk.Progressbar(bar, mode="indeterminate", length=140)
+            self.progress.pack(side="right", padx=(8, 14), pady=7)
             self.open_button = ttk.Button(
                 bar,
                 text=self._t("open_result"),
@@ -803,7 +944,7 @@ if tk is not None:
                 command=self._open_last_output,
                 state="disabled",
             )
-            self.open_button.pack(side="right", pady=4)
+            self.open_button.pack(side="right", pady=3)
             self._register_text(self.open_button, "open_result")
 
         def _enable_dnd(self, widget: Any) -> None:
@@ -859,6 +1000,29 @@ if tk is not None:
                 self.status_text.set(self._t("status_ready"))
             self._refresh_inputs()
             self._refresh_cij_status()
+            self.after_idle(self._update_wraplengths)
+
+        def _on_root_configure(self, event: Any) -> None:
+            if event.widget is not self:
+                return
+            # Throttle wraplength updates while resizing.
+            if getattr(self, "_wrap_after_id", None) is not None:
+                try:
+                    self.after_cancel(self._wrap_after_id)
+                except Exception:
+                    pass
+            self._wrap_after_id = self.after(120, self._update_wraplengths)
+
+        def _update_wraplengths(self) -> None:
+            self._wrap_after_id = None
+            width = max(int(self.winfo_width()), 400)
+            # Rough half-column width for two-column forms.
+            target = max(220, min(520, width // 2 - 80))
+            for widget, _default in self._wrap_labels:
+                try:
+                    widget.configure(wraplength=target)
+                except tk.TclError:
+                    continue
 
         def _on_energy_shortcut(self) -> None:
             if self._syncing_shortcut:
@@ -937,6 +1101,8 @@ if tk is not None:
                     _required_float(self.cij_c44.get(), "C44"),
                     source="gui_cubic",
                 )
+                if tensor.status == "invalid":
+                    raise ValueError(" | ".join(tensor.warnings))
             except ValueError as exc:
                 messagebox.showerror(self._t("err_cij_apply"), str(exc))
                 return
@@ -953,6 +1119,8 @@ if tk is not None:
             try:
                 matrix = parse_cij_paste_text(self.cij_paste.get("1.0", "end"))
                 tensor = parse_cij_matrix_6x6(matrix)
+                if tensor.status == "invalid":
+                    raise ValueError(" | ".join(tensor.warnings))
             except ValueError as exc:
                 messagebox.showerror(self._t("err_cij_apply"), str(exc))
                 return
@@ -1077,15 +1245,18 @@ if tk is not None:
                 return
             inputs = [str(path) for path in self.local_inputs]
             overrides = dict(self.elastic_overrides) if self.elastic_overrides else None
+            recursive = bool(self.local_recursive.get())
+            include_excel = bool(self.include_excel.get())
+            overwrite = bool(self.overwrite.get())
             self._start_task(
                 "Analyzing local CIF structures",
                 lambda: analyze_cifs(
                     inputs,
                     output,
                     settings=settings,
-                    recursive=self.local_recursive.get(),
-                    include_excel=self.include_excel.get(),
-                    overwrite=self.overwrite.get(),
+                    recursive=recursive,
+                    include_excel=include_excel,
+                    overwrite=overwrite,
                     elastic_overrides=overrides,
                 ),
             )
@@ -1111,6 +1282,10 @@ if tk is not None:
                 messagebox.showerror(self._t("err_title_settings"), str(exc))
                 return
 
+            conventional = bool(self.mp_conventional.get())
+            include_excel = bool(self.include_excel.get())
+            overwrite = bool(self.overwrite.get())
+
             def run() -> PipelineResult:
                 provider = MaterialsProjectProvider(api_key)
                 return run_pipeline(
@@ -1119,10 +1294,10 @@ if tk is not None:
                     output,
                     discovery_settings=discovery,
                     analysis_settings=analysis,
-                    conventional_unit_cell=self.mp_conventional.get(),
+                    conventional_unit_cell=conventional,
                     include_elasticity=analysis.include_elasticity,
-                    include_excel=self.include_excel.get(),
-                    overwrite=self.overwrite.get(),
+                    include_excel=include_excel,
+                    overwrite=overwrite,
                     confirm_above=limit,
                     authorize_large_download=True,
                 )
