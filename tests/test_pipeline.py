@@ -1,9 +1,11 @@
 import csv
 from pathlib import Path
+import shutil
 
 from openpyxl import load_workbook
 
-from diffractscout.pipeline import analyze_cifs
+from diffractscout.models import AnalysisSettings
+from diffractscout.pipeline import analyze_cifs, collect_cif_paths
 from diffractscout.validation import verify_bundle
 
 
@@ -54,8 +56,6 @@ def test_output_path_must_be_a_directory(demo_inputs: Path, tmp_path: Path) -> N
 
 
 def test_no_elasticity_does_not_copy_or_load_sidecar(demo_inputs: Path, tmp_path: Path) -> None:
-    from diffractscout.models import AnalysisSettings
-
     output = tmp_path / "no-elasticity"
     result = analyze_cifs(
         [demo_inputs],
@@ -65,7 +65,53 @@ def test_no_elasticity_does_not_copy_or_load_sidecar(demo_inputs: Path, tmp_path
     )
     assert len(result.analyses) == 1
     assert result.analyses[0].elastic_tensor is None
+    assert result.analyses[0].metadata["elasticity_requested"] is False
+    assert {
+        reflection.elastic_status for reflection in result.analyses[0].reflections
+    } == {"not_requested"}
     assert not list((output / "inputs").glob("*_elasticity.json"))
+
+
+def test_collect_cif_paths_is_case_insensitive(demo_inputs: Path, tmp_path: Path) -> None:
+    scan_root = tmp_path / "case-scan"
+    scan_root.mkdir()
+    upper = scan_root / "UPPER.CIF"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", upper)
+    assert collect_cif_paths([scan_root]) == [upper.resolve()]
+
+
+def test_same_named_inputs_are_preserved_without_collision(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", left / "phase.cif")
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", right / "phase.cif")
+
+    output = tmp_path / "collision-safe"
+    result = analyze_cifs(
+        [left, right],
+        output,
+        settings=AnalysisSettings(include_elasticity=False),
+        include_excel=False,
+    )
+    bundled = sorted(path.name for path in (output / "inputs").glob("*.cif"))
+    assert len(result.analyses) == 2
+    assert bundled[0] == "phase.cif"
+    assert len(bundled) == 2
+    assert bundled[1].startswith("phase_")
+
+
+def test_missing_explicit_input_is_not_silently_ignored(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.cif"
+    try:
+        collect_cif_paths([missing])
+    except FileNotFoundError as exc:
+        assert str(missing) in str(exc)
+    else:
+        raise AssertionError("Expected an explicit missing input to raise FileNotFoundError")
 
 
 def test_input_output_overlap_is_rejected_before_writes(demo_inputs: Path) -> None:

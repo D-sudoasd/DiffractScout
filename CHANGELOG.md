@@ -6,6 +6,34 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 - Awaiting the first public GitHub release, archived software DOI, and external validation cases.
 
+## [0.3.0] - 2026-08-12
+
+### Added
+
+- Added a packaged analytic benchmark suite for simple-cubic, BCC, FCC, NaCl, and cubic directional-elasticity solutions, producing a self-verifying SHA-256 evidence bundle with 45 closed-form checks.
+- Added a machine-readable JOSS evidence ledger, JSON schema, readiness preflight, six-month public-development plan, adoption/impact claim ledger, governance, support, roadmap, and validation-case registry.
+- Added portable runtime metadata to provenance and benchmark reports without storing local paths or host identifiers.
+- Added a tag-driven release workflow that verifies the tag/version match, runs the full release preflight, builds wheel and source distributions, validates package metadata, creates deterministic benchmark/demo/readiness archives and checksums, and publishes a GitHub Release.
+- Added a monthly reproducibility-audit workflow and monthly Dependabot updates for Python and GitHub Actions dependencies.
+- Added deterministic evidence-archive tooling with sorted paths, fixed timestamps, safe roots, symbolic-link rejection, and atomic output replacement.
+
+### Fixed
+
+- Scanned `.cif` filenames case-insensitively on all platforms and rejected missing or explicitly non-CIF inputs with actionable errors.
+- Prevented same-basename CIF files from overwriting one another in a result bundle by deriving deterministic collision-safe copied names.
+- Preserved exact upper-bound reflections by applying a documented floating-point search margin followed by exact angular filtering.
+- Distinguished `not_requested` elasticity from valid no-data states throughout phase, peak, and provider outputs.
+- Converted declared Pa, kPa, MPa, GPa, and TPa stiffness units into GPa and rejected unknown units before directional-property calculation.
+- Returned a dedicated partial-success CLI exit status when a valid result bundle contains failed phases or provider items.
+- Prevented oversized Excel tables from silently truncating by placing an omission record in the workbook while retaining the complete CSV output.
+- Rejected chemical-subsystem expansions above a configurable pre-provider query limit to prevent combinatorial API growth in high-component systems.
+
+### Validation
+
+- Expanded the offline suite to 68 tests.
+- Added deterministic benchmark and evidence-archive reproducibility checks using `SOURCE_DATE_EPOCH`.
+- Added automated integrity checks for the JOSS evidence ledger, citation metadata, repository materials, manuscript structure, public-history dates, release archives, research use, independent validation, and external engagement.
+
 ## [0.2.0] - 2026-07-30
 
 ### Added

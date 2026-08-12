@@ -4,7 +4,9 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import platform
 import re
+import sys
 from dataclasses import fields, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,7 +82,31 @@ def write_json(path: str | Path, payload: Any) -> Path:
     return output
 
 
-def package_versions(names: tuple[str, ...] = ("diffractscout", "gemmi", "numpy", "pandas", "openpyxl")) -> dict[str, str]:
+def runtime_environment() -> dict[str, str]:
+    """Return portable runtime metadata without local paths or host identifiers."""
+
+    return {
+        "python": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "operating_system": platform.system(),
+        "operating_system_release": platform.release(),
+        "machine": platform.machine(),
+        "byteorder": sys.byteorder,
+    }
+
+
+def package_versions(
+    names: tuple[str, ...] = (
+        "diffractscout",
+        "gemmi",
+        "numpy",
+        "pandas",
+        "openpyxl",
+        "spglib",
+        "mp-api",
+        "pymatgen",
+    ),
+) -> dict[str, str]:
     versions: dict[str, str] = {}
     for name in names:
         try:

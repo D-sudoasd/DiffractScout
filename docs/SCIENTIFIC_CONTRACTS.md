@@ -69,6 +69,8 @@ The scan window must satisfy
 
 and the display-profile step and FWHM must be finite and positive. The pseudo-Voigt mixing fraction must lie in `[0, 1]`.
 
+Candidate generation uses a relative $d_{min}$ search margin of $10^{-10}$ plus `nextafter(d_min, 0)` to avoid floating-point exclusion of a reflection exactly at the upper $2\theta$ boundary. The requested angular interval is then enforced directly with a $10^{-9}$ degree comparison tolerance. The search margin improves completeness and does not intentionally widen the exported scan range.
+
 ## 4. X-ray structure factors and intensity channels
 
 Gemmi calculates the X-ray structure factor for the average CIF structure. Before calculation, DiffractScout calls Gemmi's crystallographic-occupancy conversion on a dedicated structure-factor copy. This accounts for special-position multiplicity while preserving original CIF occupancies for validation and composition reporting. The analytic FCC regression test verifies
@@ -144,16 +146,17 @@ $$
 
 The summed profile is normalized to a maximum of 100. FWHM and mixing fraction are user inputs stored in provenance. The profile is a visualization and interoperability product. It is not a fitted instrument function and contains no inferred axial divergence, spectral doublet, microstrain, crystallite size, detector response, or background.
 
-## 6. Resource limits
+## 6. Resource and query limits
 
-Large angular grids or small-$d$ reflection searches can allocate substantial memory. DiffractScout applies two explicit guards before memory-intensive work:
+Large angular grids, small-$d$ reflection searches, and unrestricted chemical-subsystem expansion can consume substantial memory, API quota, and runtime. DiffractScout applies three explicit guards before the expensive operation begins:
 
 1. `max_profile_points` limits the requested continuous grid size;
-2. `max_reflection_estimate` limits a conservative reciprocal-space estimate and the actual generated Miller-candidate count.
+2. `max_reflection_estimate` limits a conservative reciprocal-space estimate and the actual generated Miller-candidate count;
+3. `max_subsystems` limits the number of chemical-subsystem provider queries implied by the parsed element set and `max_subsystem_order`.
 
 The conservative estimate is proportional to the reciprocal-space sphere implied by the minimum accessible spacing and the direct-cell volume. It is a safety estimate, not a physical prediction of allowed reflections. Both configured limits, the estimate, and the actual candidate count are recorded in analysis metadata.
 
-Increasing either limit is an explicit user decision. Lowering the profile step or extending to very high angle can trigger the profile guard. Large unit cells and small accessible $d$ can trigger the reciprocal-candidate guard.
+Increasing any limit is an explicit user decision. Lowering the profile step or extending to very high angle can trigger the profile guard. Large unit cells and small accessible $d$ can trigger the reciprocal-candidate guard. High-component systems can generate combinatorial subsystem counts; DiffractScout evaluates the binomial count before constructing the query list or contacting the provider and rejects counts above `max_subsystems`.
 
 ## 7. Elastic tensor
 
@@ -163,7 +166,7 @@ The accepted stiffness matrix is a finite 6×6 matrix in GPa using Voigt order
 [11, 22, 33, 23, 13, 12]
 ```
 
-with engineering shear strain. DiffractScout:
+with engineering shear strain. Sidecars may declare Pa, kPa, MPa, GPa, or TPa; values are converted to GPa before validation and the conversion is recorded. Generic matrix fields without a unit retain legacy GPa interpretation with an explicit warning. Unknown units stop directional evaluation. DiffractScout:
 
 1. requires an exact 6×6 shape;
 2. rejects non-finite entries;
@@ -212,7 +215,7 @@ Materials Project tensors are labeled `DFT_calculated` and `not_experimental=tru
 
 A database record is a candidate reference. It is not proof that the phase exists in an experiment. `energy_above_hull` and stability flags remain provider metadata and are not experimental stability measurements. Candidate ranking is deterministic and does not constitute phase-probability inference.
 
-Database query failure, no property document, a document without a tensor, and a tensor requiring a frame transformation are exported as distinct statuses. This distinction prevents service outages from being silently reported as valid negative results.
+Database query failure, no property document, a document without a tensor, a tensor requiring a frame transformation, and a run where elasticity was disabled are exported as distinct statuses. The disabled state is `not_requested`; it is not counted as missing data. This distinction prevents service outages or user choices from being silently reported as valid negative results.
 
 ## 10. Result-bundle integrity
 

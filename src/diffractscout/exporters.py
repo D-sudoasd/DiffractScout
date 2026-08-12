@@ -22,7 +22,7 @@ from .models import (
     DownloadArtifact,
     PhaseAnalysis,
 )
-from .utils import package_versions, sha256_file, to_jsonable, utc_now_iso, write_json
+from .utils import package_versions, runtime_environment, sha256_file, to_jsonable, utc_now_iso, write_json
 
 CANDIDATE_HEADERS = [item.name for item in fields(CandidateRecord)]
 DOWNLOAD_HEADERS = [
@@ -129,6 +129,7 @@ PATTERN_HEADERS = [
 ]
 DIAGNOSTIC_HEADERS = ["stage", "item", "level", "message"]
 SUMMARY_HEADERS = ["key", "value"]
+EXCEL_DATA_ROW_LIMIT = 900_000
 
 
 def _portable_path(value: Path) -> str:
@@ -268,7 +269,13 @@ def phase_rows(analyses: list[PhaseAnalysis]) -> list[dict[str, Any]]:
                 "wavelength_A": analysis.wavelength_A,
                 "energy_keV": analysis.energy_keV,
                 "wavelength_source": analysis.wavelength_source,
-                "elastic_status": tensor.status if tensor else "not_available",
+                "elastic_status": (
+                    tensor.status
+                    if tensor
+                    else "not_requested"
+                    if analysis.metadata.get("elasticity_requested") is False
+                    else "not_available"
+                ),
                 "elastic_source_provider": tensor.source_provider if tensor else "",
                 "elastic_source_record_id": tensor.source_record_id if tensor else "",
                 "elastic_coordinate_frame": tensor.coordinate_frame if tensor else "",
@@ -381,6 +388,14 @@ def _add_sheet(
 ) -> None:
     sheet = workbook.create_sheet(title=title)
     sheet.append(headers)
+    if len(rows) > EXCEL_DATA_ROW_LIMIT:
+        note: dict[str, Any] = {headers[0]: "omitted_from_workbook"}
+        if len(headers) > 1:
+            note[headers[1]] = (
+                f"{len(rows):,} data rows exceed the conservative Excel limit of "
+                f"{EXCEL_DATA_ROW_LIMIT:,}; use the corresponding CSV file."
+            )
+        rows = [note]
     if rows:
         for row in rows:
             sheet.append([_cell_value(row.get(header)) for header in headers])
@@ -423,21 +438,7 @@ def write_excel_workbook(
     _add_sheet(workbook, "Candidates", candidates, CANDIDATE_HEADERS)
     _add_sheet(workbook, "Downloads", downloads, DOWNLOAD_HEADERS)
     _add_sheet(workbook, "Diagnostics", diagnostics, DIAGNOSTIC_HEADERS)
-    if len(patterns) <= 900_000:
-        _add_sheet(workbook, "Patterns", patterns, PATTERN_HEADERS)
-    else:
-        _add_sheet(
-            workbook,
-            "Patterns",
-            [
-                {
-                    "phase_name": "omitted_from_workbook",
-                    "cif_name": "Pattern profile exceeded the conservative Excel row budget; use pattern_profiles.csv.",
-                    "two_theta_deg": len(patterns),
-                }
-            ],
-            PATTERN_HEADERS,
-        )
+    _add_sheet(workbook, "Patterns", patterns, PATTERN_HEADERS)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -528,6 +529,27 @@ def export_result_bundle(
     peaks = peak_rows(analyses)
     elasticity = elasticity_rows(analyses)
     patterns = pattern_rows(analyses)
+    if include_excel:
+        workbook_tables = {
+            "Phases": phases,
+            "Peaks": peaks,
+            "Elasticity": elasticity,
+            "Candidates": candidates,
+            "Downloads": download_table,
+            "Patterns": patterns,
+        }
+        for title, rows in workbook_tables.items():
+            if len(rows) > EXCEL_DATA_ROW_LIMIT:
+                diagnostics.append(
+                    DiagnosticRecord(
+                        "export",
+                        title,
+                        "warning",
+                        f"{len(rows):,} rows exceed the conservative Excel data-row limit "
+                        f"of {EXCEL_DATA_ROW_LIMIT:,}; the workbook contains an omission note and "
+                        "the complete data remain in CSV.",
+                    )
+                )
     diagnostic_table = diagnostic_rows(diagnostics)
     summary = _summary_rows(analyses, discovery, settings, diagnostics)
 
@@ -576,7 +598,9 @@ def export_result_bundle(
             "elastic_modulus": "E(n) = 1 / (q(n)^T S q(n)) under engineering-shear Voigt convention",
         },
         "scientific_boundary": SCIENTIFIC_BOUNDARY,
+        "excel_data_row_limit": EXCEL_DATA_ROW_LIMIT,
         "software_versions": package_versions(),
+        "runtime_environment": runtime_environment(),
     }
     write_json(output / "provenance.json", provenance)
 

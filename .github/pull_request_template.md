@@ -16,8 +16,10 @@ Provide analytical checks, independent comparisons, public/synthetic fixtures, u
 - [ ] `python -m compileall -q src tests scripts`
 - [ ] `pytest --cov=diffractscout --cov-fail-under=65`
 - [ ] `diffractscout demo -o outputs/pr_demo`
+- [ ] `diffractscout benchmark -o outputs/pr_benchmark`
 - [ ] `diffractscout verify outputs/pr_demo`
-- [ ] Documentation and changelog updated when applicable
+- [ ] `python scripts/joss_readiness.py --output outputs/pr_readiness` completes in non-strict mode
+- [ ] Documentation, validation evidence, and changelog updated when applicable
 - [ ] No API keys, restricted data, build artifacts, or local paths committed
 
 ## Compatibility and provenance

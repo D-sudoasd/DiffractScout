@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from . import __version__
+from .benchmark import run_reference_benchmarks, verify_benchmark_bundle
 from .demo import write_demo_inputs
 from .models import AnalysisSettings, DiscoverySettings
 from .pipeline import analyze_cifs, export_discovery, run_pipeline
@@ -45,6 +46,7 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
         mode=args.mode,
         e_hull_max_eV_atom=args.e_hull_max,
         max_subsystem_order=args.max_subsystem_order,
+        max_subsystems=args.max_subsystems,
         max_per_subsystem=args.max_per_subsystem,
         max_total=args.max_total,
         exclude_deprecated=not args.include_deprecated,
@@ -78,6 +80,21 @@ def _print_result(result: object, *, as_json: bool = False) -> None:
         print(payload)
 
 
+def _pipeline_exit_code(result: object) -> int:
+    """Return a machine-actionable status for batch workflows.
+
+    0 means at least one phase succeeded and no error diagnostics were emitted;
+    3 means a usable partial bundle was produced with one or more failed items;
+    2 means no phase analysis succeeded.
+    """
+
+    analyses = list(getattr(result, "analyses", []) or [])
+    if not analyses:
+        return 2
+    diagnostics = list(getattr(result, "diagnostics", []) or [])
+    return 3 if any(item.level == "error" for item in diagnostics) else 0
+
+
 def _add_analysis_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source", default="Cu Ka", choices=("Cu Ka", "Co Ka", "Fe Ka", "Mo Ka", "Ag Ka", "Custom"))
     radiation = parser.add_mutually_exclusive_group()
@@ -104,6 +121,12 @@ def _add_discovery_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--e-hull-max", type=float, default=None, help="Maximum energy above hull in eV/atom.")
     parser.add_argument("--max-subsystem-order", type=int, default=None)
+    parser.add_argument(
+        "--max-subsystems",
+        type=int,
+        default=4096,
+        help="Safety limit for the number of chemical-subsystem queries.",
+    )
     parser.add_argument("--max-per-subsystem", type=int, default=None)
     parser.add_argument("--max-total", type=int, default=None)
     parser.add_argument("--include-deprecated", action="store_true")
@@ -155,6 +178,14 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("bundle")
     verify.add_argument("--json", action="store_true")
 
+    benchmark = subparsers.add_parser(
+        "benchmark",
+        help="Run deterministic analytic diffraction and elasticity benchmarks.",
+    )
+    benchmark.add_argument("-o", "--output", required=True)
+    benchmark.add_argument("--overwrite", action="store_true")
+    benchmark.add_argument("--json", action="store_true")
+
     gui = subparsers.add_parser("gui", help="Launch the optional Tk desktop interface.")
     return parser
 
@@ -173,7 +204,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 overwrite=args.overwrite,
             )
             _print_result(result, as_json=args.json)
-            return 0 if result.analyses else 2
+            return _pipeline_exit_code(result)
 
         if args.command == "discover":
             provider = MaterialsProjectProvider(_api_key(args))
@@ -204,7 +235,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 authorize_large_download=args.yes,
             )
             _print_result(result, as_json=args.json)
-            return 0 if result.analyses else 2
+            return _pipeline_exit_code(result)
 
         if args.command == "demo":
             with tempfile.TemporaryDirectory(prefix="diffractscout_demo_") as temporary:
@@ -216,7 +247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     overwrite=args.overwrite,
                 )
             _print_result(result, as_json=args.json)
-            return 0 if result.analyses else 2
+            return _pipeline_exit_code(result)
 
         if args.command == "verify":
             report = verify_bundle(args.bundle)
@@ -228,6 +259,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for error in report["errors"]:
                     print(f"ERROR: {error}", file=sys.stderr)
             return 0 if report["ok"] else 2
+
+        if args.command == "benchmark":
+            report = run_reference_benchmarks(
+                args.output,
+                overwrite=args.overwrite,
+            )
+            verification = verify_benchmark_bundle(args.output)
+            if args.json:
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+            else:
+                print(f"Output: {report['output_dir']}")
+                print(f"Checks: {report['passed_checks']}/{report['total_checks']} passed")
+                print(f"Manifest: {report['manifest_path']}")
+                print("PASS" if report["all_passed"] and verification["ok"] else "FAIL")
+            return 0 if report["all_passed"] and verification["ok"] else 2
 
         if args.command == "gui":
             from .gui import main as gui_main

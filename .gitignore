@@ -24,3 +24,5 @@ paper/*.blg
 paper/*.log
 paper/*.out
 paper/*.tex
+
+_paper_demo/

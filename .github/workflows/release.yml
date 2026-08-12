@@ -1,0 +1,85 @@
+name: Release candidate packaging
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Verify and publish tagged release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install release dependencies
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m pip install -e ".[test]"
+
+      - name: Require tag and package versions to match
+        shell: bash
+        run: |
+          package_version=$(python -c "import diffractscout; print(diffractscout.__version__)")
+          test "${GITHUB_REF_NAME}" = "v${package_version}"
+
+      - name: Run complete release preflight
+        run: python scripts/check_release.py --skip-wheel
+
+      - name: Build source and wheel distributions
+        run: python -m build
+
+      - name: Generate reproducible scientific evidence bundles
+        shell: bash
+        run: |
+          export SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          python -m diffractscout benchmark -o release_benchmark
+          python -m diffractscout demo -o release_demo
+          python -m diffractscout verify release_demo
+          python scripts/joss_readiness.py --output release_readiness
+          python scripts/archive_tree.py release_benchmark "diffractscout-${GITHUB_REF_NAME}-analytic-benchmark.zip" --root-name analytic-benchmark
+          python scripts/archive_tree.py release_demo "diffractscout-${GITHUB_REF_NAME}-offline-demo.zip" --root-name offline-demo
+          python scripts/archive_tree.py release_readiness "diffractscout-${GITHUB_REF_NAME}-joss-readiness.zip" --root-name joss-readiness
+
+      - name: Validate distribution metadata
+        run: python -m twine check dist/*
+
+      - name: Create SHA-256 inventory
+        shell: bash
+        run: |
+          sha256sum dist/* diffractscout-${GITHUB_REF_NAME}-*.zip > SHA256SUMS.txt
+
+      - name: Upload verified release artifacts to workflow
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ github.ref_name }}
+          path: |
+            dist/*
+            diffractscout-${{ github.ref_name }}-*.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/* \
+            diffractscout-${GITHUB_REF_NAME}-*.zip \
+            SHA256SUMS.txt \
+            --verify-tag \
+            --generate-notes \
+            --title "DiffractScout ${GITHUB_REF_NAME}"

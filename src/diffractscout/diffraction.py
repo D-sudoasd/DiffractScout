@@ -31,6 +31,12 @@ SCIENTIFIC_BOUNDARY = (
     "background, detector geometry, and experimental corrections are not inferred."
 )
 
+# Gemmi documents that reciprocal searches should use a slightly relaxed dmin
+# because floating-point rounding can otherwise exclude a reflection exactly on
+# the requested boundary. The exact 2theta interval is enforced after candidate
+# generation, so this margin changes completeness without widening the output.
+DMIN_SEARCH_RELATIVE_MARGIN = 1e-10
+
 
 def resolve_wavelength(settings: AnalysisSettings) -> tuple[float, float | None, str]:
     if settings.input_mode == "energy":
@@ -176,7 +182,11 @@ def _elastic_annotation(
     tensor: ElasticTensor | None,
     structure: StructureRecord,
     hkl: tuple[int, int, int],
+    *,
+    requested: bool,
 ) -> tuple[float | None, str, str]:
+    if not requested:
+        return None, "not_requested", "Elasticity evaluation was disabled for this run."
     if tensor is None:
         return None, "not_available", "No paired numerical 6x6 elastic tensor was found."
     if tensor.status == "invalid":
@@ -217,8 +227,12 @@ def simulate_powder_pattern(
 
     theta_max = np.deg2rad(settings.two_theta_max_deg / 2.0)
     d_min = wavelength / (2.0 * np.sin(theta_max))
+    d_min_search = min(
+        float(np.nextafter(d_min, 0.0)),
+        float(d_min) * (1.0 - DMIN_SEARCH_RELATIVE_MARGIN),
+    )
     cell_volume = float(structure.small_structure.cell.volume)
-    reflection_estimate = _reflection_search_estimate(cell_volume, float(d_min))
+    reflection_estimate = _reflection_search_estimate(cell_volume, float(d_min_search))
     if reflection_estimate > settings.max_reflection_estimate:
         raise ValueError(
             f"Reciprocal search is estimated at {reflection_estimate:,} points, exceeding "
@@ -228,7 +242,7 @@ def simulate_powder_pattern(
     miller_array = gemmi.make_miller_array(
         structure.small_structure.cell,
         structure.space_group_object,
-        float(d_min),
+        float(d_min_search),
         0.0,
         True,
     )
@@ -270,6 +284,7 @@ def simulate_powder_pattern(
             elastic_tensor if settings.include_elasticity else None,
             structure,
             representative,
+            requested=settings.include_elasticity,
         )
         reflections.append(
             ReflectionRecord(
@@ -334,8 +349,9 @@ def simulate_powder_pattern(
         warnings.append("No theoretical reflections fall inside the selected 2theta window.")
     if settings.step_deg > 0.05:
         warnings.append("The profile grid is coarse; use step_deg <= 0.02 for peak-position plots.")
-    if elastic_tensor is not None:
-        warnings.extend(item for item in elastic_tensor.warnings if item not in warnings)
+    active_elastic_tensor = elastic_tensor if settings.include_elasticity else None
+    if active_elastic_tensor is not None:
+        warnings.extend(item for item in active_elastic_tensor.warnings if item not in warnings)
 
     metadata = {
         "generated_at_utc": utc_now_iso(),
@@ -351,6 +367,8 @@ def simulate_powder_pattern(
         "profile_point_count": int(grid.size),
         "max_profile_points": settings.max_profile_points,
         "d_min_A": float(d_min),
+        "d_min_search_A": float(d_min_search),
+        "d_min_search_relative_margin": DMIN_SEARCH_RELATIVE_MARGIN,
         "reflection_search_estimate": reflection_estimate,
         "miller_candidates_generated": len(miller_array),
         "max_reflection_estimate": settings.max_reflection_estimate,
@@ -362,6 +380,7 @@ def simulate_powder_pattern(
             "theoretical intensities; they are not crystallographic residual factors or standardized QPA coefficients."
         ),
         "q_definition": "2*pi/d = 4*pi*sin(theta)/lambda",
+        "elasticity_requested": settings.include_elasticity,
         "scientific_boundary": SCIENTIFIC_BOUNDARY,
         "software_versions": package_versions(),
     }
@@ -374,7 +393,7 @@ def simulate_powder_pattern(
         wavelength_A=wavelength,
         energy_keV=energy,
         wavelength_source=wavelength_source,
-        elastic_tensor=elastic_tensor,
+        elastic_tensor=active_elastic_tensor,
         warnings=list(dict.fromkeys(warnings)),
         metadata=metadata,
     )

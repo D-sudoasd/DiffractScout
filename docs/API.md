@@ -38,7 +38,7 @@ for diagnostic in result.diagnostics:
 7. verifies the staged bundle;
 8. atomically moves it into the requested target.
 
-It returns a `PipelineResult`. An invalid phase can be recorded in `diagnostics` while other phases complete. CLI exit status is nonzero when no phase is analyzable.
+It returns a `PipelineResult`. An invalid phase can be recorded in `diagnostics` while other phases complete. CLI exit status is `0` when all analyzable items complete, `3` when a usable bundle contains error diagnostics for one or more items, and `2` when no phase is analyzable or a fatal input/configuration error occurs.
 
 ## Candidate discovery
 
@@ -57,13 +57,14 @@ discovery = discover_candidates(
         mode="near_stable",
         e_hull_max_eV_atom=0.05,
         max_subsystem_order=3,
+        max_subsystems=4096,
         max_per_subsystem=100,
         max_total=50,
     ),
 )
 ```
 
-`DiscoveryResult` contains normalized input, queried subsystems, per-subsystem counts, a deterministic candidate list, provider metadata, and warnings. Invalid negative/non-finite energy limits and non-positive count limits are rejected before provider access.
+`DiscoveryResult` contains normalized input, queried subsystems, per-subsystem counts, a deterministic candidate list, provider metadata, and warnings. Invalid negative/non-finite energy limits and non-positive count limits are rejected before provider access. The total number of proposed subsystem queries is calculated before materializing the query list; values above `max_subsystems` are rejected to prevent combinatorial expansion in high-component systems.
 
 ## Discovery-only export
 
@@ -125,6 +126,14 @@ Downloads above `confirm_above` require `authorize_large_download=True`. Automat
 - elasticity: `include_elasticity`;
 - safety: `max_profile_points`, `max_reflection_estimate`.
 
+### `DiscoverySettings`
+
+- search: `mode`, `e_hull_max_eV_atom`, `exclude_deprecated`;
+- subsystem scope: `max_subsystem_order`, `max_subsystems`;
+- result scope: `max_per_subsystem`, `max_total`.
+
+`max_subsystems` defaults to 4096 and is checked before provider access. Raising it should follow a review of the element count, subsystem order, provider rate limits, and intended research scope.
+
 ## Lower-level functions
 
 - `diffractscout.composition.parse_composition_text(text)`
@@ -139,6 +148,24 @@ Downloads above `confirm_above` require `authorize_large_download=True`. Automat
 - `diffractscout.validation.verify_bundle(path)`
 
 Scientific meanings and units are defined in `docs/SCIENTIFIC_CONTRACTS.md`.
+
+## Analytic benchmark API
+
+```python
+from diffractscout.benchmark import (
+    run_reference_benchmarks,
+    verify_benchmark_bundle,
+)
+
+report = run_reference_benchmarks(
+    "outputs/analytic_benchmark",
+    overwrite=False,
+)
+assert report["all_passed"]
+assert verify_benchmark_bundle("outputs/analytic_benchmark")["ok"]
+```
+
+The benchmark bundle contains the exact synthetic CIF fixtures, machine-readable expectations, 45 individual checks, tolerances, package versions, portable runtime metadata, Markdown/JSON reports, and a SHA-256 manifest. Setting `SOURCE_DATE_EPOCH` fixes generated timestamps for reproducible evidence artifacts.
 
 ## Provider protocol
 

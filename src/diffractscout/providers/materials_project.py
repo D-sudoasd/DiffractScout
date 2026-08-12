@@ -436,7 +436,13 @@ class MaterialsProjectProvider:
                 elasticity_path=(elasticity_by_id[item.candidate.material_id][0] if item.candidate.material_id in elasticity_by_id else None),
                 status=item.status,
                 error=item.error,
-                elasticity_status=(elasticity_by_id[item.candidate.material_id][1] if item.candidate.material_id in elasticity_by_id else ""),
+                elasticity_status=(
+                    elasticity_by_id[item.candidate.material_id][1]
+                    if item.candidate.material_id in elasticity_by_id
+                    else "not_requested"
+                    if not include_elasticity and item.status == "ok"
+                    else ""
+                ),
                 elasticity_error=(elasticity_by_id[item.candidate.material_id][2] if item.candidate.material_id in elasticity_by_id else ""),
                 provider_metadata=item.provider_metadata,
             )

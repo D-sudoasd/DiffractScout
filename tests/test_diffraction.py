@@ -69,3 +69,18 @@ def test_unknown_source_preset_is_rejected(demo_inputs: Path) -> None:
             structure,
             AnalysisSettings(source_preset="not-a-source"),
         )
+
+
+def test_exact_upper_boundary_reflection_is_retained(demo_inputs: Path) -> None:
+    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    broad = simulate_powder_pattern(
+        structure,
+        AnalysisSettings(two_theta_min_deg=5, two_theta_max_deg=100),
+    )
+    boundary = next(item.two_theta_deg for item in broad.reflections if item.hkl == (2, 0, 0))
+    result = simulate_powder_pattern(
+        structure,
+        AnalysisSettings(two_theta_min_deg=5, two_theta_max_deg=boundary),
+    )
+    assert (2, 0, 0) in [item.hkl for item in result.reflections]
+    assert result.metadata["d_min_search_A"] < result.metadata["d_min_A"]

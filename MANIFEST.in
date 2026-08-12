@@ -1,4 +1,10 @@
-include README.md LICENSE NOTICE.md AUTHORS.md CITATION.cff CHANGELOG.md
-recursive-include docs *.md *.svg *.png
-recursive-include paper *.md *.bib *.svg *.png
+include pyproject.toml MANIFEST.in
+include README.md README.zh-CN.md LICENSE NOTICE.md AUTHORS.md CITATION.cff CHANGELOG.md
+include CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md GOVERNANCE.md SUPPORT.md ROADMAP.md
+recursive-include docs *.md *.svg *.png *.json
+recursive-include paper *.md *.bib *.svg *.png *.sh *.py
 recursive-include examples *.cif *.json *.md
+recursive-include validation_cases *.md *.json *.csv *.cif
+recursive-include scripts *.py *.sh *.ps1
+recursive-include tests *.py
+recursive-include src/diffractscout/benchmark_data *.cif *.json

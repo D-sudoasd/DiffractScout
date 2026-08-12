@@ -20,6 +20,14 @@ SUPPORTED_DIRECTIONAL_FRAMES = frozenset(
     {CIF_CARTESIAN_FRAME, MP_CONVENTIONAL_CIF_FRAME}
 )
 
+_STIFFNESS_TO_GPA = {
+    "pa": 1e-9,
+    "kpa": 1e-6,
+    "mpa": 1e-3,
+    "gpa": 1.0,
+    "tpa": 1e3,
+}
+
 
 def _as_6x6(values: object) -> np.ndarray | None:
     if values is None:
@@ -171,6 +179,60 @@ def young_modulus_hkl_normal_GPa(
     return float(1.0 / inverse_modulus)
 
 
+def _normalized_unit(value: object) -> str:
+    text = str(value or "").strip().lower()
+    return re.sub(r"[\s_\-]+", "", text)
+
+
+def _declared_stiffness_unit(payload: dict[str, Any], tensor_block: dict[str, Any] | None = None) -> str:
+    """Return the best available declared stiffness unit.
+
+    Explicit ``*_GPa`` fields are handled separately and do not call this
+    helper. Generic tensor fields must carry a recognized unit or use the
+    documented legacy assumption with a warning.
+    """
+
+    if tensor_block is not None:
+        for key in ("unit", "units", "stiffness_unit", "elastic_tensor_unit"):
+            value = tensor_block.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+    units = payload.get("units")
+    if isinstance(units, dict):
+        for key in ("elastic_tensor", "stiffness", "cij", "Cij"):
+            value = units.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+    for key in ("unit", "stiffness_unit", "elastic_tensor_unit", "cij_unit"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _matrix_in_gpa(
+    matrix: np.ndarray,
+    unit: str,
+    *,
+    warnings: list[str],
+) -> np.ndarray:
+    normalized = _normalized_unit(unit)
+    if not normalized:
+        warnings.append(
+            "No stiffness unit was declared for a generic tensor field; GPa was assumed for legacy compatibility."
+        )
+        normalized = "gpa"
+    factor = _STIFFNESS_TO_GPA.get(normalized)
+    if factor is None:
+        supported = ", ".join(("Pa", "kPa", "MPa", "GPa", "TPa"))
+        raise ValueError(
+            f"Unsupported elastic stiffness unit {unit!r}; supported units are {supported}."
+        )
+    if factor != 1.0:
+        warnings.append(f"Converted elastic stiffness from {unit} to GPa.")
+    return np.asarray(matrix, dtype=float) * factor
+
+
 def _matrix_from_payload(payload: dict[str, Any]) -> tuple[np.ndarray | None, str, list[str]]:
     warnings: list[str] = []
     for key in ("stiffness_GPa", "cij_GPa"):
@@ -186,11 +248,51 @@ def _matrix_from_payload(payload: dict[str, Any]) -> tuple[np.ndarray | None, st
     if isinstance(tensor, dict):
         matrix = _as_6x6(tensor.get("ieee_format"))
         if matrix is not None:
-            return matrix, "elastic_tensor.ieee_format", warnings
+            return (
+                _matrix_in_gpa(
+                    matrix,
+                    _declared_stiffness_unit(payload, tensor),
+                    warnings=warnings,
+                ),
+                "elastic_tensor.ieee_format",
+                warnings,
+            )
         matrix = _as_6x6(tensor.get("raw"))
         if matrix is not None:
             warnings.append("Using elastic_tensor.raw because ieee_format is unavailable; verify orientation against the CIF.")
-            return matrix, "elastic_tensor.raw", warnings
+            return (
+                _matrix_in_gpa(
+                    matrix,
+                    _declared_stiffness_unit(payload, tensor),
+                    warnings=warnings,
+                ),
+                "elastic_tensor.raw",
+                warnings,
+            )
+    elif tensor is not None:
+        matrix = _as_6x6(tensor)
+        if matrix is not None:
+            return (
+                _matrix_in_gpa(
+                    matrix,
+                    _declared_stiffness_unit(payload),
+                    warnings=warnings,
+                ),
+                "elastic_tensor",
+                warnings,
+            )
+    for key in ("stiffness", "cij", "Cij"):
+        matrix = _as_6x6(payload.get(key))
+        if matrix is not None:
+            return (
+                _matrix_in_gpa(
+                    matrix,
+                    _declared_stiffness_unit(payload),
+                    warnings=warnings,
+                ),
+                key,
+                warnings,
+            )
     if any(f"C{i}{j}_GPa" in payload for i in range(1, 7) for j in range(1, 7)):
         try:
             matrix = np.asarray(
@@ -215,7 +317,10 @@ def elastic_tensor_from_payload(payload: dict[str, Any], *, path: Path | None = 
     provenance = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
     if provenance.get("numerical_cij") is False:
         return None
-    matrix, basis, warnings = _matrix_from_payload(payload)
+    try:
+        matrix, basis, warnings = _matrix_from_payload(payload)
+    except ValueError as exc:
+        return _invalid_tensor(str(exc), path=path)
     if matrix is None:
         return None
 

@@ -6,6 +6,7 @@ import pytest
 from diffractscout.elasticity import (
     MP_IEEE_CONVENTIONAL_FRAME,
     discover_elastic_tensor,
+    elastic_tensor_from_payload,
     validate_elastic_tensor,
     young_modulus_hkl_normal_GPa,
 )
@@ -66,3 +67,24 @@ def test_compliance_matrix_is_cached() -> None:
     first = tensor.compliance_1_over_GPa
     second = tensor.compliance_1_over_GPa
     assert first is second
+
+
+def test_generic_mpa_tensor_is_converted_to_gpa() -> None:
+    payload = {
+        "status": "ok",
+        "stiffness": (np.eye(6) * 100_000).tolist(),
+        "unit": "MPa",
+    }
+    tensor = elastic_tensor_from_payload(payload)
+    assert tensor is not None
+    assert tensor.stiffness_GPa == pytest.approx(np.eye(6) * 100.0)
+    assert any("Converted elastic stiffness" in warning for warning in tensor.warnings)
+
+
+def test_unknown_generic_tensor_unit_is_invalid() -> None:
+    tensor = elastic_tensor_from_payload(
+        {"status": "ok", "stiffness": np.eye(6).tolist(), "unit": "psi"}
+    )
+    assert tensor is not None
+    assert tensor.status == "invalid"
+    assert any("Unsupported elastic stiffness unit" in warning for warning in tensor.warnings)

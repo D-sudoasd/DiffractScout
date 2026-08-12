@@ -17,7 +17,7 @@ def validate_discovery_settings(settings: DiscoverySettings) -> None:
         value = float(settings.e_hull_max_eV_atom)
         if not math.isfinite(value) or value < 0:
             raise ValueError("e_hull_max_eV_atom must be a finite non-negative value.")
-    for name in ("max_subsystem_order", "max_per_subsystem", "max_total"):
+    for name in ("max_subsystem_order", "max_subsystems", "max_per_subsystem", "max_total"):
         value = getattr(settings, name)
         if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 1):
             raise ValueError(f"{name} must be a positive integer when supplied.")
@@ -85,6 +85,23 @@ def search_candidates(
         if settings.mode == "single_chemsys":
             subsystems = [parsed.chemsys]
         else:
+            element_count = len(set(parsed.elements))
+            upper_order = (
+                element_count
+                if settings.max_subsystem_order is None
+                else min(element_count, settings.max_subsystem_order)
+            )
+            estimated_subsystems = sum(
+                math.comb(element_count, order)
+                for order in range(1, upper_order + 1)
+            )
+            if estimated_subsystems > settings.max_subsystems:
+                raise ValueError(
+                    "Chemical-subsystem expansion would create "
+                    f"{estimated_subsystems} queries, above max_subsystems="
+                    f"{settings.max_subsystems}. Reduce max_subsystem_order or "
+                    "explicitly raise max_subsystems after reviewing the query scope."
+                )
             subsystems = chemsys_subsystems(
                 parsed.elements,
                 max_order=settings.max_subsystem_order,

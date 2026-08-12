@@ -27,6 +27,8 @@ jobs:
           cache: pip
       - name: Install package and test tools
         run: python -m pip install --upgrade pip && python -m pip install -e ".[test]"
+      - name: Validate repository documents and metadata
+        run: python scripts/check_docs.py
       - name: Lint
         run: ruff check src tests scripts
       - name: Compile Python sources
@@ -37,12 +39,31 @@ jobs:
         run: |
           python -m diffractscout demo -o ci_demo
           python -m diffractscout verify ci_demo
+      - name: Run analytic scientific benchmarks
+        run: python -m diffractscout benchmark -o ci_benchmark
+      - name: Generate JOSS readiness snapshot
+        if: matrix.python-version == '3.13'
+        run: python scripts/joss_readiness.py --output ci_joss_readiness
+      - name: Upload JOSS readiness snapshot
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v7
+        with:
+          name: joss-readiness
+          path: ci_joss_readiness
+          if-no-files-found: error
       - name: Upload coverage report
         if: matrix.python-version == '3.13'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-xml
           path: coverage.xml
+          if-no-files-found: error
+      - name: Upload analytic benchmark evidence
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v7
+        with:
+          name: analytic-benchmark
+          path: ci_benchmark
           if-no-files-found: error
 
   cross-platform-smoke:
@@ -66,12 +87,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: '[void][scriptblock]::Create((Get-Content scripts/publish_github.ps1 -Raw))'
+      - name: Check installed dependencies
+        run: python -m pip check
       - name: Run tests
         run: pytest -q
       - name: Run and verify offline demo
         run: |
           python -m diffractscout demo -o ci_demo
           python -m diffractscout verify ci_demo
+      - name: Run analytic benchmark
+        run: python -m diffractscout benchmark -o ci_benchmark
 
 
   gui-smoke:
@@ -114,8 +139,10 @@ jobs:
         run: |
           python -m venv wheel-test
           wheel-test/bin/python -m pip install dist/*.whl
+          wheel-test/bin/python -m pip check
           wheel-test/bin/python -m diffractscout demo -o wheel_demo
           wheel-test/bin/python -m diffractscout verify wheel_demo
+          wheel-test/bin/python -m diffractscout benchmark -o wheel_benchmark
       - name: Upload distributions
         uses: actions/upload-artifact@v7
         with:

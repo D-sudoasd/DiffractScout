@@ -1,0 +1,51 @@
+name: Research use and adoption record
+description: Document a real research workflow, teaching use, or external installation experience
+title: "[use] "
+labels: [research-use]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form creates public evidence for software improvement and research use. Do not upload confidential, proprietary, or unpublished data without permission.
+  - type: input
+    id: version
+    attributes:
+      label: DiffractScout version or commit
+      placeholder: v0.3.0 or full commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: use_type
+    attributes:
+      label: Type of use
+      options:
+        - Research planning
+        - Data interpretation
+        - Method validation
+        - Teaching or training
+        - Installation or usability evaluation
+        - Software integration
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Reproducible workflow
+      description: Describe the question, inputs, settings, outputs, and how the output was used. Link public or synthetic data when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and limitations
+      description: Link result bundles, reports, presentations, datasets, code, or publications and state what the record does not establish.
+    validations:
+      required: true
+  - type: checkboxes
+    id: attribution
+    attributes:
+      label: Attribution permission
+      options:
+        - label: I consent to this public record being cited in project documentation and the JOSS impact evidence ledger.
+          required: true

@@ -6,7 +6,7 @@
 
 **DiffractScout 将合金/化学体系候选相检索、本地 CIF 检查、理论粉末衍射计算、可选晶面法向弹性分析和可验证结果导出连接为一个流程。** 每项结果均可追溯到数据库记录或本地文件、CIF 哈希、辐射条件、计算定义、软件版本和结构化诊断。
 
-[英文主页](README.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
+[英文主页](README.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [解析基准](docs/ANALYTIC_BENCHMARKS.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
 
 ## 两类工作流
 
@@ -64,6 +64,14 @@ diffractscout verify outputs/demo
 
 演示使用明确标注的合成 FCC 结构和合成各向同性刚度张量，不包含实验材料性能数据。
 
+## 解析科学基准
+
+```bash
+diffractscout benchmark -o outputs/analytic_benchmark
+```
+
+该命令对简单立方、BCC、FCC、NaCl 和立方晶体方向弹性执行 45 项闭式解检查，并输出固定输入、预期值、容差、软件版本、运行环境、报告和 SHA-256 清单。成功结果为 `45/45 passed`。详见 [docs/ANALYTIC_BENCHMARKS.md](docs/ANALYTIC_BENCHMARKS.md)。
+
 ## 本地 CIF 分析
 
 ```powershell
@@ -80,15 +88,18 @@ diffractscout analyze D:\path\to\cifs -o D:\results\run_83keV `
 
 当 CIF 旁存在唯一、可验证的弹性侧车或索引记录时，软件检查 6×6 `Cij` 并计算晶面法向杨氏模量。`--no-elasticity` 会关闭弹性文件发现、复制和计算。
 
+批处理命令使用明确退出码：`0` 表示全部成功，`3` 表示结果包可用但存在失败对象，`2` 表示没有可分析物相或出现致命输入/配置错误。详细状态保存在 `diagnostics.csv`。
+
 ## Materials Project 完整流程
 
 ```powershell
 $env:MP_API_KEY = "your-key"
 diffractscout run "Ti-Al-V" -o D:\results\ti_al_v `
-  --mode near_stable --e-hull-max 0.05 --max-total 50
+  --mode near_stable --e-hull-max 0.05 `
+  --max-subsystem-order 3 --max-subsystems 4096 --max-total 50
 ```
 
-默认下载常规标准晶胞。自动方向弹性计算采用与该晶胞设置配对的 raw/POSCAR 格式张量。仅有 IEEE 格式张量时，状态标记为 `frame_transform_required`，方向模量保持空值，直至提供经过验证的坐标变换。原胞下载需要同时使用 `--no-elasticity`。
+默认下载常规标准晶胞。自动方向弹性计算采用与该晶胞设置配对的 raw/POSCAR 格式张量。仅有 IEEE 格式张量时，状态标记为 `frame_transform_required`，方向模量保持空值，直至提供经过验证的坐标变换。原胞下载需要同时使用 `--no-elasticity`。软件会在访问数据库前估算化学子体系查询数量，超过 `--max-subsystems`（默认 4096）时停止，避免高元体系产生组合式查询膨胀。
 
 ## 结果包与写入安全
 
@@ -131,9 +142,9 @@ J_no_LP   = I_no_LP / V_cell²
 
 ## 验证与 JOSS 状态
 
-离线测试覆盖成分解析、子体系枚举、CIF 数据块和空间群解析、特殊位置占位转换、FCC 系统消光、解析结构因子、Bragg 几何、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全和严格清单校验。GitHub Actions 还配置了多 Python 版本、Windows/macOS、Linux 无头 GUI、wheel 安装和 JOSS 论文构建。
+当前离线套件包含 68 项自动测试，并另有 45 项解析科学基准。覆盖范围包括成分解析、子体系枚举及组合数量上限、大小写 CIF 扫描、同名文件防覆盖、CIF 数据块和空间群解析、特殊位置占位转换、系统消光、解析结构因子、Bragg 几何、边界反射、刚度单位换算、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全、确定性证据归档、严格清单校验和投稿准备检查。GitHub Actions 还配置了多 Python 版本、Windows/macOS、Linux 无头 GUI、wheel 安装、解析基准、发布制品、月度复现审计、依赖更新和 JOSS 论文构建。月度定时运行只记录某一公开提交的可复现状态；只有由真实缺陷、依赖更新、验证、文档改进或用户反馈形成的公开提交、Issue、Pull Request 或 Release 才构成开发活动证据。
 
-JOSS 正式投稿仍需要持续的公开开发历史、归档发布、真实材料独立验证、研究使用证据和最终作者元数据。当前缺口见 [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md)。
+JOSS 正式投稿仍需要真实的六个月公开开发记录、归档发布 DOI、真实材料独立验证、研究使用证据和外部互动记录。执行 `python scripts/joss_readiness.py --output build/joss-readiness` 可生成阻塞项报告；工作计划见 [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md)。
 
 ## 来源与许可
 

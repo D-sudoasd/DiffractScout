@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/D-sudoasd/DiffractScout/blob/main/docs/evidence/impact_evidence.schema.json",
+  "title": "DiffractScout JOSS evidence ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "public_repository",
+    "archived_releases",
+    "research_use_cases",
+    "independent_validations",
+    "external_engagement",
+    "publications_or_preprints",
+    "presentations_or_training"
+  ],
+  "properties": {
+    "schema": {"const": "diffractscout_joss_evidence_v1"},
+    "public_repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "public_since", "note"],
+      "properties": {
+        "url": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "public_since": {"type": ["string", "null"], "format": "date"},
+        "note": {"type": "string"}
+      }
+    },
+    "archived_releases": {"type": "array", "items": {"$ref": "#/$defs/archivedRelease"}},
+    "research_use_cases": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
+    "independent_validations": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
+    "external_engagement": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
+    "publications_or_preprints": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
+    "presentations_or_training": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}}
+  },
+  "$defs": {
+    "evidenceRecord": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["date", "title", "url", "software_version", "claim_supported"],
+      "properties": {
+        "date": {"type": "string", "format": "date"},
+        "title": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "software_version": {"type": "string", "minLength": 1},
+        "people": {"type": "array", "items": {"type": "string"}},
+        "claim_supported": {"type": "string", "minLength": 1},
+        "notes": {"type": "string"}
+      }
+    },
+    "archivedRelease": {
+      "allOf": [
+        {"$ref": "#/$defs/evidenceRecord"},
+        {
+          "type": "object",
+          "required": ["tag", "commit_sha", "doi"],
+          "properties": {
+            "tag": {"type": "string", "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+"},
+            "commit_sha": {"type": "string", "pattern": "^[0-9a-fA-F]{7,40}$"},
+            "doi": {"type": "string", "pattern": "^10\\."}
+          }
+        }
+      ]
+    }
+  }
+}

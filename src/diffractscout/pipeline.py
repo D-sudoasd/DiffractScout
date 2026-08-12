@@ -31,14 +31,32 @@ from .validation import verify_bundle
 
 
 def collect_cif_paths(inputs: Sequence[str | Path], *, recursive: bool = True) -> list[Path]:
+    """Collect readable CIF files with case-insensitive suffix handling.
+
+    ``Path.glob('*.cif')`` is case-sensitive on common Linux filesystems. A
+    directory walk followed by a suffix check keeps command-line and GUI
+    behavior consistent for ``.cif``, ``.CIF``, and mixed-case variants.
+    """
+
     output: list[Path] = []
     seen: set[Path] = set()
     for item in inputs:
         path = Path(item).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Input path does not exist: {path}")
         if path.is_dir():
-            iterator = path.rglob("*.cif") if recursive else path.glob("*.cif")
-            candidates = sorted(iterator, key=lambda value: str(value).lower())
+            iterator = path.rglob("*") if recursive else path.iterdir()
+            candidates = sorted(
+                (
+                    value
+                    for value in iterator
+                    if value.is_file() and value.suffix.lower() == ".cif"
+                ),
+                key=lambda value: str(value).lower(),
+            )
         else:
+            if path.suffix.lower() != ".cif":
+                raise ValueError(f"Explicit input file is not a CIF: {path}")
             candidates = [path]
         for candidate in candidates:
             resolved = candidate.resolve()
@@ -46,6 +64,26 @@ def collect_cif_paths(inputs: Sequence[str | Path], *, recursive: bool = True) -
                 output.append(resolved)
                 seen.add(resolved)
     return output
+
+
+def _unique_input_target(cif_path: Path, inputs_dir: Path, digest: str) -> Path:
+    """Choose a deterministic, collision-safe filename inside a result bundle."""
+
+    suffix = ".cif"
+    preferred = inputs_dir / f"{cif_path.stem}{suffix}"
+    if not preferred.exists():
+        return preferred
+
+    candidate = inputs_dir / f"{cif_path.stem}_{digest[:8]}{suffix}"
+    if not candidate.exists():
+        return candidate
+
+    counter = 2
+    while True:
+        candidate = inputs_dir / f"{cif_path.stem}_{digest[:8]}_{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 def _validate_input_output_separation(
@@ -130,9 +168,7 @@ def _copy_local_input(
     include_elasticity: bool,
 ) -> tuple[Path, ElasticTensor | None]:
     digest = sha256_file(cif_path)
-    target = inputs_dir / cif_path.name
-    if target.exists() and sha256_file(target) != digest:
-        target = inputs_dir / f"{cif_path.stem}_{digest[:8]}{cif_path.suffix}"
+    target = _unique_input_target(cif_path, inputs_dir, digest)
     shutil.copy2(cif_path, target)
 
     tensor = discover_elastic_tensor(cif_path) if include_elasticity else None

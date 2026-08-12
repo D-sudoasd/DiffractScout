@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from diffractscout.composition import parse_composition_text
 from diffractscout.models import CandidateRecord, DiscoverySettings
 from diffractscout.selection import search_candidates
@@ -75,3 +77,13 @@ def test_invalid_discovery_limits_fail_before_provider_access() -> None:
         assert "max_total" in str(exc)
     else:
         raise AssertionError("Expected invalid max_total to be rejected")
+
+
+def test_subsystem_expansion_limit_fails_before_provider_access() -> None:
+    parsed = parse_composition_text("Ti-Al-V-Cu")
+    with pytest.raises(ValueError, match="above max_subsystems=10"):
+        search_candidates(
+            FakeProvider(),
+            parsed,
+            DiscoverySettings(max_subsystems=10),
+        )

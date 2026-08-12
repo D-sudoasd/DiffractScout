@@ -1,0 +1,32 @@
+{
+  "schema": "diffractscout_analytic_expectations_v1",
+  "cases": {
+    "simple_cubic_al": {
+      "file": "simple_cubic_al.cif",
+      "lattice_a_A": 3.5,
+      "first_allowed": [[1, 0, 0], [1, 1, 0], [1, 1, 1]],
+      "multiplicity": {"1 0 0": 6, "1 1 0": 12, "1 1 1": 8}
+    },
+    "bcc_fe": {
+      "file": "bcc_fe.cif",
+      "lattice_a_A": 2.86,
+      "first_allowed": [[1, 1, 0], [2, 0, 0], [2, 1, 1]],
+      "forbidden": [[1, 0, 0], [1, 1, 1]],
+      "multiplicity": {"1 1 0": 12, "2 0 0": 6, "2 1 1": 24}
+    },
+    "fcc_al": {
+      "file": "fcc_al.cif",
+      "lattice_a_A": 4.0,
+      "first_allowed": [[1, 1, 1], [2, 0, 0], [2, 2, 0]],
+      "forbidden": [[1, 0, 0], [1, 1, 0]],
+      "multiplicity": {"1 1 1": 8, "2 0 0": 6, "2 2 0": 12}
+    },
+    "nacl": {
+      "file": "nacl.cif",
+      "lattice_a_A": 5.64,
+      "first_allowed": [[1, 1, 1], [2, 0, 0], [2, 2, 0]],
+      "forbidden": [[1, 0, 0], [1, 1, 0]],
+      "multiplicity": {"1 1 1": 8, "2 0 0": 6, "2 2 0": 12}
+    }
+  }
+}

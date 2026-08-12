@@ -11,7 +11,7 @@
 
 **DiffractScout turns a chemical-system question or a folder of CIF files into a verifiable theoretical powder-diffraction reference bundle.** It preserves database identity, exact CIF hashes, structural diagnostics, radiation settings, optional elastic-tensor provenance, indexed reflections, warnings, and file checksums in one workflow.
 
-[中文说明](README.zh-CN.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Architecture](docs/ARCHITECTURE.md) · [Validation](docs/VALIDATION.md) · [JOSS readiness](docs/JOSS_READINESS.md)
+[中文说明](README.zh-CN.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Architecture](docs/ARCHITECTURE.md) · [Validation](docs/VALIDATION.md) · [Analytic benchmarks](docs/ANALYTIC_BENCHMARKS.md) · [JOSS readiness](docs/JOSS_READINESS.md)
 
 ## Why this software exists
 
@@ -81,6 +81,23 @@ Analyzed phases: 1
 PASS
 ```
 
+## Analytic scientific benchmark
+
+The packaged benchmark compares the numerical core with closed-form simple-cubic, BCC, FCC, NaCl, and cubic-elasticity solutions. It writes exact fixtures, expectations, tolerances, software versions, portable runtime metadata, a human-readable report, and a self-verifying SHA-256 manifest.
+
+```bash
+diffractscout benchmark -o outputs/analytic_benchmark
+```
+
+Expected result:
+
+```text
+Checks: 45/45 passed
+PASS
+```
+
+Set `SOURCE_DATE_EPOCH` when an archive requires reproducible generated timestamps. See [docs/ANALYTIC_BENCHMARKS.md](docs/ANALYTIC_BENCHMARKS.md).
+
 ## Analyze local CIF files
 
 ```bash
@@ -100,16 +117,20 @@ diffractscout analyze path/to/cifs -o outputs/83keV \
 
 When a uniquely paired `{cif_stem}_elasticity.json`, compatible sidecar, or unambiguous elasticity index is present, DiffractScout validates the 6×6 matrix and can populate `young_modulus_hkl_normal_GPa`. Use `--no-elasticity` to disable discovery, copying, and evaluation of all elastic data.
 
+Batch commands use machine-actionable exit codes: `0` for a complete successful analysis, `3` for a usable bundle containing one or more failed items, and `2` when no phase can be analyzed or a fatal input/configuration error occurs. Successful phases and failed items remain separated in `diagnostics.csv`.
+
 ## Discover candidate phases
 
 ```bash
 diffractscout discover "Ti-6Al-4V" -o outputs/ti64_candidates \
   --mode near_stable \
   --e-hull-max 0.05 \
+  --max-subsystem-order 3 \
+  --max-subsystems 4096 \
   --max-total 100
 ```
 
-This command records the query and candidate catalogue without downloading structures.
+This command records the query and candidate catalogue without downloading structures. Before provider access, DiffractScout estimates the number of chemical-subsystem queries and rejects expansions above `--max-subsystems` (default 4096). This guard prevents accidental combinatorial query growth; raising it is an explicit scope decision.
 
 ## Run the complete pipeline
 
@@ -165,7 +186,7 @@ Full equations, units, tensor convention, coordinate-frame rules, structure vali
 
 ## Reliability and validation
 
-The offline suite covers composition parsing, subsystem enumeration, CIF block and space-group resolution, crystallographic occupancy conversion, FCC systematic absences, analytic structure factors, Bragg geometry, intensity channels, resource limits, tensor validation, sidecar pairing, provider failure semantics, transactional replacement, spreadsheet safety, workbook schemas, end-to-end export, and strict bundle verification.
+The 68-test offline suite covers composition parsing, subsystem enumeration, case-insensitive and collision-safe CIF collection, CIF block and space-group resolution, crystallographic occupancy conversion, systematic absences, analytic structure factors, Bragg geometry, intensity channels, boundary reflections, stiffness-unit conversion, resource limits, tensor validation, sidecar pairing, provider failure semantics, transactional replacement, spreadsheet safety, workbook schemas, end-to-end export, strict bundle verification, and the JOSS readiness machinery. The separate analytic suite performs 45 closed-form checks.
 
 GitHub Actions is configured for:
 
@@ -174,9 +195,10 @@ GitHub Actions is configured for:
 - a headless Linux GUI startup check under Xvfb;
 - wheel build and clean-environment installation;
 - the offline scientific demo and bundle verification;
-- Open Journals draft-PDF compilation.
+- Open Journals draft-PDF compilation;
+- deterministic release evidence archives, monthly reproducibility snapshots, and monthly dependency-update pull requests.
 
-The synthetic suite validates declared numerical contracts. Real-material comparisons and research-use evidence required for a JOSS submission are tracked separately in [docs/VALIDATION.md](docs/VALIDATION.md) and [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md).
+The synthetic suite validates declared numerical contracts. Real-material comparisons and research-use evidence required for a JOSS submission are tracked separately in [docs/VALIDATION.md](docs/VALIDATION.md) and [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md). The scheduled monthly audit records reproducibility at a public commit; it does not count as substantive development unless a resulting discrepancy, dependency update, validation result, documentation improvement, or user report is reviewed and committed publicly.
 
 ## Python API
 
@@ -214,7 +236,7 @@ Those repositories remain independent and unchanged by this project. Source snap
 
 ## JOSS preparation status
 
-The repository contains an OSI-approved license, installable package metadata, tests, CI, user and API documentation, examples, contribution and support routes, release instructions, a JOSS-format manuscript, and a specific AI usage disclosure. Formal submission still depends on public development history, archived releases, independent real-material validation, confirmed authorship metadata, and traceable research-impact evidence. See [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md).
+The repository contains an OSI-approved license, installable package metadata, tests, analytic benchmarks, CI, user and API documentation, governance, examples, contribution and support routes, tag-driven deterministic release packaging, a monthly reproducibility audit, dependency-update automation, a JOSS-format manuscript, and a specific AI usage disclosure. Formal submission still depends on a real public development record, an archived tagged release and DOI, independent real-material validation, and traceable research-use and community evidence. The executable preflight is `python scripts/joss_readiness.py --output build/joss-readiness`; the six-month operating plan is [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md).
 
 ## Contributing, support, and citation
 
@@ -222,6 +244,9 @@ The repository contains an OSI-approved license, installable package metadata, t
 - Reproducible software bugs and feature requests: GitHub Issues
 - Security-sensitive reports: [SECURITY.md](SECURITY.md)
 - Citation metadata: [CITATION.cff](CITATION.cff)
+- Governance and support: [GOVERNANCE.md](GOVERNANCE.md) · [SUPPORT.md](SUPPORT.md)
+- Validation-case registry: [validation_cases/README.md](validation_cases/README.md)
+- Six-month evidence plan: [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md)
 - Release procedure: [docs/RELEASE.md](docs/RELEASE.md)
 
 Create a tagged, archived release before citing a specific production version or submitting to JOSS.

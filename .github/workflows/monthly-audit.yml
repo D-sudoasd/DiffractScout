@@ -1,0 +1,52 @@
+name: Monthly JOSS maintenance snapshot
+
+on:
+  schedule:
+    - cron: "17 3 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Reproduce release and scientific evidence
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out complete public history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install package and audit dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+          python -m pip check
+      - name: Run repository release preflight
+        run: python scripts/check_release.py --skip-wheel
+      - name: Generate retained monthly evidence
+        shell: bash
+        run: |
+          export SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          python -m diffractscout demo -o monthly_demo
+          python -m diffractscout verify monthly_demo
+          python -m diffractscout benchmark -o monthly_benchmark
+          python scripts/joss_readiness.py --output monthly_readiness
+          python scripts/archive_tree.py monthly_demo monthly-offline-demo.zip --root-name offline-demo
+          python scripts/archive_tree.py monthly_benchmark monthly-analytic-benchmark.zip --root-name analytic-benchmark
+          python scripts/archive_tree.py monthly_readiness monthly-joss-readiness.zip --root-name joss-readiness
+          sha256sum monthly-*.zip > monthly-SHA256SUMS.txt
+      - name: Upload monthly maintenance snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: monthly-joss-audit-${{ github.run_number }}
+          path: |
+            monthly-*.zip
+            monthly-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,14 @@
+{
+  "schema": "diffractscout_joss_evidence_v1",
+  "public_repository": {
+    "url": "https://github.com/D-sudoasd/DiffractScout",
+    "public_since": null,
+    "note": "Set public_since only after the repository is actually public. Do not backdate it."
+  },
+  "archived_releases": [],
+  "research_use_cases": [],
+  "independent_validations": [],
+  "external_engagement": [],
+  "publications_or_preprints": [],
+  "presentations_or_training": []
+}

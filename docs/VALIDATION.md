@@ -8,14 +8,14 @@ The default suite is offline and deterministic:
 pytest -q
 ```
 
-Current release-candidate status: **46 tests passing**.
+Current v0.3.0 release-candidate status: **68 tests passing**, plus **45/45 analytic scientific benchmark checks**.
 
 The suite covers:
 
 ### Composition and discovery
 
 - alloy-grade, compact-formula, chemical-system, and Materials Project ID parsing;
-- subsystem enumeration and order limits;
+- subsystem enumeration, order limits, and pre-provider combinatorial query limits;
 - invalid negative/non-finite energy limits and non-positive count limits;
 - candidate deduplication and deterministic ranking;
 - explicit-ID provider lookup and provider-neutral source URLs;
@@ -65,7 +65,21 @@ The suite covers:
 - malformed manifest entries without verifier crashes;
 - duplicate, absolute, parent-traversal, empty, and manifest-self paths;
 - symbolic links and root-escape attempts;
-- files present on disk but absent from the manifest.
+- files present on disk but absent from the manifest;
+- deterministic evidence-archive ordering and timestamp normalization;
+- rejection of archive outputs inside the source tree and symbolic-link inputs.
+
+## Analytic reference suite
+
+The command below executes an independent closed-form path for simple-cubic, BCC, FCC, NaCl, and cubic directional-elasticity cases:
+
+```bash
+diffractscout benchmark -o outputs/analytic_benchmark
+```
+
+The 45 checks cover allowed and forbidden families, multiplicity, cubic plane spacing, $q=2\pi/d$, analytic lattice structure factors, profile normalization, and `[100]`, `[110]`, `[111]` directional moduli. All fixtures and expectations are installed with the wheel. A completed bundle is verified against its own SHA-256 manifest. When `SOURCE_DATE_EPOCH` is fixed, repeated runs under the same software versions and platform produce identical hashes for every manifested benchmark file. See `docs/ANALYTIC_BENCHMARKS.md`.
+
+The benchmark is an internal analytic validation with an implementation path separated from the production orchestration. It does not satisfy the project requirement for an external user or independent third-party comparison.
 
 ## Synthetic reference fixture
 
@@ -100,7 +114,7 @@ xvfb-run -a python -c \
   "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
 ```
 
-Reference screenshots are stored in `docs/assets/gui-local.png` and `docs/assets/gui-materials-project.png`. They document the v0.2.0 control layout; they are not substitutes for functional tests.
+Reference screenshots are stored in `docs/assets/gui-local.png` and `docs/assets/gui-materials-project.png`. They document the v0.3.0 control layout; they are not substitutes for functional tests.
 
 ## CI and packaging validation
 
@@ -116,7 +130,11 @@ The configured GitHub Actions checks are:
 - wheel build;
 - wheel installation in a clean virtual environment;
 - demo execution from the installed wheel;
-- Open Journals draft-PDF compilation.
+- Open Journals draft-PDF compilation;
+- non-strict JOSS readiness and evidence-ledger generation;
+- tag-driven release packaging with wheel, source distribution, deterministic benchmark/demo/readiness archives, metadata validation, and SHA-256 inventory;
+- a monthly reproducibility audit that reruns release and scientific checks and retains evidence artifacts for 90 days;
+- monthly Dependabot pull requests for Python and GitHub Actions dependencies.
 
 Local release preflight:
 
@@ -124,7 +142,9 @@ Local release preflight:
 python scripts/check_release.py
 ```
 
-The script checks required files, version consistency, bibliography keys, source compilation, the test suite, the offline demo, manifest verification, and wheel creation. The wheel still requires a clean-environment installation test; CI performs that step on each package job.
+The script checks required files, version consistency, bibliography keys, source compilation, the test suite, the offline demo, analytic benchmark, manifest verification, JOSS evidence machinery, and wheel creation. The wheel still requires a clean-environment installation test; CI performs that step on each package job. Release and monthly workflows create archives through `scripts/archive_tree.py`, which sorts paths, uses a fixed timestamp derived from `SOURCE_DATE_EPOCH`, stores a single safe root, rejects symbolic links, and writes atomically.
+
+Scheduled audit runs show that one public commit remains reproducible at a later date. They do not establish distributed development by themselves. Substantive six-month evidence must come from reviewed software changes, scientific validation, documentation improvements, support activity, releases, issues, or pull requests tied to real work.
 
 ## PDF verification
 

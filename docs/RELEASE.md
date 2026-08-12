@@ -16,7 +16,16 @@
 python scripts/check_release.py
 ```
 
-This checks required files, version consistency, bibliography keys, compilation, tests, the offline demo, manifest verification, and wheel creation.
+This checks required files, version consistency, bibliography keys, JOSS readiness machinery, compilation, tests, the offline demo, analytic benchmark, deterministic archive tooling, manifest verification, and wheel creation.
+
+Retain scientific and JOSS preflight artifacts:
+
+```bash
+diffractscout benchmark -o build/release-benchmark
+python scripts/joss_readiness.py --output build/joss-readiness
+```
+
+The readiness report may remain `BLOCKED` before the public-age, impact, external-engagement, and DOI gates exist. Structural errors in the ledger or paper must still be corrected before a release.
 
 Additional GUI smoke check on Linux:
 
@@ -92,11 +101,15 @@ Remove-Item Env:DIFFRACTSCOUT_PUBLISH_DRY_RUN
 
 The dry run still checks GitHub CLI authentication and repository visibility, then prints the planned create/remote/push/edit commands without changing local or remote state.
 
+Pushing a version tag matching the package version triggers `.github/workflows/release.yml`. The workflow repeats the release preflight, builds the wheel and source distribution, validates distribution metadata with Twine, packages the analytic benchmark, offline demo, and readiness report with `scripts/archive_tree.py`, computes `SHA256SUMS.txt`, and creates the GitHub Release. The archive helper uses sorted paths, a timestamp fixed by `SOURCE_DATE_EPOCH`, a single safe root, symbolic-link rejection, and atomic replacement so the scientific evidence archives are reproducible for a fixed source and runtime stack.
+
+`.github/workflows/monthly-audit.yml` reruns the release and scientific checks on the first day of each month and retains deterministic evidence archives for 90 days. `.github/dependabot.yml` proposes monthly Python and GitHub Actions updates. Timer-triggered audit runs are maintenance evidence; they do not substitute for substantive public commits, validation, support records, issues, pull requests, or releases during the six-month period.
+
 After CI passes on the release commit:
 
 1. merge the release pull request;
 2. delete the merged feature branch after confirming the PR head SHA is represented in the default branch;
-3. create an annotated tag, for example `v0.2.0`;
+3. create an annotated tag, for example `v0.3.0`;
 4. push the tag;
 5. create GitHub release notes from `CHANGELOG.md`;
 6. attach distribution files and checksums when appropriate;

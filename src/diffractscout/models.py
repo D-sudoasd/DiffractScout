@@ -56,6 +56,7 @@ class DiscoverySettings:
     mode: SearchMode = "possible_phases"
     e_hull_max_eV_atom: float | None = None
     max_subsystem_order: int | None = None
+    max_subsystems: int = 4096
     max_per_subsystem: int | None = None
     max_total: int | None = None
     exclude_deprecated: bool = True
