@@ -186,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--overwrite", action="store_true")
     benchmark.add_argument("--json", action="store_true")
 
-    gui = subparsers.add_parser("gui", help="Launch the optional Tk desktop interface.")
+    subparsers.add_parser("gui", help="Launch the optional Tk desktop interface.")
     return parser
 
 
