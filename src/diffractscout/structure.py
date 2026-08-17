@@ -34,6 +34,9 @@ SPACE_GROUP_NUMBER_TAGS = (
     "_space_group_IT_number",
     "_symmetry_Int_Tables_number",
 )
+RHOMBOHEDRAL_SPACE_GROUP_NUMBERS = frozenset(
+    {146, 148, 155, 160, 161, 166, 167}
+)
 SOURCE_IDENTIFIER_TAGS = (
     "_database_code_ICSD",
     "_cod_database_code",
@@ -100,6 +103,68 @@ def _find_space_group_by_name(symbol: str) -> gemmi.SpaceGroup | None:
         return None
 
 
+def _space_group_setting(symbol: str) -> str | None:
+    match = re.search(r":\s*([HR])\s*$", str(symbol).upper())
+    return match.group(1) if match else None
+
+
+def _is_rhombohedral_family_symbol(symbol: str) -> bool:
+    return bool(re.match(r"^R(?:\s|-|\d)", str(symbol).strip(), flags=re.IGNORECASE))
+
+
+def _close_metric(left: float, right: float, *, tolerance: float = 1e-5) -> bool:
+    scale = max(abs(float(left)), abs(float(right)), 1.0)
+    return abs(float(left) - float(right)) <= tolerance * scale
+
+
+def _rhombohedral_setting_from_cell(cell: gemmi.UnitCell) -> str | None:
+    """Infer an R-group setting only from an unambiguous cell metric."""
+
+    lengths = (float(cell.a), float(cell.b), float(cell.c))
+    angles = (float(cell.alpha), float(cell.beta), float(cell.gamma))
+    if not all(math.isfinite(value) for value in (*lengths, *angles)):
+        return None
+    hexagonal = (
+        _close_metric(lengths[0], lengths[1])
+        and _close_metric(angles[0], 90.0)
+        and _close_metric(angles[1], 90.0)
+        and _close_metric(angles[2], 120.0)
+    )
+    if hexagonal:
+        return "H"
+    rhombohedral = (
+        _close_metric(lengths[0], lengths[1])
+        and _close_metric(lengths[1], lengths[2])
+        and _close_metric(angles[0], angles[1])
+        and _close_metric(angles[1], angles[2])
+        and not _close_metric(angles[0], 90.0)
+    )
+    return "R" if rhombohedral else None
+
+
+def _find_number_space_group(number: int, cell: gemmi.UnitCell) -> tuple[gemmi.SpaceGroup, str]:
+    default = gemmi.find_spacegroup_by_number(number)
+    if default is None:
+        raise ValueError(f"Invalid International Tables space-group number: {number}.")
+    default_symbol = default.xhm()
+    if number not in RHOMBOHEDRAL_SPACE_GROUP_NUMBERS and not default_symbol.upper().startswith("R "):
+        return default, "cif_number"
+    setting = _rhombohedral_setting_from_cell(cell)
+    if setting is None:
+        raise ValueError(
+            "Number-only rhombohedral space-group declaration cannot be resolved: "
+            f"cell metric does not distinguish hexagonal (H) from rhombohedral (R) setting "
+            f"for No. {number}. Provide an explicit space-group symbol with setting."
+        )
+    base_symbol = default_symbol.split(":", 1)[0]
+    resolved = _find_space_group_by_name(f"{base_symbol}:{setting}")
+    if resolved is None:
+        raise ValueError(
+            f"Could not resolve space-group No. {number} in explicit {setting} setting."
+        )
+    return resolved, f"cif_number_metric_{setting}"
+
+
 def _resolve_space_group(
     small: gemmi.SmallStructure,
     block: gemmi.cif.Block,
@@ -118,18 +183,48 @@ def _resolve_space_group(
     # important for files that provide only an International Tables number,
     # where a parser may otherwise expose a placeholder P1 symbol.
     if declared_symbol:
-        resolved = _find_space_group_by_name(declared_symbol)
-        if resolved is not None:
-            source = "cif_symbol"
+        declared_setting = _space_group_setting(declared_symbol)
+        if _is_rhombohedral_family_symbol(declared_symbol) and declared_setting is None:
+            # Gemmi resolves an unqualified R symbol to its H setting by
+            # default.  That default is not safe for a CIF whose cell is in R
+            # axes, so derive the setting from the metric only when it is
+            # unambiguous; otherwise fail closed.
+            unqualified = _find_space_group_by_name(declared_symbol)
+            if unqualified is not None:
+                if (
+                    declared_number is not None
+                    and int(unqualified.number) != declared_number
+                ):
+                    raise ValueError(
+                        f"CIF symbol {declared_symbol!r} resolves to No. "
+                        f"{unqualified.number}, but the declared number is "
+                        f"{declared_number}."
+                    )
+                number = int(unqualified.number)
+                resolved, metric_source = _find_number_space_group(number, small.cell)
+                source = f"cif_symbol_metric_{metric_source.rsplit('_', 1)[-1]}"
+            else:
+                warnings.append(
+                    f"Unrecognized space-group symbol {declared_symbol!r} from cif_symbol."
+                )
         else:
-            warnings.append(f"Unrecognized space-group symbol {declared_symbol!r} from cif_symbol.")
+            resolved = _find_space_group_by_name(declared_symbol)
+            if resolved is not None:
+                source = "cif_symbol"
+            else:
+                warnings.append(f"Unrecognized space-group symbol {declared_symbol!r} from cif_symbol.")
 
     if resolved is None and declared_number is not None:
         try:
-            resolved = gemmi.find_spacegroup_by_number(declared_number)
-            source = "cif_number"
-        except (RuntimeError, ValueError):
-            warnings.append(f"Invalid International Tables space-group number: {declared_number}.")
+            resolved, source = _find_number_space_group(declared_number, small.cell)
+        except RuntimeError:
+            # A declared number is an explicit crystallographic contract.  An
+            # unresolved R/H setting must fail closed rather than silently
+            # becoming P1 or Gemmi's default H setting.
+            raise ValueError(
+                f"Could not resolve declared International Tables space-group number "
+                f"{declared_number} from the CIF cell metric."
+            ) from None
 
     if resolved is None and small_symbol:
         resolved = _find_space_group_by_name(small_symbol)
@@ -164,8 +259,59 @@ def _resolve_space_group(
         "space_group_symbol_from_small_structure": small_symbol or None,
         "space_group_symbol_from_cif": declared_symbol or None,
         "space_group_number_from_cif": declared_number,
+        "space_group_setting": (
+            _space_group_setting(resolved.xhm())
+        ),
     }
     return resolved, list(dict.fromkeys(warnings)), metadata
+
+
+def _resolved_space_group_reparse_needed(
+    block: gemmi.cif.Block,
+) -> bool:
+    """Return whether Gemmi must reparse after resolving the CIF declaration.
+
+    Gemmi's parser can retain an IT number without attaching the corresponding
+    operations to ``SmallStructure``.  It also defaults an unqualified R
+    symbol to its H setting.  Both cases require an explicit canonical symbol
+    before site expansion or crystallographic occupancy conversion.
+    """
+
+    declared_symbol = _first_known(block, SPACE_GROUP_SYMBOL_TAGS)
+    if not declared_symbol:
+        return True
+    if _is_rhombohedral_family_symbol(declared_symbol) and _space_group_setting(
+        declared_symbol
+    ) is None:
+        return True
+    # An unrecognised symbol can leave Gemmi's parser with no operations even
+    # when a valid IT number is also present; rebuild from the resolved number.
+    return _find_space_group_by_name(declared_symbol) is None
+
+
+def _reparse_with_resolved_space_group(
+    block: gemmi.cif.Block,
+    space_group: gemmi.SpaceGroup,
+) -> tuple[gemmi.SmallStructure, gemmi.SmallStructure]:
+    """Rebuild both Gemmi structures with the authoritative H-M setting."""
+
+    try:
+        # ``Block.as_string`` gives us an isolated copy, so provenance tags in
+        # the original block remain the exact values supplied by the CIF.
+        resolved_block = gemmi.cif.read_string(block.as_string()).sole_block()
+        canonical_symbol = space_group.xhm()
+        for tag in SPACE_GROUP_SYMBOL_TAGS:
+            resolved_block.set_pair(tag, canonical_symbol)
+        for tag in SPACE_GROUP_NUMBER_TAGS:
+            resolved_block.set_pair(tag, str(int(space_group.number)))
+        small = gemmi.make_small_structure_from_block(resolved_block)
+        structure_factor_small = gemmi.make_small_structure_from_block(resolved_block)
+    except Exception as exc:
+        raise ValueError(
+            "Gemmi could not reparse the CIF with resolved space-group "
+            f"symbol {space_group.xhm()!r}: {exc}"
+        ) from exc
+    return small, structure_factor_small
 
 
 def _formula_from_expanded_sites(sites: Iterable[gemmi.SmallStructure.Site]) -> str:
@@ -205,20 +351,69 @@ def _formula_from_block(block: gemmi.cif.Block, expanded_sites: list[gemmi.Small
     return _formula_from_expanded_sites(expanded_sites)
 
 
+def _validate_raw_occupancies(block: gemmi.cif.Block) -> None:
+    """Reject unknown/non-finite/out-of-range CIF occupancies before Gemmi defaults them."""
+
+    column = block.find_loop("_atom_site_occupancy")
+    if column is None:
+        return
+    for index in range(len(column)):
+        raw = _clean_cif_value(column[index])
+        if raw in {"", "?", "."}:
+            raise ValueError(
+                f"CIF atom-site occupancy at row {index + 1} is unknown ({raw or 'empty'}); "
+                "provide a finite value in [0, 1]."
+            )
+        token = raw.split("(", 1)[0].strip()
+        if "(" in raw and not re.fullmatch(
+            r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?\(\d+\)",
+            raw,
+        ):
+            raise ValueError(
+                f"CIF atom-site occupancy at row {index + 1} is malformed: {raw!r}."
+            )
+        try:
+            occupancy = float(token)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"CIF atom-site occupancy at row {index + 1} is not numeric: {raw!r}."
+            ) from exc
+        if not math.isfinite(occupancy):
+            raise ValueError(
+                f"CIF atom-site occupancy at row {index + 1} is non-finite: {raw!r}."
+            )
+        if not 0.0 <= occupancy <= 1.0:
+            raise ValueError(
+                f"CIF atom-site occupancy at row {index + 1} is outside [0, 1]: {raw!r}."
+            )
+
+
+def _dataset_value(dataset: object, name: str) -> object:
+    if isinstance(dataset, dict):
+        return dataset.get(name)
+    return getattr(dataset, name, None)
+
+
 def _spglib_crosscheck(
     small: gemmi.SmallStructure,
     declared_number: int,
+    declared_symbol: str = "",
 ) -> tuple[int | None, str | None, str]:
     try:
         import spglib  # type: ignore[import-not-found]
     except ImportError:
         return None, None, "not_available"
 
-    sites = list(small.get_all_unit_cell_sites())
-    lattice = np.asarray(small.cell.orth.mat, dtype=float).T
-    positions = np.asarray([[site.fract.x, site.fract.y, site.fract.z] for site in sites], dtype=float)
-    atomic_numbers = np.asarray([site.element.atomic_number for site in sites], dtype=int)
     try:
+        sites = list(small.get_all_unit_cell_sites())
+        lattice = np.asarray(small.cell.orth.mat, dtype=float).T
+        positions = np.asarray(
+            [[site.fract.x, site.fract.y, site.fract.z] for site in sites],
+            dtype=float,
+        )
+        atomic_numbers = np.asarray(
+            [site.element.atomic_number for site in sites], dtype=int
+        )
         with warning_control.catch_warnings():
             # spglib 2.7 warns before its 2.8 exception-mode transition. The
             # cross-check already handles failure explicitly, so suppress only
@@ -236,9 +431,33 @@ def _spglib_crosscheck(
         return None, None, "failed"
     if dataset is None:
         return None, None, "failed"
-    number = int(dataset.number)
-    symbol = str(dataset.international)
-    status = "match" if number == declared_number else "mismatch"
+    try:
+        number_raw = _dataset_value(dataset, "number")
+        symbol_raw = _dataset_value(dataset, "international")
+        if number_raw is None or symbol_raw is None:
+            return None, None, "failed"
+        number = int(number_raw)
+        symbol = str(symbol_raw)
+        declared_upper = str(declared_symbol or "").strip().upper()
+        declared_setting = (
+            declared_upper.rsplit(":", 1)[-1]
+            if ":" in declared_upper and declared_upper.rsplit(":", 1)[-1] in {"H", "R"}
+            else ""
+        )
+        # spglib commonly reports an R-family international symbol without a
+        # setting suffix; its ``choice`` field can describe the transformed
+        # basis rather than Gemmi's CIF H/R declaration.  Compare settings
+        # only when spglib states one explicitly, avoiding a false mismatch
+        # for an otherwise authoritative R/H CIF.
+        detected_setting = (
+            symbol.upper().rsplit(":", 1)[-1]
+            if ":" in symbol.upper() and symbol.upper().rsplit(":", 1)[-1] in {"H", "R"}
+            else ""
+        )
+        setting_matches = not declared_setting or not detected_setting or declared_setting == detected_setting
+    except (TypeError, ValueError, AttributeError):
+        return None, None, "failed"
+    status = "match" if number == declared_number and setting_matches else "mismatch"
     return number, symbol, status
 
 
@@ -307,6 +526,7 @@ def load_structure(cif_path: str | Path) -> StructureRecord:
     except Exception as exc:
         raise ValueError(f"Gemmi could not read CIF {path.name}: {exc}") from exc
     block = select_structure_block(document)
+    _validate_raw_occupancies(block)
     try:
         small = gemmi.make_small_structure_from_block(block)
         structure_factor_small = gemmi.make_small_structure_from_block(block)
@@ -323,6 +543,11 @@ def load_structure(cif_path: str | Path) -> StructureRecord:
         raise ValueError("CIF unit-cell volume is non-positive or non-finite.")
 
     space_group, warnings, space_group_metadata = _resolve_space_group(small, block)
+    reparsed_with_resolved_symbol = _resolved_space_group_reparse_needed(block)
+    if reparsed_with_resolved_symbol:
+        small, structure_factor_small = _reparse_with_resolved_space_group(
+            block, space_group
+        )
     # Keep both independent structures in the same resolved setting. The second
     # object is modified only for Gemmi's crystallographic occupancy convention.
     small.spacegroup_hm = space_group.xhm()
@@ -349,7 +574,11 @@ def load_structure(cif_path: str | Path) -> StructureRecord:
             "reported intensities represent the average CIF structure."
         )
 
-    detected_number, detected_symbol, crosscheck = _spglib_crosscheck(small, int(space_group.number))
+    detected_number, detected_symbol, crosscheck = _spglib_crosscheck(
+        small,
+        int(space_group.number),
+        space_group.xhm(),
+    )
     if crosscheck == "mismatch":
         warnings.append(
             f"spglib detected {detected_symbol} (No. {detected_number}) while the resolved CIF/Gemmi "
@@ -362,6 +591,7 @@ def load_structure(cif_path: str | Path) -> StructureRecord:
 
     source_metadata: dict[str, object] = {
         **space_group_metadata,
+        "space_group_reparsed_with_resolved_symbol": reparsed_with_resolved_symbol,
         "symmetry_crosscheck": crosscheck,
         "detected_space_group_symbol": detected_symbol,
         "detected_space_group_number": detected_number,

@@ -13,6 +13,7 @@ from importlib.resources import files
 import json
 import math
 from pathlib import Path, PurePosixPath
+from pathlib import PureWindowsPath
 import shutil
 import tempfile
 from typing import Any, Iterable
@@ -29,6 +30,7 @@ from .utils import package_versions, runtime_environment, sha256_file, utc_now_i
 
 BENCHMARK_SCHEMA = "diffractscout_analytic_benchmark_v1"
 BENCHMARK_MANIFEST_SCHEMA = "diffractscout_benchmark_manifest_v1"
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,60 @@ class BenchmarkCheck:
     expected: Any
     tolerance: str = "exact"
     note: str = ""
+
+
+def _is_reparse_point(path: Path) -> bool:
+    """Python-3.10-compatible symlink/junction/reparse-point check."""
+
+    try:
+        stat_result = path.stat(follow_symlinks=False)
+    except (OSError, TypeError):
+        try:
+            stat_result = path.lstat()
+        except OSError:
+            return path.is_symlink()
+    return path.is_symlink() or bool(
+        getattr(stat_result, "st_file_attributes", 0)
+        & _FILE_ATTRIBUTE_REPARSE_POINT
+    )
+
+
+def _reject_reparse_components(path: Path, *, label: str) -> None:
+    absolute = Path(str(path.absolute()))
+    components: list[Path] = []
+    current = absolute
+    while True:
+        components.append(current)
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    for component in reversed(components):
+        if component.exists() or component.is_symlink():
+            if _is_reparse_point(component):
+                raise FileExistsError(
+                    f"Refusing to use a symbolic-link or Windows reparse-point {label}: {component}"
+                )
+
+
+def _safe_manifest_parts(raw_path: object) -> tuple[str, ...] | None:
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return None
+    text = raw_path.strip()
+    normalized = text.replace("\\", "/")
+    posix = PurePosixPath(normalized)
+    windows = PureWindowsPath(text)
+    if (
+        posix.is_absolute()
+        or windows.is_absolute()
+        or bool(windows.drive)
+        or bool(windows.root)
+    ):
+        return None
+    parts = posix.parts
+    if not parts or any(part in {"..", ".", ""} for part in parts):
+        return None
+    return tuple(parts)
 
 
 def _hkl_key(hkl: Iterable[int]) -> str:
@@ -360,6 +416,7 @@ def _markdown_report(payload: dict[str, Any]) -> str:
 def _build_manifest(root: Path, *, all_passed: bool) -> Path:
     entries = []
     for path in sorted(root.rglob("*")):
+        _reject_reparse_components(path, label="benchmark staging artifact")
         if not path.is_file() or path.name == "benchmark_manifest.json":
             continue
         relative = path.relative_to(root).as_posix()
@@ -377,42 +434,95 @@ def _build_manifest(root: Path, *, all_passed: bool) -> Path:
 
 
 def verify_benchmark_bundle(root: str | Path) -> dict[str, Any]:
-    directory = Path(root).expanduser().resolve()
+    supplied = Path(root).expanduser()
+    try:
+        _reject_reparse_components(supplied, label="benchmark bundle")
+    except FileExistsError as exc:
+        manifest_guess = supplied / "benchmark_manifest.json"
+        return {"ok": False, "manifest": str(manifest_guess), "errors": [str(exc)]}
+    directory = supplied.resolve()
     manifest = directory / "benchmark_manifest.json"
     errors: list[str] = []
+    try:
+        _reject_reparse_components(manifest, label="benchmark manifest")
+    except FileExistsError as exc:
+        return {"ok": False, "manifest": str(manifest), "errors": [str(exc)]}
     try:
         payload = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return {"ok": False, "manifest": str(manifest), "errors": [str(exc)]}
+    if not isinstance(payload, dict):
+        return {
+            "ok": False,
+            "manifest": str(manifest),
+            "errors": ["Benchmark manifest root must be a JSON object."],
+        }
     if payload.get("schema") != BENCHMARK_MANIFEST_SCHEMA:
         errors.append("Unknown benchmark manifest schema.")
+    entries = payload.get("files")
+    if not isinstance(entries, list):
+        return {
+            "ok": False,
+            "manifest": str(manifest),
+            "all_passed": bool(payload.get("all_passed")),
+            "errors": [*errors, "Benchmark manifest 'files' must be a list."],
+        }
     listed: set[str] = set()
-    for entry in payload.get("files", []):
-        relative = str(entry.get("path") or "")
-        pure = PurePosixPath(relative)
-        if not relative or pure.is_absolute() or ".." in pure.parts:
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            errors.append(f"Manifest file entry {index} must be an object.")
+            continue
+        raw_path = entry.get("path")
+        parts = _safe_manifest_parts(raw_path)
+        relative = str(raw_path) if isinstance(raw_path, str) else ""
+        if parts is None:
             errors.append(f"Unsafe manifest path: {relative!r}")
             continue
-        if relative in listed:
-            errors.append(f"Duplicate manifest path: {relative}")
+        normalized = "/".join(parts)
+        if normalized == "benchmark_manifest.json":
+            errors.append("Benchmark manifest must not list itself as a data file.")
             continue
-        listed.add(relative)
-        path = directory.joinpath(*pure.parts)
-        if path.is_symlink():
-            errors.append(f"Symbolic links are not allowed: {relative}")
+        if normalized in listed:
+            errors.append(f"Duplicate manifest path: {normalized}")
+            continue
+        listed.add(normalized)
+        path = directory.joinpath(*parts)
+        try:
+            _reject_reparse_components(path, label="benchmark manifest artifact")
+        except FileExistsError as exc:
+            errors.append(str(exc))
             continue
         if not path.is_file():
-            errors.append(f"Missing file: {relative}")
+            errors.append(f"Missing file: {normalized}")
             continue
-        if path.stat().st_size != int(entry.get("size_bytes", -1)):
-            errors.append(f"Size mismatch: {relative}")
-        if sha256_file(path) != str(entry.get("sha256") or ""):
-            errors.append(f"SHA-256 mismatch: {relative}")
-    actual = {
-        path.relative_to(directory).as_posix()
-        for path in directory.rglob("*")
-        if path.is_file() and path.name != "benchmark_manifest.json"
-    }
+        try:
+            expected_size = entry.get("size_bytes")
+            if isinstance(expected_size, bool) or not isinstance(expected_size, int):
+                errors.append(f"Invalid size_bytes for manifest path: {normalized}")
+            elif path.stat().st_size != expected_size:
+                errors.append(f"Size mismatch: {normalized}")
+            expected_hash = entry.get("sha256")
+            if not isinstance(expected_hash, str) or not expected_hash:
+                errors.append(f"Invalid SHA-256 for manifest path: {normalized}")
+            elif sha256_file(path) != expected_hash:
+                errors.append(f"SHA-256 mismatch: {normalized}")
+        except (OSError, TypeError, ValueError) as exc:
+            errors.append(f"Could not verify manifest path {normalized}: {exc}")
+    actual: set[str] = set()
+    try:
+        paths = directory.rglob("*")
+        for path in paths:
+            if path.name == "benchmark_manifest.json":
+                continue
+            try:
+                _reject_reparse_components(path, label="benchmark bundle artifact")
+            except FileExistsError as exc:
+                errors.append(str(exc))
+                continue
+            if path.is_file():
+                actual.add(path.relative_to(directory).as_posix())
+    except OSError as exc:
+        errors.append(f"Could not enumerate benchmark bundle: {exc}")
     for extra in sorted(actual - listed):
         errors.append(f"Unlisted file: {extra}")
     return {
@@ -425,8 +535,7 @@ def verify_benchmark_bundle(root: str | Path) -> dict[str, Any]:
 
 def _prepare_target(output_dir: str | Path, *, overwrite: bool) -> Path:
     raw = Path(output_dir).expanduser()
-    if raw.is_symlink():
-        raise FileExistsError(f"Refusing to use a symbolic-link benchmark directory: {raw}")
+    _reject_reparse_components(raw, label="benchmark output directory")
     target = raw.resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and not target.is_dir():

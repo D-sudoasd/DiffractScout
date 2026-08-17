@@ -46,6 +46,18 @@ def test_materials_project_document_normalization() -> None:
     assert "sg221" in _candidate_filename(candidate)
 
 
+def test_candidate_filename_is_one_safe_basename_for_hostile_material_id() -> None:
+    candidate = CandidateRecord(
+        material_id="../../outside\\candidate",
+        formula="Al/O",
+        source_provider="Materials Project",
+    )
+    filename = _candidate_filename(candidate)
+    assert Path(filename).name == filename
+    assert ".." not in filename
+    assert "/" not in filename and "\\" not in filename
+
+
 def test_matrix_conversion() -> None:
     matrix = [[float(i == j) for j in range(6)] for i in range(6)]
     assert _matrix(matrix) == matrix
@@ -72,6 +84,12 @@ def test_subsystem_query_filters_energy_before_page_limit() -> None:
                     "material_id": "mp-unknown",
                     "formula_pretty": "Al",
                     "energy_above_hull": None,
+                    "deprecated": False,
+                },
+                {
+                    "material_id": "mp-negative",
+                    "formula_pretty": "Al",
+                    "energy_above_hull": -0.01,
                     "deprecated": False,
                 },
             ]
@@ -102,6 +120,76 @@ def test_subsystem_query_filters_energy_before_page_limit() -> None:
     assert calls[0]["energy_above_hull"] == (0.0, 0.05)
     assert calls[0]["chunk_size"] == 5
     assert calls[0]["num_chunks"] == 1
+
+
+def test_database_version_prefers_new_client_attribute() -> None:
+    provider = _provider_without_client()
+    provider._metadata = {}
+
+    class Client:
+        db_version = "2026.08"
+
+        def get_database_version(self) -> str:
+            raise AssertionError("legacy method should not be preferred")
+
+    provider._capture_metadata(Client())
+    assert provider._metadata["database_version"] == "2026.08"
+
+
+def test_summary_search_typeerror_fallback_reapplies_filters_locally() -> None:
+    calls: list[dict[str, object]] = []
+
+    class SummaryEndpoint:
+        def search(self, **kwargs: object) -> list[dict[str, object]]:
+            calls.append(kwargs)
+            if len(calls) < 4:
+                raise TypeError("legacy client does not accept optional keyword")
+            return [
+                {
+                    "material_id": "mp-good",
+                    "formula_pretty": "Al",
+                    "energy_above_hull": 0.01,
+                    "deprecated": False,
+                },
+                {
+                    "material_id": "mp-old",
+                    "formula_pretty": "Al",
+                    "energy_above_hull": 0.01,
+                    "deprecated": True,
+                },
+                {
+                    "material_id": "mp-high",
+                    "formula_pretty": "Al",
+                    "energy_above_hull": 0.2,
+                    "deprecated": False,
+                },
+            ]
+
+    class Materials:
+        summary = SummaryEndpoint()
+
+    class Client:
+        materials = Materials()
+
+        def __enter__(self) -> "Client":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    provider = _provider_without_client()
+    provider.api_key = "test"
+    provider._mpr_cls = lambda _api_key: Client()
+    provider._metadata = {}
+    candidates = provider.search_subsystem(
+        "Al",
+        max_results=1,
+        e_hull_max_eV_atom=0.05,
+        exclude_deprecated=True,
+    )
+    assert [candidate.material_id for candidate in candidates] == ["mp-good"]
+    assert len(calls) == 4
+    assert provider._metadata.get("compatibility_fallback")
 
 
 def test_elasticity_sidecar_prefers_raw_tensor_for_conventional_cif(tmp_path: Path) -> None:

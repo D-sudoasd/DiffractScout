@@ -24,3 +24,7 @@ def test_uses_miller_bravais_crystal_systems() -> None:
     assert uses_miller_bravais(gemmi.find_spacegroup_by_name("P -3 m 1"))
     assert not uses_miller_bravais(gemmi.find_spacegroup_by_name("F m -3 m"))
     assert not uses_miller_bravais(None)
+
+
+def test_rhombohedral_setting_uses_three_index_labels() -> None:
+    assert not uses_miller_bravais(gemmi.find_spacegroup_by_name("R -3:R"))

@@ -7,6 +7,7 @@ from openpyxl import load_workbook
 from diffractscout.elasticity_input import parse_cubic_cij
 from diffractscout.models import AnalysisSettings
 from diffractscout.pipeline import analyze_cifs
+from diffractscout.quick_export import build_parser as build_quick_export_parser
 from diffractscout.quick_export import main as quick_export_main
 from diffractscout.quick_export import _copy_excel_atomic, quick_export
 from diffractscout.validation import verify_bundle
@@ -101,6 +102,12 @@ def test_quick_export_cli_entry(demo_inputs: Path, tmp_path: Path) -> None:
     assert code == 0
     assert excel.is_file()
     assert (tmp_path / "cli_out_bundle" / "manifest.json").is_file()
+
+
+def test_standalone_quick_export_help_is_legacy_windows_console_safe() -> None:
+    help_text = build_quick_export_parser().format_help()
+    assert "K-alpha" in help_text
+    help_text.encode("cp936")
 
 
 def test_elastic_override_replaces_sidecar(demo_inputs: Path, tmp_path: Path) -> None:

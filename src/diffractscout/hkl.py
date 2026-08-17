@@ -56,13 +56,24 @@ def _uses_miller_bravais(crystal_system: str) -> bool:
 
 
 def uses_miller_bravais(space_group: Any) -> bool:
-    """True when the space group's crystal system is hexagonal or trigonal."""
+    """True for hexagonal-axis hexagonal/trigonal settings.
+
+    A rhombohedral (``:R``) setting is still trigonal crystallographically,
+    but its reciprocal indices are conventionally three-index Miller values;
+    using Miller-Bravais labels there would silently relabel the reflection.
+    """
 
     if space_group is None:
         return False
     try:
         system = str(space_group.crystal_system_str())
     except Exception:
+        return False
+    try:
+        symbol = str(space_group.xhm())
+    except Exception:
+        symbol = ""
+    if symbol.rstrip().upper().endswith(":R"):
         return False
     return _uses_miller_bravais(system)
 
@@ -98,7 +109,12 @@ def label_hkl_for_crystal_system(
     """
 
     h_i, k_i, l_i = int(h), int(k), int(l)
-    if _uses_miller_bravais(crystal_system):
+    setting_text = str(crystal_system).upper().replace(" ", "")
+    if ":R" in setting_text or setting_text.endswith("_R"):
+        use_miller_bravais = False
+    else:
+        use_miller_bravais = _uses_miller_bravais(crystal_system)
+    if use_miller_bravais:
         i = miller_bravais_i(h_i, k_i)
         return format_hkl((h_i, k_i, i, l_i)), i
     return format_hkl((h_i, k_i, l_i)), None

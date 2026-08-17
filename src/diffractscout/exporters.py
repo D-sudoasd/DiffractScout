@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
-from dataclasses import asdict, fields
+from dataclasses import asdict, fields, is_dataclass
+import os
 from pathlib import Path
 from typing import Any
 
@@ -174,9 +176,18 @@ SUMMARY_HEADERS = ["key", "value"]
 EXCEL_DATA_ROW_LIMIT = 900_000
 
 
-def _portable_path(value: Path) -> str:
-    if value.parent.name == "inputs":
-        return f"inputs/{value.name}"
+def _portable_path(value: Path, bundle_root: Path | None = None) -> str:
+    """Return a stable POSIX path without leaking a transaction directory."""
+
+    if not value.is_absolute():
+        return value.as_posix()
+    if bundle_root is not None:
+        root = Path(os.path.abspath(os.fspath(bundle_root)))
+        absolute = Path(os.path.abspath(os.fspath(value)))
+        try:
+            return absolute.relative_to(root).as_posix()
+        except ValueError:
+            pass
     return value.name
 
 
@@ -188,11 +199,11 @@ def _safe_spreadsheet_text(value: str) -> str:
     return value
 
 
-def _cell_value(value: Any) -> Any:
+def _cell_value(value: Any, bundle_root: Path | None = None) -> Any:
     if value is None:
         return ""
     if isinstance(value, Path):
-        return _safe_spreadsheet_text(_portable_path(value))
+        return _safe_spreadsheet_text(_portable_path(value, bundle_root))
     if isinstance(value, (np.floating, float)):
         resolved = float(value)
         return resolved if math.isfinite(resolved) else ""
@@ -200,25 +211,59 @@ def _cell_value(value: Any) -> Any:
         return int(value)
     if isinstance(value, bool):
         return value
-    if isinstance(value, set):
-        return _safe_spreadsheet_text(" | ".join(str(item) for item in sorted(value, key=str)))
-    if isinstance(value, (list, tuple)):
-        return _safe_spreadsheet_text(" | ".join(str(item) for item in value))
-    if isinstance(value, dict):
-        text = " | ".join(f"{key}={value[key]}" for key in sorted(value, key=str))
+    if isinstance(value, (dict, list, tuple, set, frozenset)):
+        text = json.dumps(
+            _portable_json_value(value, bundle_root),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return _safe_spreadsheet_text(text)
     if isinstance(value, str):
         return _safe_spreadsheet_text(value)
     return value
 
 
-def _portable_json_value(value: Any) -> Any:
+def _portable_json_value(value: Any, bundle_root: Path | None = None) -> Any:
+    """Normalize nested export values deterministically and JSON-safely."""
+
+    if is_dataclass(value):
+        return {
+            field.name: _portable_json_value(getattr(value, field.name), bundle_root)
+            for field in fields(value)
+            if field.name
+            not in {"small_structure", "structure_factor_structure", "space_group_object"}
+        }
     if isinstance(value, Path):
-        return _portable_path(value)
+        return _portable_path(value, bundle_root)
     if isinstance(value, dict):
-        return {str(key): _portable_json_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_portable_json_value(item) for item in value]
+        normalized: list[tuple[str, Any]] = []
+        for key, item in value.items():
+            portable_key = _portable_json_value(key, bundle_root)
+            if not isinstance(portable_key, str):
+                portable_key = json.dumps(
+                    portable_key,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            normalized.append(
+                (portable_key, _portable_json_value(item, bundle_root))
+            )
+        return {key: item for key, item in sorted(normalized, key=lambda pair: pair[0])}
+    if isinstance(value, (list, tuple)):
+        return [_portable_json_value(item, bundle_root) for item in value]
+    if isinstance(value, (set, frozenset)):
+        normalized = [_portable_json_value(item, bundle_root) for item in value]
+        return sorted(
+            normalized,
+            key=lambda item: json.dumps(
+                item,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        )
     return to_jsonable(value)
 
 
@@ -230,7 +275,13 @@ def _write_text_atomic(path: Path, text: str) -> Path:
     return path
 
 
-def _write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> Path:
+def _write_csv(
+    path: Path,
+    rows: list[dict[str, Any]],
+    fieldnames: list[str],
+    *,
+    bundle_root: Path | None = None,
+) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -238,7 +289,12 @@ def _write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) ->
             writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             for row in rows:
-                writer.writerow({name: _cell_value(row.get(name)) for name in fieldnames})
+                writer.writerow(
+                    {
+                        name: _cell_value(row.get(name), bundle_root)
+                        for name in fieldnames
+                    }
+                )
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -506,6 +562,8 @@ def _add_sheet(
     title: str,
     rows: list[dict[str, Any]],
     headers: list[str],
+    *,
+    bundle_root: Path | None = None,
 ) -> None:
     sheet = workbook.create_sheet(title=title)
     sheet.append(headers)
@@ -519,7 +577,9 @@ def _add_sheet(
         rows = [note]
     if rows:
         for row in rows:
-            sheet.append([_cell_value(row.get(header)) for header in headers])
+            sheet.append(
+                [_cell_value(row.get(header), bundle_root) for header in headers]
+            )
     else:
         sheet.append(["no rows", *([""] * (len(headers) - 1))])
     # Frozen header + autofilter: required for analysis-ready long tables.
@@ -533,7 +593,9 @@ def _add_sheet(
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for column_index, header in enumerate(headers, start=1):
-        sampled = [str(header)] + [str(_cell_value(row.get(header))) for row in rows[:200]]
+        sampled = [str(header)] + [
+            str(_cell_value(row.get(header), bundle_root)) for row in rows[:200]
+        ]
         # Slightly wider for analysis headers with units in the name.
         width = min(max(max(len(value) for value in sampled) + 2, 10), 48)
         sheet.column_dimensions[get_column_letter(column_index)].width = width
@@ -581,6 +643,7 @@ def write_excel_workbook(
     analyses: list[PhaseAnalysis] | None = None,
     export_lab_views: bool = False,
     include_patterns: bool = True,
+    bundle_root: Path | None = None,
 ) -> Path:
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -589,15 +652,23 @@ def write_excel_workbook(
         _add_guide_sheet(workbook, "使用说明", user_guide_rows())
         zh_headers = list(BEGINNER_PEAK_HEADERS_ZH.keys())
         _add_sheet(workbook, "推荐峰表", beginner_peak_rows_zh(peaks), zh_headers)
-    _add_sheet(workbook, "Summary", summary, SUMMARY_HEADERS)
-    _add_sheet(workbook, "Peaks", peaks, PEAK_HEADERS)
-    _add_sheet(workbook, "Phases", phases, PHASE_HEADERS)
-    _add_sheet(workbook, "Elasticity", elasticity, ELASTICITY_HEADERS)
-    _add_sheet(workbook, "Candidates", candidates, CANDIDATE_HEADERS)
-    _add_sheet(workbook, "Downloads", downloads, DOWNLOAD_HEADERS)
-    _add_sheet(workbook, "Diagnostics", diagnostics, DIAGNOSTIC_HEADERS)
+    _add_sheet(workbook, "Summary", summary, SUMMARY_HEADERS, bundle_root=bundle_root)
+    _add_sheet(workbook, "Peaks", peaks, PEAK_HEADERS, bundle_root=bundle_root)
+    _add_sheet(workbook, "Phases", phases, PHASE_HEADERS, bundle_root=bundle_root)
+    _add_sheet(
+        workbook, "Elasticity", elasticity, ELASTICITY_HEADERS, bundle_root=bundle_root
+    )
+    _add_sheet(
+        workbook, "Candidates", candidates, CANDIDATE_HEADERS, bundle_root=bundle_root
+    )
+    _add_sheet(
+        workbook, "Downloads", downloads, DOWNLOAD_HEADERS, bundle_root=bundle_root
+    )
+    _add_sheet(
+        workbook, "Diagnostics", diagnostics, DIAGNOSTIC_HEADERS, bundle_root=bundle_root
+    )
     if include_patterns:
-        _add_sheet(workbook, "Patterns", patterns, PATTERN_HEADERS)
+        _add_sheet(workbook, "Patterns", patterns, PATTERN_HEADERS, bundle_root=bundle_root)
     if export_lab_views:
         analysis_list = analyses or []
         if 0 < len(analysis_list) <= 20:
@@ -609,7 +680,13 @@ def write_excel_workbook(
                 if not phase_peaks:
                     continue
                 title = safe_excel_sheet_title(f"峰_{analysis.phase_name}", used=used_titles)
-                _add_sheet(workbook, title, phase_peaks, PEAK_HEADERS)
+                _add_sheet(
+                    workbook,
+                    title,
+                    phase_peaks,
+                    PEAK_HEADERS,
+                    bundle_root=bundle_root,
+                )
         # Open on the Chinese analysis long table when present.
         if "推荐峰表" in workbook.sheetnames:
             workbook.active = workbook["推荐峰表"]
@@ -744,23 +821,40 @@ def export_result_bundle(
     diagnostic_table = diagnostic_rows(diagnostics)
     summary = _summary_rows(analyses, discovery, settings, diagnostics)
 
-    _write_csv(output / "phase_summary.csv", phases, PHASE_HEADERS)
-    _write_csv(output / "peak_reference.csv", peaks, PEAK_HEADERS)
+    _write_csv(output / "phase_summary.csv", phases, PHASE_HEADERS, bundle_root=output)
+    _write_csv(output / "peak_reference.csv", peaks, PEAK_HEADERS, bundle_root=output)
     if settings.include_patterns:
-        _write_csv(output / "pattern_profiles.csv", patterns, PATTERN_HEADERS)
-    _write_csv(output / "elasticity.csv", elasticity, ELASTICITY_HEADERS)
-    _write_csv(output / "candidate_index.csv", candidates, CANDIDATE_HEADERS)
-    _write_csv(output / "download_index.csv", download_table, DOWNLOAD_HEADERS)
-    _write_csv(output / "diagnostics.csv", diagnostic_table, DIAGNOSTIC_HEADERS)
+        _write_csv(
+            output / "pattern_profiles.csv",
+            patterns,
+            PATTERN_HEADERS,
+            bundle_root=output,
+        )
+    _write_csv(output / "elasticity.csv", elasticity, ELASTICITY_HEADERS, bundle_root=output)
+    _write_csv(output / "candidate_index.csv", candidates, CANDIDATE_HEADERS, bundle_root=output)
+    _write_csv(
+        output / "download_index.csv",
+        download_table,
+        DOWNLOAD_HEADERS,
+        bundle_root=output,
+    )
+    _write_csv(
+        output / "diagnostics.csv",
+        diagnostic_table,
+        DIAGNOSTIC_HEADERS,
+        bundle_root=output,
+    )
     _write_text_atomic(output / "README.md", _bundle_readme(analyses, discovery, diagnostics))
 
     provenance = {
         "schema": "diffractscout_provenance_v1",
         "generated_at_utc": utc_now_iso(),
         "analysis_settings": asdict(settings),
-        "discovery": to_jsonable(discovery) if discovery is not None else None,
-        "downloads": [_portable_json_value(row) for row in download_table],
-        "diagnostics": to_jsonable(diagnostics),
+        "discovery": (
+            _portable_json_value(discovery, output) if discovery is not None else None
+        ),
+        "downloads": [_portable_json_value(row, output) for row in download_table],
+        "diagnostics": _portable_json_value(diagnostics, output),
         "phase_metadata": [
             {
                 "phase_name": analysis.phase_name,
@@ -769,9 +863,11 @@ def export_result_bundle(
                     "cif_sha256": analysis.structure.cif_sha256,
                     "formula": analysis.structure.formula,
                     "space_group": analysis.structure.space_group_symbol,
-                    "source_metadata": analysis.structure.source_metadata,
+                    "source_metadata": _portable_json_value(
+                        analysis.structure.source_metadata, output
+                    ),
                 },
-                "analysis_metadata": analysis.metadata,
+                "analysis_metadata": _portable_json_value(analysis.metadata, output),
                 "warnings": analysis.warnings,
             }
             for analysis in analyses
@@ -821,6 +917,7 @@ def export_result_bundle(
             analyses=analyses,
             export_lab_views=bool(settings.export_lab_views),
             include_patterns=bool(settings.include_patterns),
+            bundle_root=output,
         )
 
     if settings.include_figures and analyses:

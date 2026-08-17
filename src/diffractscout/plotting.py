@@ -233,8 +233,44 @@ def _ascii_plot_title(title: str) -> str:
     return title.encode("ascii", errors="replace").decode("ascii")
 
 
+def _require_ascii_title(title: str, backend: str) -> str:
+    """Return a title supported by the legacy text backend.
+
+    The pure raster/EPS/PDF writers use a deliberately small ASCII font or a
+    built-in Helvetica Type-1 font.  Replacing unsupported characters with
+    ``?`` would make a scientific label silently incorrect, so callers must
+    fail explicitly and can choose SVG or matplotlib instead.
+    """
+
+    text = str(title)
+    if not text.isascii():
+        raise ValueError(
+            f"{backend} export cannot render Unicode/non-ASCII titles with its built-in backend; "
+            "use SVG or install matplotlib for Unicode title support."
+        )
+    return text
+
+
 def _matplotlib_font_family(preset: FigureExportPreset) -> list[str]:
     return [font.strip() for font in preset.font_family.split(",") if font.strip()]
+
+
+def _validate_profile_arrays(
+    x_values: np.ndarray, y_values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Validate the numeric profile contract shared by every exporter."""
+
+    if x_values.ndim != 1 or y_values.ndim != 1:
+        raise ValueError("Profile x/y arrays must be one-dimensional.")
+    if x_values.size == 0 or y_values.size == 0:
+        raise ValueError("Profile contains no points to plot.")
+    if x_values.size != y_values.size:
+        raise ValueError("Profile x/y arrays have different lengths.")
+    if not np.all(np.isfinite(x_values)) or not np.all(np.isfinite(y_values)):
+        raise ValueError("Profile x/y arrays must contain only finite values (no NaN or Inf).")
+    if x_values.size > 1 and not np.all(np.diff(x_values) > 0.0):
+        raise ValueError("Profile x values must be strictly monotonic increasing.")
+    return x_values, y_values
 
 
 def _coerce_profile(
@@ -254,10 +290,7 @@ def _coerce_profile(
         x_values = np.asarray(two_theta_grid, dtype=float)
         y_values = np.asarray(intensity_profile, dtype=float)
         plot_title = title or "Theoretical powder XRD"
-    if x_values.size == 0 or y_values.size == 0:
-        raise ValueError("Profile contains no points to plot.")
-    if x_values.size != y_values.size:
-        raise ValueError("Profile x/y arrays have different lengths.")
+    _validate_profile_arrays(x_values, y_values)
     return x_values, y_values, plot_title
 
 
@@ -267,6 +300,7 @@ def _profile_plot_geometry(
     preset: FigureExportPreset,
     units_per_inch: float,
 ) -> dict[str, object]:
+    _validate_profile_arrays(x_values, y_values)
 
     width = preset.width_in * units_per_inch
     height = preset.height_in * units_per_inch
@@ -474,7 +508,7 @@ def _raster_xrd_pattern(
         anchor="mm",
         rotation=-90,
     )
-    safe_title = _ascii_plot_title(title)
+    safe_title = _require_ascii_title(title, "Raster fallback")
     _draw_text(buffer, width, height, safe_title, width / 2, 4.2 * title_scale, title_scale, axis_color, anchor="mm")
 
     raster_points = [to_raster((float(x), float(y))) for x, y in points]
@@ -531,10 +565,7 @@ def _matplotlib_xrd_figure(
 
     try:
         preset = _preset(preset_name)
-        if x_values.size == 0 or y_values.size == 0:
-            raise ValueError("Profile contains no points to plot.")
-        if x_values.size != y_values.size:
-            raise ValueError("Profile x/y arrays have different lengths.")
+        _validate_profile_arrays(x_values, y_values)
 
         figure = Figure(figsize=(preset.width_in, preset.height_in), dpi=preset.dpi, constrained_layout=preset.constrained_layout)
         canvas = FigureCanvasAgg(figure)
@@ -584,6 +615,16 @@ def _png_chunk(kind: bytes, payload: bytes) -> bytes:
     return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
 
 
+def _png_itxt(keyword: str, value: str) -> bytes:
+    """Encode UTF-8 PNG metadata without lossy replacement."""
+
+    return (
+        keyword.encode("latin-1", errors="strict")
+        + b"\x00\x00\x00\x00\x00"
+        + str(value).encode("utf-8")
+    )
+
+
 def _write_png(
     output_path: str | Path,
     *,
@@ -606,8 +647,8 @@ def _write_png(
             b"\x89PNG\r\n\x1a\n",
             _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)),
             _png_chunk(b"pHYs", struct.pack(">IIB", pixels_per_meter, pixels_per_meter, 1)),
-            _png_chunk(b"tEXt", b"Title\x00" + _ascii_plot_title(title).encode("latin-1", errors="replace")),
-            _png_chunk(b"tEXt", b"Description\x00" + description.encode("latin-1", errors="replace")),
+            _png_chunk(b"iTXt", _png_itxt("Title", title)),
+            _png_chunk(b"iTXt", _png_itxt("Description", description)),
             _png_chunk(b"tEXt", b"XLabel\x002theta (deg)"),
             _png_chunk(b"tEXt", b"YLabel\x00Intensity (a.u.)"),
             _png_chunk(b"IDAT", zlib.compress(bytes(scanlines), level=9)),
@@ -630,7 +671,7 @@ def _write_tiff(
     title: str,
     description: str,
 ) -> Path:
-    image_description = f"{description} Title: {_ascii_plot_title(title)}\x00".encode("ascii", errors="replace")
+    image_description = f"{description} Title: {title}\x00".encode("utf-8")
     software = b"DiffractScout\x00"
     entries: list[tuple[int, int, int, int | bytes]] = [
         (256, 4, 1, width),
@@ -861,7 +902,7 @@ def export_xrd_pattern_eps(
     x_ticks = geometry["x_ticks"]
     y_ticks = geometry["y_ticks"]
     red, green, blue = _rgb01(preset.color_cycle[0])
-    safe_title = _ascii_plot_title(plot_title)
+    safe_title = _require_ascii_title(plot_title, "EPS")
 
     lines = [
         "%!PS-Adobe-3.0 EPSF-3.0",
@@ -950,7 +991,7 @@ def export_xrd_pattern_pdf(
     x_ticks = geometry["x_ticks"]
     y_ticks = geometry["y_ticks"]
     red, green, blue = _rgb01(preset.color_cycle[0])
-    safe_title = _ascii_plot_title(plot_title)
+    safe_title = _require_ascii_title(plot_title, "PDF")
 
     stream_lines = [
         "% XLabel: 2theta (deg)",
