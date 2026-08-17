@@ -43,7 +43,7 @@ Desktop and lab-facing behaviour from CIF2Peaks was reimplemented (not vendored 
 |---|---|
 | `hkl.py` | Miller / Miller–Bravais labels and family helpers for peak tables |
 | `export_views.py` | Laboratory Excel views: Chinese beginner peak headers and usage-guide sheets |
-| `plotting` / figure flags | Optional figure request path (`include_figures`, `figure_preset`; exporters may no-op until matplotlib extras are used) |
+| `plotting` / figure flags | Optional 2θ figure export (`include_figures`, `figure_preset`); result bundles write SVG/PNG in the base install, while the `figures` extra enables the matplotlib path and paper-figure tooling |
 | `elasticity_input.py` | User-supplied Cij parsing helpers without Tk (cubic / matrix text) |
 | `quick_export.py` | One-shot local export with Cu Kα lab defaults and optional `.xlsx` path shortcut |
 

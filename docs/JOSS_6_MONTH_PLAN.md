@@ -1,70 +1,81 @@
 # Six-month public-development and submission plan
 
-JOSS pre-review screening requires at least six months of public development,
-with activity distributed across that period. The clock starts on the date the
-GitHub repository is actually public. Local commit dates, a one-time code
-import, or retrospective issue creation do not establish public history.
+The public DiffractScout repository was created on **12 August 2026**. Six
+calendar months are completed on **12 February 2027**; the project uses **15
+February 2027** as its earliest practical submission date. Passing the date is
+necessary but not sufficient: JOSS editors assess whether development is real,
+open, distributed, and connected to scholarly use.
 
-Run the project preflight at any time:
+Use the staged preflight:
 
 ```bash
+# Software release candidate
+python scripts/check_release.py
+python scripts/joss_readiness.py --stage release --strict
+
+# JOSS submission candidate; the date does not override missing evidence
 python scripts/joss_readiness.py \
-  --public-since YYYY-MM-DD \
+  --stage submission --strict --as-of YYYY-MM-DD \
   --output build/joss-readiness
+
+# Post-review tag/archive consistency
+python scripts/joss_readiness.py \
+  --stage publication --strict --as-of YYYY-MM-DD
 ```
 
-Use `--strict` only as a release or submission gate. The report cannot verify
-that local commits were publicly visible; the GitHub timeline remains the
-evidence source.
+The report cannot prove that local commits were public. Retain meaningful public
+GitHub commit, issue, pull-request, and Release URLs as the authoritative
+timeline and add completed records to the ledger's
+`public_development_activity` array. The strict gate counts distinct calendar
+months only from those auditable URLs; scheduled workflow runs alone do not
+qualify.
 
-## Worked calendar
+## Milestones from 12 August 2026
 
-If the repository becomes public on **12 August 2026**, six calendar months are
-completed on **12 February 2027**. A practical submission target is **15
-February 2027**, after checking the full public record and the final tagged
-release. If publication occurs later, shift every milestone by the same amount.
-
-| Period from public date | Required work | Public evidence |
+| Period | Required work | Public evidence |
 |---|---|---|
-| Day 0–30 | Publish v0.3.0, enable CI, open roadmap and validation issues, document installation on a clean machine | public repository, CI runs, release notes, initial issues |
-| Day 31–60 | Complete one independent crystallographic comparison and resolve every discrepancy | validation issue, versioned inputs, result table, pull request |
-| Day 61–90 | Publish one real-material workflow with licensed or synthetic-reconstructable inputs and predeclared tolerances | archived case report, hashes, issue discussion, release |
-| Day 91–120 | Obtain external testing or review; improve documentation from observed user friction | public user report, issue/PR, contributor credit with consent |
-| Day 121–150 | Complete independent elasticity validation, API review, accessibility review, and release-candidate audit | validation report, CI artifacts, release candidate |
-| Day 151–six-month date | Freeze scientific definitions, archive the submission release, add DOI, rebuild paper, audit every claim and citation | DOI, tag, release, paper PDF, readiness report |
-| After six-month date | Confirm activity is distributed, no blocking issues remain, and the submission commit matches the archive | final readiness report and JOSS submission |
+| Aug-Sep 2026 | Complete and publish the v0.4.0 baseline after release-stage, clean-wheel, cross-platform CI, and official paper-build checks | tag, GitHub Release, CI and draft-build URLs, release artifacts |
+| Sep-Oct 2026 | Complete one lawful, frozen multiphase-alloy workflow and an independent diffraction comparison with predeclared tolerances | case report, hashed inputs, bundle, comparison table, issue/PR |
+| Nov 2026 | Obtain external clean installation or research-use feedback and resolve real user friction | public user report, issue/PR, consented attribution |
+| Dec 2026 | Complete independent directional-elasticity validation and API/GUI documentation audit | tensor/basis report, comparison results, maintenance release |
+| Jan 2027 | Freeze submission scope, audit every claim/citation, confirm author metadata, and complete the reviewer-checklist matrix | submission candidate, green CI, official JOSS PDF, readiness report |
+| 12-15 Feb 2027 | Confirm six-month age and genuinely distributed public activity | public timeline audit |
+| After 15 Feb 2027 | Submit only if `--stage submission --strict` passes and no blocking scientific or software issue remains | JOSS submission and public pre-review issue |
+| After successful JOSS review | Create the final tag if the software changed, archive the repository, add the software DOI, and run publication-stage readiness | final tag, Zenodo/figshare record, DOI, review issue update |
 
 ## Monthly operating rule
 
-Each public change must correspond to real software, documentation,
-validation, support, or research use. Do not manufacture commits, issues,
-contributors, downloads, or citations to make the timeline appear active.
-Combine trivial edits when they belong to one change; retain separate records
-when they document independent review or validation.
+Every public change must correspond to needed software, documentation,
+validation, support, dependency, release, or research-use work. Do not create
+empty commits, retrospective issues, invented contributors, or unsupported
+claims to simulate activity.
 
 At the end of each month:
 
-1. review the scheduled `Monthly JOSS maintenance snapshot` result, then run tests, analytic benchmarks, demo verification, and the release checker after any corrective change;
-2. archive benchmark and validation outputs as CI or release artifacts;
-3. update `docs/evidence/impact_evidence.json` with public URLs only;
+1. review the monthly reproducibility workflow and correct real failures;
+2. retain demo, benchmark, readiness, and release artifacts for identifiable commits;
+3. update the evidence ledger only with completed public URLs;
 4. review open scientific and software issues;
 5. update the changelog and roadmap from completed work;
-6. review Dependabot pull requests, merging only updates that pass the full checks and retain scientific behavior;
-7. run `scripts/joss_readiness.py` and retain the report.
+6. review dependency pull requests through the full scientific regression path;
+7. retain a non-strict submission-stage readiness snapshot.
 
-The scheduled workflow is a reproducibility record for a specific public commit. A green timer-triggered run without a code, validation, documentation, release, issue, or review outcome is not counted as active development. Public activity should reflect work that was actually needed and reviewed.
+A green scheduled run shows that a commit remains reproducible. It does not by
+itself demonstrate sustained development or research impact.
 
-## Final submission gates
+## Submission gate
 
-- public repository age is at least six calendar months;
-- development is visibly distributed across the period;
-- supported installation succeeds from the archived release;
-- all automated tests and 45 analytic benchmark checks pass;
-- at least one real research-use case supports the impact statement;
-- at least one independent numerical validation is public;
-- external engagement is documented for the single-author project;
-- the submission release has a persistent archive DOI;
-- paper sections, word count, figures, references, author metadata, funding,
-  acknowledgements, and AI disclosure are final;
-- the Open Journals draft PDF has been inspected page by page;
-- no manuscript claim exceeds the linked evidence.
+- date is 15 February 2027 or later;
+- public work is distributed across at least four calendar months;
+- a supported wheel installs and runs outside the source tree;
+- all required remote CI jobs and the official JOSS paper build pass;
+- the 45-check analytic benchmark passes;
+- the real multiphase case is public, lawful, frozen, hashed, and tied to an actual research decision;
+- independent diffraction and elasticity validations are public;
+- at least one public external-use, installation, review, issue, or contribution record exists;
+- authorship, affiliations, funding, contributors, related work, references, and AI disclosure are human-confirmed;
+- every Research impact statement claim maps to the evidence ledger;
+- `python scripts/joss_readiness.py --stage submission --strict --as-of YYYY-MM-DD` passes.
+
+The immutable software archive DOI is a post-review publication requirement,
+not a prerequisite for opening the initial JOSS submission.

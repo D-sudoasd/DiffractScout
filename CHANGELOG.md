@@ -2,7 +2,7 @@
 
 All notable changes are recorded here. The project follows semantic versioning after the first stable release.
 
-## [Unreleased]
+## [0.4.0] - Unreleased
 
 ### Added
 
@@ -11,6 +11,14 @@ All notable changes are recorded here. The project follows semantic versioning a
 - Optional dependencies `figures` (matplotlib) and `gui-dnd` (tkinterdnd2); `paper` remains as a matplotlib alias.
 - Console entry point `diffractscout-quick-export` and GUI entry point `diffractscout-gui` documented alongside `diffractscout`.
 - Documentation for CIF2Peaks parity features (lab Excel views, *d*-range filters, bilingual lab sheets, quick-export, figures) in README / README.zh-CN, GUI controls in `docs/GUI.md`, and module mapping in `docs/SOURCE_LINEAGE.md`.
+- Stage-aware JOSS readiness gates for ordinary releases, initial submission,
+  and post-review publication/archive consistency.
+- A current-source release acceptance receipt covering documentation,
+  compilation, tests, demo/verify, the analytic benchmark, wheel, sdist, and
+  Twine checks plus a source-independent wheel smoke test; strict release
+  readiness fails closed without it.
+- A reviewer-checklist evidence matrix and an explicitly incomplete intake
+  scaffold for the required real multiphase-alloy research case.
 
 ### Fixed
 
@@ -24,10 +32,26 @@ All notable changes are recorded here. The project follows semantic versioning a
 - Normalized common Unicode dash characters and case-insensitive chemical-system input during composition parsing.
 - Kept the optional spglib cross-check warning-only across its 2.7-to-2.8 exception transition without emitting repeated deprecation noise.
 - Exported an empty Cu Kα convenience angle, rather than a false `0°`, when a reflection is inaccessible at that wavelength.
+- Recorded the verified public-repository date and removed stale claims that the
+  canonical GitHub repository did not yet exist.
+- Removed drifting hard-coded pytest totals from static documentation and the
+  paper; CI and readiness artifacts now own collected-test counts.
+- Clarified that `--pattern-axis` selects the CSV/Excel pattern coordinate while
+  v0.4.0 figures remain on a 2θ axis.
+- Documented the per-multiplicity structure-factor helper equations and added a
+  multiplicity-greater-than-one regression.
+- Migrated package licensing metadata to the SPDX form required by current
+  setuptools while retaining the complete MIT license file.
 
 ### Notes
 
-- Awaiting the first public GitHub release, archived software DOI, and external validation cases.
+- This entry is a release candidate until the full local and remote acceptance
+  checks pass and an explicitly authorized `v0.4.0` tag and GitHub Release are
+  created. The existing `v0.3.0` tag is not moved.
+- JOSS submission remains blocked until 15 February 2027 or later and until
+  real research-use, independent diffraction and elasticity validation,
+  external engagement, official paper-build, remote-CI, and human metadata
+  evidence pass. The immutable software archive DOI is a post-review gate.
 
 ## [0.3.0] - 2026-08-12
 

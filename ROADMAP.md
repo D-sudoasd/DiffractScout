@@ -4,22 +4,30 @@ The roadmap lists evidence-driven work planned before the first JOSS
 submission. Dates are tied to the actual public-repository date; completed work
 is moved to the changelog.
 
-## Submission-critical work
+## Completed public baseline work
 
-- Publish the repository and establish continuous integration on all supported
-  Python versions and operating systems.
+- Public repository created on 12 August 2026 with CI on supported Python
+  versions and operating systems.
 - Maintain the packaged analytic benchmark suite and archive its output for
   every release candidate.
+
+## Submission-critical work
+
+- Complete and publish the v0.4.0 release baseline after local and remote
+  acceptance; do not move the existing v0.3.0 tag.
 - Add at least one openly reproducible real-material workflow with licensed
   inputs, fixed acceptance criteria, and independent diffraction comparison.
 - Add an independent directional-elasticity comparison with explicit tensor
   basis and coordinate transformation.
 - Obtain documented external use, review, or contribution through public
   issues or pull requests.
-- Publish versioned releases, archive the submission release with a DOI, and
-  connect the DOI to `CITATION.cff` and the manuscript.
+- Publish versioned releases throughout the public-development period. After
+  successful JOSS review, archive the final release and connect its software
+  DOI to `CITATION.cff`, the bibliography, GitHub Release, and review issue.
 - Run the Open Journals draft build and complete a line-by-line claim and
   citation audit before submission.
+- Submit no earlier than 15 February 2027 and only when the strict submission
+  gate passes.
 
 ## Candidate enhancements
 
@@ -30,6 +38,9 @@ is moved to the changelog.
 - Optional export schemas for workflow engines and institutional data
   repositories.
 - Accessibility and localization improvements for the desktop interface.
+- Split desktop view/layout and controller/worker responsibilities after real
+  user feedback establishes a safe seam; keep pipeline behavior and public
+  entry points compatible.
 
 ## Out of scope for the JOSS submission
 

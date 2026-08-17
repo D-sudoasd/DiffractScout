@@ -8,11 +8,13 @@
     "schema",
     "public_repository",
     "archived_releases",
+    "public_development_activity",
     "research_use_cases",
     "independent_validations",
     "external_engagement",
     "publications_or_preprints",
-    "presentations_or_training"
+    "presentations_or_training",
+    "submission_metadata"
   ],
   "properties": {
     "schema": {"const": "diffractscout_joss_evidence_v1"},
@@ -27,13 +29,170 @@
       }
     },
     "archived_releases": {"type": "array", "items": {"$ref": "#/$defs/archivedRelease"}},
-    "research_use_cases": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
-    "independent_validations": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
-    "external_engagement": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
+    "public_development_activity": {"type": "array", "items": {"$ref": "#/$defs/publicDevelopmentRecord"}},
+    "research_use_cases": {"type": "array", "items": {"$ref": "#/$defs/researchUseRecord"}},
+    "independent_validations": {"type": "array", "items": {"$ref": "#/$defs/validationRecord"}},
+    "external_engagement": {"type": "array", "items": {"$ref": "#/$defs/externalEngagementRecord"}},
     "publications_or_preprints": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
-    "presentations_or_training": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}}
+    "presentations_or_training": {"type": "array", "items": {"$ref": "#/$defs/evidenceRecord"}},
+    "submission_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authors_confirmed",
+        "affiliations_confirmed",
+        "funding_confirmed",
+        "contributors_confirmed",
+        "related_publications_confirmed",
+        "human_review_confirmed",
+        "remote_ci_confirmed",
+        "remote_ci_url",
+        "remote_ci_commit",
+        "official_joss_build_confirmed",
+        "official_joss_build_url",
+        "official_joss_build_commit",
+        "paper_source_sha256",
+        "paper_pdf_sha256",
+        "note"
+      ],
+      "properties": {
+        "authors_confirmed": {"type": "boolean"},
+        "affiliations_confirmed": {"type": "boolean"},
+        "funding_confirmed": {"type": "boolean"},
+        "contributors_confirmed": {"type": "boolean"},
+        "related_publications_confirmed": {"type": "boolean"},
+        "human_review_confirmed": {"type": "boolean"},
+        "remote_ci_confirmed": {"type": "boolean"},
+        "remote_ci_url": {"type": "string"},
+        "remote_ci_commit": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{40}$"},
+        "official_joss_build_confirmed": {"type": "boolean"},
+        "official_joss_build_url": {"type": "string"},
+        "official_joss_build_commit": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{40}$"},
+        "paper_source_sha256": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{64}$"},
+        "paper_pdf_sha256": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{64}$"},
+        "note": {"type": "string"}
+      }
+    }
   },
   "$defs": {
+    "publicDevelopmentRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/evidenceRecord"},
+        {
+          "type": "object",
+          "required": ["activity_type", "outcome"],
+          "properties": {
+            "activity_type": {"enum": ["commit", "issue", "pull_request", "release"]},
+            "outcome": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "researchUseRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/evidenceRecord"},
+        {
+          "type": "object",
+          "required": [
+            "status",
+            "report_path",
+            "report_sha256",
+            "research_decision",
+            "input_sha256",
+            "result_manifest_sha256",
+            "input_license",
+            "limitations"
+          ],
+          "properties": {
+            "status": {"const": "complete"},
+            "report_path": {"type": "string", "pattern": "^validation_cases/"},
+            "report_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+            "research_decision": {"type": "string", "minLength": 1},
+            "input_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+            "result_manifest_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+            "input_license": {"type": "string", "minLength": 1},
+            "limitations": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "externalEngagementRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/evidenceRecord"},
+        {
+          "type": "object",
+          "required": [
+            "status",
+            "engagement_type",
+            "installation_artifact",
+            "commands_run",
+            "verification_result",
+            "outcome",
+            "limitations",
+            "consent_confirmed"
+          ],
+          "properties": {
+            "status": {"const": "complete"},
+            "engagement_type": {"enum": ["installation", "research-use", "review", "issue", "contribution"]},
+            "installation_artifact": {"type": "string", "minLength": 1},
+            "commands_run": {"type": "string", "minLength": 1},
+            "verification_result": {"type": "string", "minLength": 1},
+            "outcome": {"type": "string", "minLength": 1},
+            "limitations": {"type": "string", "minLength": 1},
+            "consent_confirmed": {"type": "boolean"}
+          }
+        }
+      ]
+    },
+    "validationRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/evidenceRecord"},
+        {
+          "type": "object",
+          "required": [
+            "validation_type",
+            "status",
+            "report_path",
+            "report_sha256",
+            "reference_implementation",
+            "reference_version",
+            "tolerance_basis",
+            "result_sha256",
+            "diffractscout_commit",
+            "limitations"
+          ],
+          "properties": {
+            "validation_type": {"enum": ["diffraction", "elasticity"]},
+            "status": {"const": "complete"},
+            "report_path": {"type": "string", "pattern": "^validation_cases/"},
+            "report_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+            "reference_implementation": {"type": "string", "minLength": 1},
+            "reference_version": {"type": "string", "minLength": 1},
+            "tolerance_basis": {"type": "string", "minLength": 1},
+            "result_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+            "diffractscout_commit": {"type": "string", "pattern": "^[0-9a-fA-F]{40}$"},
+            "limitations": {"type": "string", "minLength": 1},
+            "input_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+            "radiation": {"type": "string", "minLength": 1},
+            "scan_range": {"type": "string", "minLength": 1},
+            "tensor_source": {"type": "string", "minLength": 1},
+            "tensor_frame": {"type": "string", "minLength": 1},
+            "voigt_convention": {"type": "string", "minLength": 1},
+            "directions": {"type": "array", "items": {"type": "string"}, "minItems": 3}
+          },
+          "allOf": [
+            {
+              "if": {"properties": {"validation_type": {"const": "diffraction"}}},
+              "then": {"required": ["input_sha256", "radiation", "scan_range"]}
+            },
+            {
+              "if": {"properties": {"validation_type": {"const": "elasticity"}}},
+              "then": {"required": ["tensor_source", "tensor_frame", "voigt_convention", "directions"]}
+            }
+          ]
+        }
+      ]
+    },
     "evidenceRecord": {
       "type": "object",
       "additionalProperties": true,
@@ -45,6 +204,7 @@
         "software_version": {"type": "string", "minLength": 1},
         "people": {"type": "array", "items": {"type": "string"}},
         "claim_supported": {"type": "string", "minLength": 1},
+        "validation_type": {"enum": ["diffraction", "elasticity"]},
         "notes": {"type": "string"}
       }
     },

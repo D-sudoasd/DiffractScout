@@ -220,6 +220,10 @@ def test_i18n_required_keys_zh_en_parity() -> None:
         assert t("en", key)
         assert t("zh", key) != key
         assert t("en", key) != key
+    assert "CSV/Excel" in t("zh", "pattern_axis")
+    assert "CSV/Excel" in t("en", "pattern_axis")
+    assert "2θ" in t("zh", "include_figures")
+    assert "2theta" in t("en", "include_figures")
 
 
 def _validation_controller(lang: str):

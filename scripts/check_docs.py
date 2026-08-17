@@ -20,7 +20,18 @@ except ImportError as exc:  # pragma: no cover - release dependency supplies it
     raise SystemExit("PyYAML is required for repository metadata validation.") from exc
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP_PARTS = {".git", ".venv", "venv", "build", "dist", "outputs", "downloads", "__pycache__"}
+SKIP_PARTS = {
+    ".git",
+    ".venv",
+    ".venv-joss",
+    "venv",
+    "build",
+    "dist",
+    "outputs",
+    "downloads",
+    ".pytest-tmp",
+    "__pycache__",
+}
 LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 
 

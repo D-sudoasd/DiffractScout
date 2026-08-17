@@ -53,7 +53,7 @@ DiffractScout reimplements the CIF2Peaks desktop workflow inside a provenance-fi
 | Optional *d*-spacing window (intersects the 2θ search) | CLI/API `--d-min` / `--d-max` |
 | Bilingual lab-facing tables with English canonical CSV/XLSX | Excel `推荐峰表` / `使用说明` plus English `Peaks` |
 | One-shot quick export (Cu Kα lab defaults, optional `.xlsx` shortcut) | `diffractscout-quick-export`, `diffractscout quick-export`, Windows drag-drop bat |
-| Optional figure generation request | CLI `--figures` / `.[figures]` (matplotlib) |
+| Optional 2θ figure generation | CLI `--figures`; SVG/PNG bundle figures work in the base install, while `.[figures]` enables the matplotlib rendering path and paper-figure tooling |
 
 Column-name mapping and intensity-channel aliases: [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md). Engine semantics vs CIF2Peaks/pymatgen: [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md).
 
@@ -77,7 +77,7 @@ export MP_API_KEY="your-key"     # PowerShell: $env:MP_API_KEY = "your-key"
 ### Optional extras
 
 ```bash
-python -m pip install -e ".[figures]"   # matplotlib for figure request / paper figures
+python -m pip install -e ".[figures]"   # optional matplotlib rendering path / paper figures
 python -m pip install -e ".[gui-dnd]"   # optional Tk drag-and-drop helper (future UX)
 python -m pip install -e ".[mp]"        # Materials Project
 ```
@@ -210,7 +210,7 @@ Full equations, units, tensor convention, coordinate-frame rules, structure vali
 
 ## Reliability and validation
 
-The 68-test offline suite covers composition parsing, subsystem enumeration, case-insensitive and collision-safe CIF collection, CIF block and space-group resolution, crystallographic occupancy conversion, systematic absences, analytic structure factors, Bragg geometry, intensity channels, boundary reflections, stiffness-unit conversion, resource limits, tensor validation, sidecar pairing, provider failure semantics, transactional replacement, spreadsheet safety, workbook schemas, end-to-end export, strict bundle verification, and the JOSS readiness machinery. The separate analytic suite performs 45 closed-form checks.
+The offline pytest suite covers composition parsing, subsystem enumeration, case-insensitive and collision-safe CIF collection, CIF block and space-group resolution, crystallographic occupancy conversion, systematic absences, analytic structure factors, Bragg geometry, intensity channels, boundary reflections, stiffness-unit conversion, resource limits, tensor validation, sidecar pairing, provider failure semantics, transactional replacement, spreadsheet safety, workbook schemas, end-to-end export, strict bundle verification, and the JOSS readiness machinery. Its collected-test count is reported by pytest/CI rather than copied into static documentation. The separate analytic suite performs a stable 45 closed-form checks.
 
 GitHub Actions is configured for:
 
@@ -260,7 +260,7 @@ Those repositories remain independent and unchanged by this project. Source snap
 
 ## JOSS preparation status
 
-The repository contains an OSI-approved license, installable package metadata, tests, analytic benchmarks, CI, user and API documentation, governance, examples, contribution and support routes, tag-driven deterministic release packaging, a monthly reproducibility audit, dependency-update automation, a JOSS-format manuscript, and a specific AI usage disclosure. Formal submission still depends on a real public development record, an archived tagged release and DOI, independent real-material validation, and traceable research-use and community evidence. The executable preflight is `python scripts/joss_readiness.py --output build/joss-readiness`; the six-month operating plan is [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md).
+The repository contains an OSI-approved license, installable package metadata, tests, analytic benchmarks, CI, user and API documentation, governance, examples, contribution and support routes, tag-driven deterministic release packaging, a monthly reproducibility audit, dependency-update automation, a JOSS-format manuscript, and a specific AI usage disclosure. The public-development clock began on 12 August 2026. Formal submission remains blocked by the six-month/distributed-history gate, a completed real multiphase research case, independent diffraction and elasticity validation, external engagement, and human-confirmed metadata. The immutable software archive DOI is required after successful JOSS review for the publication stage, not for the initial submission. First run `python scripts/check_release.py` to create the current-source release receipt, then use `python scripts/joss_readiness.py --stage release|submission|publication`; see [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md) and [docs/JOSS_REVIEW_CHECKLIST.md](docs/JOSS_REVIEW_CHECKLIST.md).
 
 ## Contributing, support, and citation
 

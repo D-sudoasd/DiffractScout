@@ -5,7 +5,9 @@
 - `fig_workflow.*`: workflow figure in raster and editable vector formats;
 - `fig_validation.*`: executable offline-validation figure in raster and editable vector formats;
 - `make_figures.py`: deterministic figure-generation source;
-- `paper.pdf`: locally reviewed draft; the Open Journals action remains the authoritative JOSS build.
+- `paper.pdf`: locally reviewed layout baseline; after `paper.md`, `paper.bib`,
+  or either figure changes, it is stale until rebuilt. The Open Journals action
+  remains the authoritative JOSS build.
 
 Regenerate figures from the current package:
 

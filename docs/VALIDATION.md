@@ -8,7 +8,9 @@ The default suite is offline and deterministic:
 pytest -q
 ```
 
-Current v0.3.0 release-candidate status: the deterministic offline test suite passes, plus **45/45 analytic scientific benchmark checks**.
+Release-candidate test counts are reported by pytest and CI rather than copied
+into this static document. The packaged analytic scientific benchmark has a
+stable acceptance result of **45/45 checks passing**.
 
 The suite covers:
 
@@ -114,7 +116,7 @@ xvfb-run -a python -c \
   "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
 ```
 
-Reference screenshots are stored in `docs/assets/gui-local.png` and `docs/assets/gui-materials-project.png`. They document the v0.3.0 control layout; they are not substitutes for functional tests.
+Reference screenshots are stored in `docs/assets/gui-local.png` and `docs/assets/gui-materials-project.png`. They are visual baselines, not substitutes for functional tests; update them when the release-candidate layout changes materially.
 
 ## CI and packaging validation
 
@@ -142,7 +144,16 @@ Local release preflight:
 python scripts/check_release.py
 ```
 
-The script checks required files, version consistency, bibliography keys, source compilation, the test suite, the offline demo, analytic benchmark, manifest verification, JOSS evidence machinery, and wheel creation. The wheel still requires a clean-environment installation test; CI performs that step on each package job. Release and monthly workflows create archives through `scripts/archive_tree.py`, which sorts paths, uses a fixed timestamp derived from `SOURCE_DATE_EPOCH`, stores a single safe root, rejects symbolic links, and writes atomically.
+The script checks required files, version consistency, bibliography keys,
+source compilation, the test suite, the offline demo, analytic benchmark,
+manifest verification, wheel and sdist creation, Twine metadata, and a
+source-independent wheel installation followed by demo, verify, benchmark, and
+quick-export smoke tests. It writes a source-bound acceptance receipt only when
+the complete run passes. CI additionally repeats the package installation in a
+new dependency environment. Release and monthly workflows create archives
+through `scripts/archive_tree.py`, which sorts paths, uses a fixed timestamp
+derived from `SOURCE_DATE_EPOCH`, stores a single safe root, rejects symbolic
+links, and writes atomically.
 
 Scheduled audit runs show that one public commit remains reproducible at a later date. They do not establish distributed development by themselves. Substantive six-month evidence must come from reviewed software changes, scientific validation, documentation improvements, support activity, releases, issues, or pull requests tied to real work.
 
@@ -166,6 +177,6 @@ Automated numerical tests establish declared software contracts. They do not est
 3. one elastic-tensor case checked against an independent implementation or analytic crystal-class result;
 4. documented use in a real research workflow and preferably evaluation by an external group;
 5. issue or pull-request records showing feedback-driven refinement;
-6. repeated tagged releases and a software archive DOI.
+6. repeated tagged releases; after successful JOSS review, a final software archive DOI.
 
 These cases should be versioned in `validation_cases/` or a separately archived reproducibility repository. Experimental inputs that cannot be redistributed should be represented by a lawful, documented public substitute rather than silently omitted.

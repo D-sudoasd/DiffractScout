@@ -89,6 +89,22 @@ $$
 
 where $m_{hkl}$ is multiplicity. The implemented unpolarized laboratory-style Lorentz-polarization factor is
 
+The exported per-multiplicity structure-factor helpers are defined by
+
+$$
+\mathrm{mean\_structure\_factor\_sq\_per\_multiplicity}
+=\frac{I_{\mathrm{no\,LP}}}{m_{hkl}}=|F_{hkl}|^2,
+$$
+
+$$
+\mathrm{mean\_structure\_factor\_abs\_per\_multiplicity}
+=\sqrt{|F_{hkl}|^2}=|F_{hkl}|.
+$$
+
+Here “mean” retains the CIF2Peaks-compatible name for the per-equivalent-family
+value. It does not average unrelated reflections or divide $|F|^2$ by
+multiplicity a second time.
+
 $$
 LP(\theta) = \frac{1 + \cos^2(2\theta)}{\sin^2\theta\cos\theta},
 $$

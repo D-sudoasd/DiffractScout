@@ -83,6 +83,8 @@ class AnalysisSettings:
     d_min_A: float | None = None
     d_max_A: float | None = None
     profile_model: ProfileModel = "pseudo_voigt"
+    # Selects the x column in continuous CSV/Excel pattern exports. Figure
+    # exporters remain on two_theta in v0.4.0.
     pattern_axis: PatternAxis = "two_theta"
     include_figures: bool = False
     figure_preset: str = "publication"

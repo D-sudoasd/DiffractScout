@@ -7,7 +7,7 @@ authors:
     given-names: Delun
     orcid: "https://orcid.org/0000-0001-7877-7707"
     email: dlgong17s@imr.ac.cn
-version: 0.3.0
+version: 0.4.0
 license: MIT
 repository-code: "https://github.com/D-sudoasd/DiffractScout"
 url: "https://github.com/D-sudoasd/DiffractScout"

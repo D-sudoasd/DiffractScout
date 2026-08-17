@@ -66,6 +66,11 @@ DiffractScout therefore:
 | `coincident_hkl_family_count` | `coincident_hkl_family_count` |
 | `is_multi_family_peak` | `is_multi_family_peak` |
 
+The two `mean_structure_factor_*_per_multiplicity` fields retain their legacy
+names and satisfy `intensity_no_lp / multiplicity = |F|²` and
+`sqrt(|F|²) = |F|`, respectively. They are per-equivalent-family
+structure-factor values, not a second division of `structure_factor_sq`.
+
 Note: DiffractScout marks coincident families by shared \(2\theta\) bins; it does not
 merge multi-family peaks into a single intensity the way pymatgen sometimes does
 (see `ENGINE_PARITY.md`).

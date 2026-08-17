@@ -93,7 +93,14 @@ def test_two_theta_cu_ka_present_and_finite(demo_inputs: Path) -> None:
     assert first.two_theta_cu_ka_deg == pytest.approx(expected, rel=1e-12)
     assert first.sin_theta == pytest.approx(np.sin(np.deg2rad(first.theta_deg)), rel=1e-12)
     assert first.phase_relative_R_hkl_pct == pytest.approx(100.0)
+    assert first.multiplicity > 1
+    assert first.intensity_no_lp / first.multiplicity == pytest.approx(
+        first.structure_factor_sq
+    )
     assert first.mean_structure_factor_sq_per_multiplicity == pytest.approx(first.structure_factor_sq)
+    assert first.mean_structure_factor_abs_per_multiplicity == pytest.approx(
+        np.sqrt(first.structure_factor_sq)
+    )
     assert result.metadata["density_g_cm3"] is not None
     assert result.metadata["density_g_cm3"] > 0
     fw = unit_cell_formula_weight_g_mol(structure.small_structure)

@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]

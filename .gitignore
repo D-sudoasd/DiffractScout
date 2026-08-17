@@ -2,10 +2,12 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.pytest-tmp/
 .ruff_cache/
 .coverage
 htmlcov/
 .venv/
+.venv-joss/
 venv/
 build/
 dist/
@@ -17,6 +19,20 @@ Thumbs.db
 config/settings.json
 outputs/
 downloads/
+ci_demo/
+ci_benchmark/
+ci_joss_readiness/
+wheel_demo/
+wheel_benchmark/
+release_demo/
+release_benchmark/
+release_readiness/
+monthly_demo/
+monthly_benchmark/
+monthly_readiness/
+monthly-*.zip
+monthly-SHA256SUMS.txt
+SHA256SUMS.txt
 *.opju
 paper/*.aux
 paper/*.bbl
@@ -24,5 +40,6 @@ paper/*.blg
 paper/*.log
 paper/*.out
 paper/*.tex
+paper/manuscript_refinement_output/
 
 _paper_demo/

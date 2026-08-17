@@ -202,6 +202,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--pattern-axis",
         choices=("two_theta", "d_spacing", "q", "g"),
         default="two_theta",
+        help=(
+            "Selected x coordinate in pattern_profiles.csv and Excel. "
+            "Figures remain on 2theta in v0.4.0."
+        ),
     )
     parser.add_argument("--figures", action="store_true")
     parser.add_argument("--figure-preset", default="publication")

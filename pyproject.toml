@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "diffractscout"
-version = "0.3.0"
+version = "0.4.0"
 description = "Provenance-first phase scouting, CIF validation, theoretical powder diffraction, and hkl-resolved elasticity."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE", "NOTICE.md", "AUTHORS.md"]
 authors = [
   {name = "Delun Gong", email = "dlgong17s@imr.ac.cn"},
 ]
@@ -22,9 +23,8 @@ keywords = [
   "XRD",
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",

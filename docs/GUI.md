@@ -84,12 +84,16 @@ Several CIF2Peaks-parity settings are available on the shared analysis model. Th
 |---|---|---|
 | *d*-spacing filter | off (`d_min_A` / `d_max_A` = `None`) | `--d-min`, `--d-max` |
 | Profile lineshape | `pseudo_voigt` | `--profile-model` (`pseudo_voigt`, `gaussian`, `lorentzian`) |
-| Pattern axis label | `two_theta` | `--pattern-axis` (`two_theta`, `d_spacing`, `q`, `g`) |
+| CSV/Excel pattern coordinate | `two_theta` | `--pattern-axis` (`two_theta`, `d_spacing`, `q`, `g`); selects the `x` field in `pattern_profiles.csv` and Excel only |
 | Laboratory Excel views | on (`export_lab_views=True`) | `--no-lab-views` to disable Chinese `推荐峰表` / `使用说明` sheets |
 | Continuous pattern series | on | `--no-patterns` |
-| Figure generation request | off | `--figures`, `--figure-preset` (requires optional `.[figures]` when exporters draw plots) |
+| 2θ figure generation | off | `--figures`, `--figure-preset`; v0.4.0 figures remain on 2θ regardless of `--pattern-axis`; SVG/PNG bundle output works in the base install and `.[figures]` enables the matplotlib path |
 
 Laboratory views add bilingual convenience sheets to `results.xlsx` without changing the English canonical CSV columns. See [SCHEMA_ALIASES.md](SCHEMA_ALIASES.md) and [ENGINE_PARITY.md](ENGINE_PARITY.md).
+
+The desktop label intentionally says “CSV/Excel pattern coordinate.” It must
+not be interpreted as a request to change figure axes. The figure exporters in
+v0.4.0 use the simulated `two_theta_grid` and label the x axis as 2θ.
 
 ## Quick export (no full form)
 

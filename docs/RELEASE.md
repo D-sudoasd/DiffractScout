@@ -16,16 +16,41 @@
 python scripts/check_release.py
 ```
 
-This checks required files, version consistency, bibliography keys, JOSS readiness machinery, compilation, tests, the offline demo, analytic benchmark, deterministic archive tooling, manifest verification, and wheel creation.
+The default output directory is `dist`. It must be empty; the preflight never
+deletes or overwrites existing distributions. When `dist/` already contains
+artifacts, use an empty directory outside the checkout, for example:
+
+```bash
+python scripts/check_release.py --dist-dir /tmp/diffractscout-release-dist
+```
+
+This checks required files, version consistency, bibliography keys, compilation,
+tests, the offline demo, analytic benchmark, manifest verification, wheel and
+sdist creation, Twine metadata, and a source-independent install/run of the
+newly built wheel. A successful full run writes an ignored
+`build/release-preflight/release_acceptance.json` receipt bound to the exact
+current tracked and non-ignored source fingerprint (including intended new
+files, but excluding ignored build/workflow artifacts). The standalone
+`--stage release --strict` gate is
+fail-closed until that receipt exists and still matches; a run using
+`--skip-tests` or `--skip-wheel` never writes it.
+The preflight fingerprints the source both before and after execution and
+refuses a receipt if source changed while tests were running. In GitHub tag
+workflows the strict gate additionally requires a clean checkout; a local
+uncommitted release candidate may be tested, but it cannot be mistaken for a
+taggable commit.
 
 Retain scientific and JOSS preflight artifacts:
 
 ```bash
 diffractscout benchmark -o build/release-benchmark
-python scripts/joss_readiness.py --output build/joss-readiness
+python scripts/joss_readiness.py --stage release --strict --output build/joss-readiness
 ```
 
-The readiness report may remain `BLOCKED` before the public-age, impact, external-engagement, and DOI gates exist. Structural errors in the ledger or paper must still be corrected before a release.
+The release stage deliberately ignores public-age, impact, external-engagement,
+and archive-DOI gates while still rejecting release-structure, version,
+license, ledger, repository, and paper-structure defects. Run the submission
+stage separately to retain the honest JOSS blocker snapshot.
 
 Additional GUI smoke check on Linux:
 
@@ -52,6 +77,15 @@ python -m venv /tmp/diffractscout-wheel-test
 ```
 
 Windows paths should use the environment's `Scripts\python.exe`.
+For a local preflight whose normal temporary directory is inaccessible or lies
+inside the checkout, set `DIFFRACTSCOUT_CLEAN_WHEEL_ROOT` to a writable directory
+outside the repository. The smoke test rejects an import that resolves outside
+the newly created environment. CI installs dependencies into that new
+environment. An offline local audit may additionally set
+`DIFFRACTSCOUT_CLEAN_WHEEL_SYSTEM_SITE_PACKAGES=1`; this reuses the already
+validated dependency environment but still installs the wheel with no source
+path and runs pip-check, demo, verify, benchmark, and quick-export outside the
+checkout. The receipt records which mode was used.
 
 ## 4. Review scientific and legal material
 
@@ -101,7 +135,7 @@ Remove-Item Env:DIFFRACTSCOUT_PUBLISH_DRY_RUN
 
 The dry run still checks GitHub CLI authentication and repository visibility, then prints the planned create/remote/push/edit commands without changing local or remote state.
 
-Pushing a version tag matching the package version triggers `.github/workflows/release.yml`. The workflow repeats the release preflight, builds the wheel and source distribution, validates distribution metadata with Twine, packages the analytic benchmark, offline demo, and readiness report with `scripts/archive_tree.py`, computes `SHA256SUMS.txt`, and creates the GitHub Release. The archive helper uses sorted paths, a timestamp fixed by `SOURCE_DATE_EPOCH`, a single safe root, symbolic-link rejection, and atomic replacement so the scientific evidence archives are reproducible for a fixed source and runtime stack.
+Pushing a version tag matching the package version triggers `.github/workflows/release.yml`. The workflow repeats the release preflight, which builds the wheel and source distribution, validates distribution metadata with Twine, and smoke-tests the built wheel; it then packages the analytic benchmark, offline demo, and readiness report with `scripts/archive_tree.py`, computes `SHA256SUMS.txt`, and creates the GitHub Release. The archive helper uses sorted paths, a timestamp fixed by `SOURCE_DATE_EPOCH`, a single safe root, symbolic-link rejection, and atomic replacement so the scientific evidence archives are reproducible for a fixed source and runtime stack.
 
 `.github/workflows/monthly-audit.yml` reruns the release and scientific checks on the first day of each month and retains deterministic evidence archives for 90 days. `.github/dependabot.yml` proposes monthly Python and GitHub Actions updates. Timer-triggered audit runs are maintenance evidence; they do not substitute for substantive public commits, validation, support records, issues, pull requests, or releases during the six-month period.
 
@@ -109,12 +143,13 @@ After CI passes on the release commit:
 
 1. merge the release pull request;
 2. delete the merged feature branch after confirming the PR head SHA is represented in the default branch;
-3. create an annotated tag, for example `v0.3.0`;
+3. create a new annotated tag matching the package version, for example `v0.4.0`; never move an existing tag;
 4. push the tag;
 5. create GitHub release notes from `CHANGELOG.md`;
 6. attach distribution files and checksums when appropriate;
-7. archive the tagged release with Zenodo or an equivalent service;
-8. add the archive DOI to `CITATION.cff`, `paper/paper.md`, and the GitHub release;
-9. rebuild the JOSS draft and rerun release checks if metadata changed.
+7. for ordinary pre-submission releases, retain the verified GitHub Release artifacts and public CI URL;
+8. after successful JOSS review, create the final tag if needed and archive that exact repository state with Zenodo or an equivalent service;
+9. add the post-review software archive DOI to `CITATION.cff`, the bibliography, GitHub Release, and the JOSS review issue;
+10. rebuild the JOSS draft and run `--stage publication --strict` after archive metadata changes.
 
 Remote branch deletion is a separate destructive action. Delete only branches that are merged, have no unique unreviewed commits, are not protected/default/current branches, and have been explicitly selected for cleanup.

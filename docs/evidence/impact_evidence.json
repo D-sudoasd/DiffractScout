@@ -2,13 +2,31 @@
   "schema": "diffractscout_joss_evidence_v1",
   "public_repository": {
     "url": "https://github.com/D-sudoasd/DiffractScout",
-    "public_since": null,
-    "note": "Set public_since only after the repository is actually public. Do not backdate it."
+    "public_since": "2026-08-12",
+    "note": "GitHub reports that the public repository was created on 2026-08-12. This date starts the project-side public-development clock."
   },
   "archived_releases": [],
+  "public_development_activity": [],
   "research_use_cases": [],
   "independent_validations": [],
   "external_engagement": [],
   "publications_or_preprints": [],
-  "presentations_or_training": []
+  "presentations_or_training": [],
+  "submission_metadata": {
+    "authors_confirmed": false,
+    "affiliations_confirmed": false,
+    "funding_confirmed": false,
+    "contributors_confirmed": false,
+    "related_publications_confirmed": false,
+    "human_review_confirmed": false,
+    "remote_ci_confirmed": false,
+    "remote_ci_url": "",
+    "remote_ci_commit": "",
+    "official_joss_build_confirmed": false,
+    "official_joss_build_url": "",
+    "official_joss_build_commit": "",
+    "paper_source_sha256": "",
+    "paper_pdf_sha256": "",
+    "note": "Set each field to true only after the submitting author completes that review."
+  }
 }

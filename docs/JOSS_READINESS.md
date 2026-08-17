@@ -2,110 +2,125 @@
 
 Assessment date: **12 August 2026**
 
-Software version assessed: **0.3.0**
+Software version assessed: **0.4.0 release candidate**
 
-Primary current requirements consulted:
+Public repository date: **12 August 2026**
+
+Earliest six-calendar-month date: **12 February 2027**
+
+Project's earliest practical submission date: **15 February 2027**
+
+Primary requirements consulted:
 
 - JOSS review criteria: `https://joss.readthedocs.io/en/latest/review_criteria.html`
+- JOSS review checklist: `https://joss.readthedocs.io/en/latest/review_checklist.html`
 - JOSS paper format: `https://joss.readthedocs.io/en/latest/paper.html`
-- JOSS submission screening: `https://joss.readthedocs.io/en/latest/submitting.html`
+- JOSS submission and archive sequence: `https://joss.readthedocs.io/en/latest/submitting.html`
 - JOSS AI policy: `https://joss.readthedocs.io/en/latest/policies.html`
 
-## Repository and software criteria
+## Current conclusion
 
-| Criterion | v0.3.0 state | Evidence or remaining action |
+The repository has an MIT license, installable package metadata, CLI/API/GUI,
+deterministic tests and analytic benchmarks, cross-platform CI, user and
+developer documentation, contribution and support routes, a JOSS-format paper,
+and an explicit AI disclosure. The public `main` workflow has run successfully,
+but the 0.4.0 release candidate must still complete its own local and remote
+acceptance checks.
+
+JOSS submission is **blocked** by evidence and time, not by a confirmed
+scientific correctness defect. The project currently lacks a completed real
+multiphase research-use case, independent public diffraction and elasticity
+comparisons, external engagement, distributed public development over the
+required period, and final human-confirmed submission metadata.
+
+The local `v0.3.0` tag is retained as history and must not be moved. The first
+complete public software baseline should be a new `v0.4.0` tag and GitHub
+Release after release-stage acceptance. Tag creation, pushing, and Release
+publication are external writes and are not part of the local implementation.
+
+## Three readiness stages
+
+```bash
+python scripts/check_release.py
+python scripts/joss_readiness.py --stage release --strict
+python scripts/joss_readiness.py --stage submission --strict --as-of YYYY-MM-DD
+python scripts/joss_readiness.py --stage publication --strict --as-of YYYY-MM-DD
+```
+
+| Stage | Purpose | Evidence intentionally not required yet |
 |---|---|---|
-| OSI-approved license | Complete | `LICENSE` contains MIT text; retained source-project notices are in `NOTICE.md` |
-| Installable research software | Complete locally | `pyproject.toml`; CLI and GUI entry points; wheel job configured |
-| Clear statement of need | Complete | `README.md`; `paper/paper.md` |
-| Distinct contribution and related software | Documented | `docs/COMPARISON.md`; paper State of the field |
-| User installation and examples | Complete | README; GUI guide; offline demo; local and Materials Project examples |
-| Core API documentation | Complete for public API | `docs/API.md`; docstrings |
-| Scientific definitions and units | Complete for implemented scope | `docs/SCIENTIFIC_CONTRACTS.md` |
-| Automated tests | Complete for offline contracts | Deterministic offline suite and 45 packaged analytic benchmark checks |
-| Continuous integration | Configured, remote run pending | Python 3.10–3.13, Windows/macOS, Xvfb GUI, wheel, demo, coverage, Ruff |
-| Non-destructive and auditable output | Complete | staged writes, rollback, strict manifest verification, structured diagnostics |
-| Contribution route | Complete | `CONTRIBUTING.md`, issue forms, pull-request template |
-| Support, conduct, and security routes | Complete | README, `CODE_OF_CONDUCT.md`, `SECURITY.md` |
-| Release process | Documented | `docs/RELEASE.md`, `CHANGELOG.md`, `CITATION.cff`, release checker |
-| Versioned software release | Pending remote publication | create repository, push, run CI, tag v0.3.0, publish release |
-| Archived software DOI | Pending | archive a tagged public release and add DOI to citation/paper metadata |
-| JOSS paper sections | Drafted | Summary, Statement of need, State of field, software design, impact, AI disclosure, acknowledgements, references |
-| AI usage disclosure | Drafted and specific | `AUTHORS.md`; `paper/paper.md` |
-| Research impact | Evidence package pending | real research case, independent comparisons, adoption/feedback records |
-| Sustained public development | Time-dependent and pending | public issues, commits, pull requests, and releases distributed across the required period |
+| `release` | Verify release structure, version/license metadata, evidence-ledger integrity, paper structure, canonical repository identity, and an exact-source receipt from the complete docs/tests/demo/benchmark/wheel/sdist/Twine preflight | Six-month history, research impact, external engagement, archive DOI |
+| `submission` | Add public-development age and distribution, real research use, separate diffraction and elasticity validations, external engagement, remote CI, official JOSS build, and human metadata confirmation | Final post-review archive DOI |
+| `publication` | After JOSS review, require the final commit, version tag, immutable software archive DOI, and citation metadata to match | None |
 
-## Technical changes completed for v0.3.0
+Non-strict runs always return zero after producing an honest status report.
+`--strict` returns a blocking exit code only for the selected stage. The JSON
+and Markdown reports include the result for all three stages. Run
+`python scripts/check_release.py` first to create the ignored, current-source
+release receipt; skipped tests or package builds cannot create that receipt.
+The receipt also covers a clean-environment install and demo/verify/benchmark/
+quick-export run of the newly built wheel.
+Local release-candidate work may remain uncommitted, but submission and
+publication stages require a clean checkout so the repository state, HEAD,
+remote CI commit, official paper-build commit, and evidence hashes identify the
+same source.
 
-The v0.3.0 hardening work addresses review-relevant software quality:
+## Repository and software status
 
-- a packaged 45-check analytic benchmark suite with deterministic evidence bundles;
-- an executable JOSS readiness audit, evidence schema, six-month plan, governance, support, roadmap, and validation-case registry;
-- a tag-driven release workflow with verified distributions, deterministic scientific evidence archives, metadata validation, and checksums;
-- a monthly reproducibility-audit workflow and monthly dependency-update pull requests;
-- a pre-provider chemical-subsystem query limit that prevents combinatorial expansion in high-component systems;
-- case-insensitive and collision-safe CIF collection, boundary-reflection completeness, stiffness-unit conversion, and partial-success exit semantics;
-- full scientific controls and two workflows in the desktop GUI;
-- strict distinction between Materials Project query failure, missing data, missing tensor, and frame transformation requirement;
-- unique and explicit elastic-sidecar pairing;
-- robust CIF block, cell, atom-site, and space-group validation;
-- profile-grid and reciprocal-space resource guards;
-- input/output overlap rejection;
-- staging, verification, atomic replacement, and rollback for result bundles;
-- refusal to overwrite a damaged existing bundle;
-- structured diagnostic CSV/workbook output;
-- strict detection of unlisted, duplicate, unsafe, missing, modified, or symlinked bundle files;
-- spreadsheet formula-injection protection;
-- expanded tests, deterministic archive tests, cross-platform CI configuration, Xvfb GUI smoke check, and clean-wheel installation job;
-- revised user, GUI, architecture, scientific-contract, validation, release, and manuscript documentation.
+| Criterion | 0.4.0 candidate state | Evidence or remaining action |
+|---|---|---|
+| OSI-approved license | Complete | Plain-text MIT `LICENSE`; retained source notices in `NOTICE.md` |
+| Installable research software | Implemented | `pyproject.toml`; CLI, quick-export, and GUI entry points; clean-wheel CI job |
+| Scientific scope and need | Documented | README; paper; `docs/COMPARISON.md`; scientific contracts |
+| User examples and API documentation | Implemented | README; `docs/API.md`; GUI guide; offline demo |
+| Automated verification | Implemented | Full suite reported by pytest/CI; stable 45-check analytic benchmark |
+| Continuous integration | Public baseline green | Re-run every required job on the selected 0.4.0 release commit |
+| Non-destructive evidence bundles | Implemented | Staged writes, rollback, manifest verification, structured diagnostics |
+| Contribution/support/security | Complete | Contribution guide, issue forms, support, conduct, governance, security |
+| JOSS paper structure | Drafted | All required headings and current approximate word range pass the local preflight; `paper.pdf` must be rebuilt from the changed source |
+| Public development | In progress | Public clock began 2026-08-12; only genuine distributed work linked in `public_development_activity` counts |
+| Real research use | Pending author input | Intake scaffold at `validation_cases/real_multiphase_case/README.md` |
+| Independent validation | Pending | One public diffraction and one public elasticity record are required |
+| External engagement | Pending | At least one public external installation, use, review, issue, or contribution |
+| Software archive DOI | Post-review | Required by `publication`, not by the initial `submission` stage |
 
-## Criteria that cannot be satisfied by code changes alone
+## Evidence that code changes cannot manufacture
 
-### Public development history
+The packaged analytic suite and synthetic FCC fixture establish calculation,
+schema, provenance, and integrity contracts. They do not establish experimental
+validity, adoption, or research impact. Only completed and traceable records may
+be added to `docs/evidence/impact_evidence.json`.
 
-JOSS screening currently expects a sustained public development record rather than a one-time software import. The project needs visible iteration through commits, issues, pull requests, reviews, and releases over the applicable public period. Rewriting commit dates or manufacturing activity would not supply valid evidence.
+The real multiphase case must identify the material, lawful input source,
+software version, frozen CIF hashes, complete settings, result bundle, actual
+research decision, and limitations. Online discovery context may be recorded,
+but numerical reproduction must use the frozen and hashed structures.
 
-### Demonstrated research impact
-
-The synthetic fixture and automated tests establish calculation and provenance contracts. They do not show that the software has enabled research. A defensible evidence package should include:
-
-1. a versioned real-material candidate-screening case that reaches an experimental planning or interpretation output;
-2. independent diffraction comparisons with stated numerical tolerances;
-3. an independent directional-elasticity comparison;
-4. documented use by the author's group;
-5. evaluation or contribution from at least one external user when feasible;
-6. public issue or pull-request records arising from those uses;
-7. a tagged release archived with a DOI.
-
-Claims in the paper's Research impact statement should be updated only after those records exist.
+Independent diffraction and elasticity comparisons must declare their
+tolerances and conventions before inspecting the DiffractScout result. External
+feedback must be public and used with attribution consent. Empty evidence arrays
+are preferable to prospective or inferred records.
 
 ## Paper status
 
-`paper/paper.md` follows the current JOSS software-paper structure and keeps the scientific scope bounded. It documents the integrated workflow, design decisions, transaction and integrity controls, structured diagnostics, testing, related software, and AI-assisted development. The following metadata still requires author confirmation:
+The draft contains every required JOSS section and remains within the local
+approximate word-count range. Its Summary has been simplified for a broad
+reader. The Research impact statement deliberately remains limited to current
+analytic and community-readiness evidence until the real case is complete. The
+tracked PDF predates this revision and is only a layout baseline; submission
+readiness remains blocked until the official Open Journals workflow rebuilds
+the revised source and its public run URL is recorded. The readiness report
+prints stable SHA-256 values for the paper inputs and PDF; submission requires
+those exact values in the evidence ledger so a stale PDF cannot pass merely
+because a fresh checkout changed filesystem timestamps.
 
-- final author list and order;
-- ORCID identifiers;
-- affiliation wording;
-- funding and facility acknowledgements;
-- contributor recognition;
-- archive DOI;
-- verified research-impact statements.
+Before submission, the author must confirm authorship, ORCID, affiliation,
+funding, contributors, related publications, the full human review of
+AI-assisted work, a green remote CI URL, and the official Open Journals build
+URL. During JOSS review, editor/reviewer responses must be written by the human
+author rather than generated by AI.
 
-The exact formatted PDF should be rebuilt with the Open Journals draft workflow for every release candidate and inspected page by page.
-
-## Remote publication gate
-
-At the time of this assessment, `D-sudoasd/DiffractScout` does not exist in the connected GitHub account and the local `origin` still points to a bundle file. The public-history clock has therefore not started. After the repository is created and made public, record the actual date in `docs/evidence/impact_evidence.json` and run `scripts/joss_readiness.py`. If the repository is public on 12 August 2026, the six-calendar-month date is 12 February 2027 and the practical target is 15 February 2027. A later public date shifts both dates. The two source repositories, `PhaseScout` and `CIF2Peaks`, remain unchanged.
-
-## Submission gate
-
-A formal JOSS submission should proceed only after all of the following are true:
-
-- the public-development-history requirement is met;
-- all required CI jobs pass on the selected release commit;
-- real validation cases are archived and reproducible;
-- research-impact statements have traceable evidence;
-- authorship, ORCID, affiliation, funding, acknowledgements, and contributors are confirmed;
-- a tagged release is archived and the DOI is present in `CITATION.cff` and the paper;
-- the paper compiles with current Open Journals tooling;
-- the human author has reviewed all AI-assisted code, documentation, references, and scientific claims.
+The final software archive DOI is added only after review when JOSS requests the
+final tagged release and archive. It must then be synchronized across
+`CITATION.cff`, the bibliography, GitHub Release, and the review issue without
+being confused with the later JOSS article DOI.

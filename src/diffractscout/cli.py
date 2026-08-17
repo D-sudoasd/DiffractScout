@@ -143,9 +143,16 @@ def _add_analysis_options(parser: argparse.ArgumentParser) -> None:
         "--pattern-axis",
         choices=("two_theta", "d_spacing", "q", "g"),
         default="two_theta",
-        help="Primary axis label for continuous pattern exports.",
+        help=(
+            "Selected x coordinate in pattern_profiles.csv and Excel. "
+            "Figures remain on 2theta in v0.4.0."
+        ),
     )
-    parser.add_argument("--figures", action="store_true", help="Request figure generation when exporters support it.")
+    parser.add_argument(
+        "--figures",
+        action="store_true",
+        help="Write 2theta figures (SVG and PNG in result bundles).",
+    )
     parser.add_argument("--figure-preset", default="publication", help="Named figure style preset.")
     parser.add_argument(
         "--no-lab-views",

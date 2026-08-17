@@ -44,7 +44,7 @@ DiffractScout 在可追溯结果包中重实现了 CIF2Peaks 的主要桌面工�
 | *d* 间距过滤窗口（与 2θ 搜索求交） | CLI/API `--d-min` / `--d-max` |
 | 中英双语：中文实验室表 + 英文规范列名 CSV/XLSX | 工作簿 `推荐峰表` / `使用说明` 与 `Peaks` |
 | 一键快速导出（Cu Kα 实验室默认，可选 `.xlsx` 快捷路径） | `diffractscout-quick-export`、`diffractscout quick-export`、Windows 拖放 bat |
-| 可选图件生成请求 | CLI `--figures` / 可选依赖 `.[figures]` |
+| 可选 2θ 图件生成 | CLI `--figures`；基础安装可写 SVG/PNG 结果包图件，`.[figures]` 启用 matplotlib 渲染路径和论文制图工具 |
 
 列名与强度通道别名见 [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md)；与 CIF2Peaks/pymatgen 引擎差异见 [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md)。
 
@@ -67,7 +67,7 @@ python -m pip install -e ".[mp]"
 可选依赖：
 
 ```bash
-python -m pip install -e ".[figures]"   # matplotlib（图件请求 / 论文图）
+python -m pip install -e ".[figures]"   # 可选 matplotlib 渲染路径 / 论文图
 python -m pip install -e ".[gui-dnd]"   # 可选 Tk 拖放辅助（后续 UX）
 python -m pip install -e ".[mp]"        # Materials Project
 ```
@@ -166,9 +166,9 @@ J_no_LP   = I_no_LP / V_cell²
 
 ## 验证与 JOSS 状态
 
-当前离线套件包含 68 项自动测试，并另有 45 项解析科学基准。覆盖范围包括成分解析、子体系枚举及组合数量上限、大小写 CIF 扫描、同名文件防覆盖、CIF 数据块和空间群解析、特殊位置占位转换、系统消光、解析结构因子、Bragg 几何、边界反射、刚度单位换算、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全、确定性证据归档、严格清单校验和投稿准备检查。GitHub Actions 还配置了多 Python 版本、Windows/macOS、Linux 无头 GUI、wheel 安装、解析基准、发布制品、月度复现审计、依赖更新和 JOSS 论文构建。月度定时运行只记录某一公开提交的可复现状态；只有由真实缺陷、依赖更新、验证、文档改进或用户反馈形成的公开提交、Issue、Pull Request 或 Release 才构成开发活动证据。
+当前离线 pytest 套件覆盖成分解析、子体系枚举及组合数量上限、大小写 CIF 扫描、同名文件防覆盖、CIF 数据块和空间群解析、特殊位置占位转换、系统消光、解析结构因子、Bragg 几何、边界反射、刚度单位换算、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全、确定性证据归档、严格清单校验和投稿准备检查。测试收集数由 pytest/CI 报告，不再复制到静态文档；另有稳定的 45 项解析科学基准。GitHub Actions 还配置了多 Python 版本、Windows/macOS、Linux 无头 GUI、wheel 安装、解析基准、发布制品、月度复现审计、依赖更新和 JOSS 论文构建。月度定时运行只记录某一公开提交的可复现状态；只有由真实缺陷、依赖更新、验证、文档改进或用户反馈形成的公开提交、Issue、Pull Request 或 Release 才构成开发活动证据。
 
-JOSS 正式投稿仍需要真实的六个月公开开发记录、归档发布 DOI、真实材料独立验证、研究使用证据和外部互动记录。执行 `python scripts/joss_readiness.py --output build/joss-readiness` 可生成阻塞项报告；工作计划见 [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md)。
+JOSS 正式投稿仍需要真实且分布式的六个月公开开发记录、真实材料用例、独立衍射与弹性验证、外部互动、人工确认的元数据，以及通过官方 Open Journals 构建并逐页检查的稿件。先执行 `python scripts/check_release.py` 生成与当前源码绑定的发布验收收据，再用 `python scripts/joss_readiness.py --stage submission --output build/joss-readiness` 生成投稿阻塞项报告。不可变软件归档 DOI 属于 JOSS 审稿完成后的 `publication` 阶段，不是初次投稿的前置条件；工作计划见 [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md)。
 
 ## 来源与许可
 

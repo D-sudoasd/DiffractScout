@@ -4,6 +4,7 @@ include CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md GOVERNANCE.md SUPPORT.md 
 include 启动DiffractScout.bat quick_export_diffractscout.bat
 recursive-include docs *.md *.svg *.png *.json
 recursive-include paper *.md *.bib *.svg *.png *.sh *.py
+prune paper/manuscript_refinement_output
 recursive-include examples *.cif *.json *.md
 recursive-include validation_cases *.md *.json *.csv *.cif
 recursive-include scripts *.py *.sh *.ps1

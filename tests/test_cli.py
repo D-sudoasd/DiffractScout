@@ -55,10 +55,16 @@ def test_analysis_cli_flags_parse() -> None:
     assert settings.include_patterns is False
 
 
-def test_analyze_help_includes_d_min() -> None:
+def test_analyze_help_defines_pattern_export_axis_and_fixed_figure_axis(capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:
         main(["analyze", "--help"])
     assert exc_info.value.code == 0
+    raw = capsys.readouterr().out
+    raw.encode("cp936")
+    assert "Angstrom" in raw
+    help_text = " ".join(raw.split())
+    assert "pattern_profiles.csv and Excel" in help_text
+    assert "Figures remain on 2theta" in help_text
 
 
 def test_quick_export_help_is_legacy_windows_console_safe(capsys) -> None:

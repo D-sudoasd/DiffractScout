@@ -20,3 +20,6 @@ A validation case must include:
 Use `docs/VALIDATION_CASE_TEMPLATE.md` for real-material or independent-package
 comparisons. Public records are indexed only after completion in
 `docs/evidence/impact_evidence.json`.
+
+`real_multiphase_case/README.md` is an intake scaffold. Its presence is not
+research-use evidence and its pending fields must never be cited in the paper.

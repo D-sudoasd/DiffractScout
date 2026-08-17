@@ -31,6 +31,10 @@ reported as reach metrics only; they do not establish scientific impact.
 
 The entry must link a Git tag and an immutable archive DOI or equivalent
 persistent identifier. The archived source must match the submission commit.
+For JOSS, this record is completed after successful review when the editor asks
+for the final tagged release and software archive. It is a `publication`-stage
+gate, not a reason to mislabel an ordinary pre-submission GitHub Release as an
+immutable archive.
 
 ## Claim ledger
 
