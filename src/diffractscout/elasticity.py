@@ -12,6 +12,7 @@ import gemmi
 import numpy as np
 
 from .models import ElasticTensor
+from .utils import write_json
 
 MP_IEEE_CONVENTIONAL_FRAME = "materials_project_ieee_conventional"
 MP_CONVENTIONAL_CIF_FRAME = "materials_project_conventional_cif_cartesian"
@@ -120,7 +121,13 @@ def validate_elastic_tensor(
             "The tensor coordinate frame is not directly coupled to the CIF Cartesian frame; "
             "hkl-normal modulus output is disabled until an explicit rotation is supplied."
         )
-    status = "valid_with_warnings" if warnings else "valid"
+    if coordinate_frame not in SUPPORTED_DIRECTIONAL_FRAMES:
+        # Keep the frame-transform requirement as a machine-readable status
+        # through exports and peak annotations; a warning-only status can be
+        # mistaken for a usable directional tensor.
+        status = "frame_transform_required"
+    else:
+        status = "valid_with_warnings" if warnings else "valid"
     return ElasticTensor(
         stiffness_GPa=matrix,
         source_provider=source_provider,
@@ -152,6 +159,8 @@ def young_modulus_hkl_normal_GPa(
     cell: gemmi.UnitCell,
     hkl: Iterable[int],
 ) -> float | None:
+    if tensor.status in {"invalid", "frame_transform_required"}:
+        return None
     if tensor.coordinate_frame not in SUPPORTED_DIRECTIONAL_FRAMES:
         return None
     compliance = tensor.compliance_1_over_GPa
@@ -363,7 +372,7 @@ def elastic_tensor_from_payload(payload: dict[str, Any], *, path: Path | None = 
             "hkl-resolved properties can be evaluated.",
             *tensor.warnings,
         ]
-        tensor.status = "valid_with_warnings"
+        tensor.status = "frame_transform_required"
     return tensor
 
 
@@ -426,31 +435,150 @@ def _payload_pairing(payload: dict[str, Any], cif_path: Path) -> tuple[bool, boo
     payload_id = _declared_material_id(payload)
     cif_id = _cif_material_id(cif_path)
     has_explicit = bool(names or payload_id)
-    name_match = cif_path.name.lower() in names if names else False
+    cif_name = cif_path.name.lower()
+    name_match = (
+        bool(names)
+        and all(Path(name).name.lower() == cif_name for name in names)
+    )
     id_match = bool(payload_id and cif_id and payload_id == cif_id)
-    if name_match or id_match:
-        return True, has_explicit, ""
-    if names:
+    if names and not name_match:
         return False, True, (
             f"Elasticity sidecar declares paired CIF(s) {sorted(names)!r}, "
             f"which do not match {cif_path.name!r}."
         )
-    if payload_id and cif_id and payload_id != cif_id:
+    if payload_id and cif_id and not id_match:
         return False, True, (
             f"Elasticity sidecar material_id {payload_id!r} does not match "
             f"the CIF identifier {cif_id!r}."
         )
-    if payload_id and not cif_id:
+    if payload_id and not cif_id and not names:
         return False, True, (
             f"Elasticity sidecar declares material_id {payload_id!r}, while "
             f"{cif_path.name!r} has no verifiable Materials Project identifier."
         )
+    if name_match or id_match:
+        return True, has_explicit, ""
     return False, has_explicit, ""
 
 
 def _match_payload_to_cif(payload: dict[str, Any], cif_path: Path) -> bool:
     matched, _explicit, _reason = _payload_pairing(payload, cif_path)
     return matched
+
+
+_ELASTICITY_FAILURE_STATUSES = frozenset(
+    {"invalid", "elasticity_query_failed"}
+)
+_ELASTICITY_NO_DATA_STATUSES = frozenset(
+    {"no_elasticity_data", "no_elastic_tensor", "not_available"}
+)
+
+
+def load_elastic_tensor_for_cif(
+    path: str | Path,
+    cif_path: str | Path,
+    *,
+    expected_material_id: str = "",
+) -> tuple[ElasticTensor | None, str, str]:
+    """Load a sidecar only when its explicit pairing matches the CIF.
+
+    The status/error pair is intentionally returned alongside the tensor so a
+    caller can keep ``DownloadArtifact`` and diagnostics consistent when a
+    sidecar is unreadable, mismatched, or numerically invalid.
+    """
+
+    source = Path(path)
+    cif = Path(cif_path)
+    payload, error = _read_payload(source)
+    if payload is None:
+        return None, "elasticity_query_failed", error
+    matched, explicit, reason = _payload_pairing(payload, cif)
+    if explicit and not matched:
+        return None, "invalid", reason
+    payload_id = _declared_material_id(payload)
+    expected_id = str(expected_material_id or "").strip().lower()
+    if payload_id and expected_id and payload_id != expected_id:
+        return (
+            None,
+            "invalid",
+            f"Elasticity sidecar material_id {payload_id!r} does not match "
+            f"the candidate material_id {expected_id!r}.",
+        )
+    tensor = elastic_tensor_from_payload(payload, path=source)
+    if tensor is not None:
+        if tensor.status == "invalid":
+            return None, "invalid", " | ".join(tensor.warnings)
+        if tensor.status == "frame_transform_required":
+            return tensor, "frame_transform_required", " | ".join(tensor.warnings)
+        return tensor, "ok", ""
+    status = str(payload.get("status") or "").strip().lower()
+    payload_error = str(payload.get("error") or "").strip()
+    if status in _ELASTICITY_NO_DATA_STATUSES:
+        return None, status, payload_error or status
+    if status == "elasticity_query_failed":
+        return None, status, payload_error or status
+    return (
+        None,
+        "invalid",
+        payload_error
+        or f"Elasticity sidecar {source.name} does not contain a usable numeric 6x6 tensor.",
+    )
+
+
+def _rewrite_sidecar_pairing(payload: dict[str, Any], cif_name: str) -> None:
+    """Point a committed sidecar at its collision-safe CIF while preserving provenance."""
+
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
+        payload["provenance"] = provenance
+    original = {
+        "cif_filename": payload.get("cif_filename"),
+        "paired_cif": payload.get("paired_cif"),
+        "provenance_paired_cif": provenance.get("paired_cif"),
+    }
+    if any(value not in {None, "", cif_name} for value in original.values()):
+        provenance.setdefault("original_pairing", original)
+    payload["cif_filename"] = cif_name
+    payload["paired_cif"] = cif_name
+    provenance["paired_cif"] = cif_name
+    for key in ("cif2peaks", "diffractscout"):
+        block = payload.get(key)
+        if not isinstance(block, dict):
+            continue
+        old_pair = block.get("paired_cif")
+        if old_pair not in {None, "", cif_name}:
+            block.setdefault("original_paired_cif", old_pair)
+        block["paired_cif"] = cif_name
+
+
+def normalize_elasticity_sidecar(
+    source_path: str | Path,
+    destination_path: str | Path,
+    *,
+    cif_path: str | Path,
+    committed_cif_name: str,
+    expected_material_id: str = "",
+) -> tuple[str, str]:
+    """Validate and rewrite a copied sidecar for its committed CIF basename."""
+
+    tensor, status, error = load_elastic_tensor_for_cif(
+        source_path,
+        cif_path,
+        expected_material_id=expected_material_id,
+    )
+    del tensor
+    if status in _ELASTICITY_FAILURE_STATUSES:
+        return status, error
+    payload, read_error = _read_payload(Path(source_path))
+    if payload is None:
+        return "elasticity_query_failed", read_error
+    _rewrite_sidecar_pairing(payload, committed_cif_name)
+    try:
+        write_json(destination_path, payload)
+    except OSError as exc:
+        return "elasticity_query_failed", f"Could not rewrite elasticity sidecar: {exc}"
+    return status, error
 
 
 def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
@@ -481,7 +609,12 @@ def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
     row = matches[0]
     status = str(row.get("status") or "").strip().lower()
     numerical = str(row.get("numerical_cij") or "").strip().lower()
-    if status and status not in {"ok", "valid", "valid_with_warnings"}:
+    if status and status not in {
+        "ok",
+        "valid",
+        "valid_with_warnings",
+        "frame_transform_required",
+    }:
         return None
     if numerical in {"false", "0", "no"}:
         return None
@@ -491,7 +624,7 @@ def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
             f"Elasticity index row for {cif_path.name} does not contain a complete numeric 6x6 tensor.",
             path=index_path,
         )
-    return validate_elastic_tensor(
+    tensor = validate_elastic_tensor(
         matrix,
         source_provider=str(row.get("provider") or "Materials Project"),
         source_record_id=str(row.get("material_id") or ""),
@@ -501,6 +634,14 @@ def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
         coordinate_frame=str(row.get("coordinate_frame") or MP_IEEE_CONVENTIONAL_FRAME),
         raw_payload_path=index_path,
     )
+    if tensor.status != "invalid" and status == "frame_transform_required":
+        tensor.status = "frame_transform_required"
+        tensor.warnings = [
+            "A numerical tensor is present, but a coordinate rotation is required before "
+            "hkl-resolved properties can be evaluated.",
+            *tensor.warnings,
+        ]
+    return tensor
 
 
 def discover_elastic_tensor(cif_path: str | Path) -> ElasticTensor | None:

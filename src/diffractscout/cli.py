@@ -116,8 +116,23 @@ def _add_analysis_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-elasticity", action="store_true", help="Do not discover, copy, or calculate paired elastic data.")
     parser.add_argument("--max-profile-points", type=int, default=1_000_000, help="Safety limit for the generated display-profile grid.")
     parser.add_argument("--max-reflection-estimate", type=int, default=2_000_000, help="Safety limit for reciprocal-lattice candidate generation.")
-    parser.add_argument("--d-min", type=float, default=None, dest="d_min", help="Minimum d-spacing filter in Å.")
-    parser.add_argument("--d-max", type=float, default=None, dest="d_max", help="Maximum d-spacing filter in Å.")
+    # Keep command help encodable by legacy Windows consoles (for example
+    # CP936/GBK).  Scientific exports retain the Å symbol; terminal help uses
+    # the unambiguous ASCII spelling so ``--help`` cannot fail before parsing.
+    parser.add_argument(
+        "--d-min",
+        type=float,
+        default=None,
+        dest="d_min",
+        help="Minimum d-spacing filter in Angstrom.",
+    )
+    parser.add_argument(
+        "--d-max",
+        type=float,
+        default=None,
+        dest="d_max",
+        help="Maximum d-spacing filter in Angstrom.",
+    )
     parser.add_argument(
         "--profile-model",
         choices=("pseudo_voigt", "gaussian", "lorentzian"),

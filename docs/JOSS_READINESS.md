@@ -22,7 +22,7 @@ Primary current requirements consulted:
 | User installation and examples | Complete | README; GUI guide; offline demo; local and Materials Project examples |
 | Core API documentation | Complete for public API | `docs/API.md`; docstrings |
 | Scientific definitions and units | Complete for implemented scope | `docs/SCIENTIFIC_CONTRACTS.md` |
-| Automated tests | Complete for offline contracts | 68 deterministic tests and 45 packaged analytic benchmark checks |
+| Automated tests | Complete for offline contracts | Deterministic offline suite and 45 packaged analytic benchmark checks |
 | Continuous integration | Configured, remote run pending | Python 3.10–3.13, Windows/macOS, Xvfb GUI, wheel, demo, coverage, Ruff |
 | Non-destructive and auditable output | Complete | staged writes, rollback, strict manifest verification, structured diagnostics |
 | Contribution route | Complete | `CONTRIBUTING.md`, issue forms, pull-request template |

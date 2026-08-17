@@ -13,6 +13,7 @@ from diffractscout.pipeline import analyze_cifs
 from diffractscout.plotting import (
     FIGURE_EXPORT_PRESETS,
     export_phase_figures,
+    export_xrd_pattern_pdf,
     export_xrd_pattern_svg,
 )
 
@@ -98,3 +99,42 @@ def test_unknown_preset_and_format_raise(demo_inputs: Path, tmp_path: Path) -> N
 def test_all_named_presets_are_registered() -> None:
     expected = {"publication", "single_column", "double_column", "presentation", "raw_inspection"}
     assert expected.issubset(FIGURE_EXPORT_PRESETS)
+
+
+@pytest.mark.parametrize(
+    ("x_values", "y_values", "message"),
+    [
+        ([0.0, 1.0, float("nan")], [1.0, 2.0, 3.0], "finite"),
+        ([0.0, 1.0, 2.0], [1.0, float("inf"), 3.0], "finite"),
+        ([0.0, 2.0, 1.0], [1.0, 2.0, 3.0], "monotonic"),
+    ],
+)
+def test_export_rejects_invalid_profile_arrays(
+    tmp_path: Path, x_values: list[float], y_values: list[float], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        export_xrd_pattern_svg(
+            tmp_path / "invalid.svg",
+            two_theta_grid=x_values,
+            intensity_profile=y_values,
+        )
+
+
+def test_unicode_title_is_preserved_or_rejected_explicitly(tmp_path: Path) -> None:
+    x_values = np.linspace(10.0, 20.0, 5)
+    y_values = np.linspace(1.0, 5.0, 5)
+    title = "铝合金 α 相"
+    svg = export_xrd_pattern_svg(
+        tmp_path / "unicode.svg",
+        two_theta_grid=x_values,
+        intensity_profile=y_values,
+        title=title,
+    )
+    assert title in svg.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="Unicode"):
+        export_xrd_pattern_pdf(
+            tmp_path / "unicode.pdf",
+            two_theta_grid=x_values,
+            intensity_profile=y_values,
+            title=title,
+        )

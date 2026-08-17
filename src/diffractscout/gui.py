@@ -5,8 +5,10 @@ from __future__ import annotations
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import traceback
 from datetime import datetime
@@ -61,6 +63,17 @@ _SHORTCUT_30 = "30 keV"
 _SHORTCUT_83 = "83 keV"
 _SHORTCUT_CUSTOM = "Custom"
 _ENERGY_SHORTCUTS = (_SHORTCUT_CU, _SHORTCUT_30, _SHORTCUT_83, _SHORTCUT_CUSTOM)
+
+
+def canonical_input_identity(path: str | Path) -> str:
+    """Return the stable identity used to bind a user override to one CIF.
+
+    A stem is not an identity: two folders can legitimately contain
+    ``sample.cif`` with different structures.  The pipeline receives the
+    resolved source path, so the GUI keeps the same absolute representation.
+    """
+
+    return str(Path(path).expanduser().resolve(strict=False))
 
 
 def _required_float(value: object, field: str) -> float:
@@ -205,6 +218,8 @@ if tk is not None:
             self.lang = DEFAULT_LANG
             self.events: queue.Queue[tuple[str, object]] = queue.Queue()
             self.running = False
+            self._worker_thread: threading.Thread | None = None
+            self._preview_dirs: list[Path] = []
             self.last_output: Path | None = None
             self.local_inputs: list[Path] = []
             self.elastic_overrides: dict[str, ElasticTensor] = {}
@@ -217,7 +232,11 @@ if tk is not None:
             self._notebook_tabs: list[tuple[int, str]] = []
             self._wrap_labels: list[tuple[Any, int]] = []
             self._scroll_canvases: list[Any] = []
+            self._scroll_interiors: list[Any] = []
+            self._scroll_focus_bindings: dict[str, set[str]] = {}
             self._syncing_shortcut = False
+            self._poll_after_id: str | None = None
+            self._wrap_after_id: str | None = None
 
             self._configure_style()
             self._create_variables()
@@ -228,7 +247,7 @@ if tk is not None:
             self._refresh_cij_status()
             self._apply_language()
             self.bind("<Configure>", self._on_root_configure, add="+")
-            self.after(120, self._poll)
+            self._poll_after_id = self.after(120, self._poll)
             self._log(self._t("log_ready"), "info")
 
         def _t(self, key: str, **fmt: object) -> str:
@@ -377,17 +396,30 @@ if tk is not None:
             self._build_local_tab(local)
             self._build_mp_tab(mp)
             self._build_activity_panel(activity_host)
-            # Give the form most of the space after first layout pass.
-            self.after(80, self._set_default_sash)
+            # Give the form most of the space only after Tk has assigned real
+            # geometry. Calling sashpos against the initial 1-pixel pane can
+            # make the activity pane overlap the form on short windows.
+            self.after_idle(self._set_default_sash)
 
         def _set_default_sash(self) -> None:
             try:
-                height = max(self.winfo_height(), 640)
-                # Leave ~150–200 px for the activity log band.
-                sash = max(360, height - 220)
+                self.update_idletasks()
+                height = int(self._main_paned.winfo_height())
+                if height <= 0:
+                    self.after(40, self._set_default_sash)
+                    return
+                # Keep both panes usable at the minimum window size. The
+                # position is relative to the Panedwindow, not the root (the
+                # latter includes the header and status bar).
+                activity_min = 150
+                form_min = 300
+                sash = max(form_min, min(height - activity_min, int(height * 0.72)))
+                if sash <= 0 or sash >= height:
+                    self.after(40, self._set_default_sash)
+                    return
                 self._main_paned.sashpos(0, sash)
-            except Exception:  # pragma: no cover - geometry timing
-                return
+            except (tk.TclError, ValueError):  # pragma: no cover - geometry timing
+                self.after(40, self._set_default_sash)
 
         def _make_scrollable(self, parent: Any, *, bg: str = CARD) -> tuple[Any, Any]:
             """Return (outer_frame, interior_frame) with vertical scrollbar + mouse wheel."""
@@ -402,6 +434,9 @@ if tk is not None:
             interior = ttk.Frame(canvas, style="Card.TFrame")
             window_id = canvas.create_window((0, 0), window=interior, anchor="nw")
             self._scroll_canvases.append(canvas)
+            self._scroll_interiors.append(interior)
+            focus_bound: set[str] = set()
+            self._scroll_focus_bindings[str(canvas)] = focus_bound
 
             def _sync_scrollregion(_event: object | None = None) -> None:
                 canvas.configure(scrollregion=canvas.bbox("all"))
@@ -430,7 +465,77 @@ if tk is not None:
                     canvas.yview_scroll(3, "units")
                 return "break"
 
+            def _focus_into_view(event: Any) -> None:
+                """Reveal a focused descendant without changing its input bindings."""
+
+                widget = getattr(event, "widget", None)
+                try:
+                    if widget is None or not canvas.winfo_exists() or not widget.winfo_exists():
+                        return
+                    canvas.update_idletasks()
+                    scrollregion = canvas.bbox("all")
+                    window_bbox = canvas.bbox(window_id)
+                    viewport_height = int(canvas.winfo_height())
+                    if (
+                        scrollregion is None
+                        or window_bbox is None
+                        or viewport_height <= 0
+                        or scrollregion[3] - scrollregion[1] <= viewport_height
+                    ):
+                        return
+                    visible_top = float(canvas.canvasy(0))
+                    visible_bottom = float(canvas.canvasy(viewport_height))
+                    widget_top = float(window_bbox[1] + widget.winfo_rooty() - interior.winfo_rooty())
+                    widget_bottom = widget_top + max(int(widget.winfo_height()), 1)
+                    margin = 4.0
+                    desired_top = visible_top
+                    if widget_top < visible_top + margin:
+                        desired_top = widget_top - margin
+                    elif widget_bottom > visible_bottom - margin:
+                        desired_top = widget_bottom - viewport_height + margin
+                    if desired_top == visible_top:
+                        return
+                    minimum_top = float(scrollregion[1])
+                    maximum_top = max(minimum_top, float(scrollregion[3] - viewport_height))
+                    desired_top = min(max(desired_top, minimum_top), maximum_top)
+                    # Canvas yview fractions are measured against the full
+                    # scrollregion, not only the scrollable remainder.
+                    denominator = max(1.0, float(scrollregion[3] - scrollregion[1]))
+                    canvas.yview_moveto((desired_top - minimum_top) / denominator)
+                except tk.TclError:
+                    return
+
+            def _bind_focus_recursive(widget: Any) -> None:
+                widget_path = str(widget)
+                focusable_classes = {
+                    "Button",
+                    "Checkbutton",
+                    "Entry",
+                    "Listbox",
+                    "Scale",
+                    "Scrollbar",
+                    "Spinbox",
+                    "TButton",
+                    "TCheckbutton",
+                    "TCombobox",
+                    "TEntry",
+                    "TScale",
+                    "TScrollbar",
+                    "Text",
+                }
+                if str(widget.winfo_class()) in focusable_classes and widget_path not in focus_bound:
+                    widget.bind("<FocusIn>", _focus_into_view, add="+")
+                    focus_bound.add(widget_path)
+                for child in widget.winfo_children():
+                    _bind_focus_recursive(child)
+
             def _bind_recursive(widget: Any) -> None:
+                # Entry-like controls own their wheel gestures. In
+                # particular, Tk uses the wheel over a Combobox to change its
+                # current value and Text uses it for its own yview; stealing
+                # either gesture makes editing a long form frustrating.
+                if str(widget.winfo_class()) in {"Text", "TCombobox", "Listbox", "Spinbox"}:
+                    return
                 widget.bind("<MouseWheel>", _on_wheel, add="+")
                 widget.bind("<Button-4>", _on_wheel, add="+")
                 widget.bind("<Button-5>", _on_wheel, add="+")
@@ -438,6 +543,7 @@ if tk is not None:
                     _bind_recursive(child)
 
             def _bind_tree(_event: object | None = None) -> None:
+                _bind_focus_recursive(interior)
                 _bind_recursive(interior)
                 canvas.bind("<MouseWheel>", _on_wheel, add="+")
                 canvas.bind("<Button-4>", _on_wheel, add="+")
@@ -467,14 +573,23 @@ if tk is not None:
             frame.columnconfigure(1, weight=2, minsize=360)
             frame.rowconfigure(0, weight=1)
 
-            left = ttk.Frame(frame, style="Card.TFrame", padding=(0, 0, 10, 0))
+            left_shell = ttk.Frame(frame, style="Card.TFrame", padding=(0, 0, 10, 0))
             right_shell = ttk.Frame(frame, style="Card.TFrame", padding=(10, 0, 0, 0))
-            left.grid(row=0, column=0, sticky="nsew")
+            left_shell.grid(row=0, column=0, sticky="nsew")
             right_shell.grid(row=0, column=1, sticky="nsew")
+            left_shell.rowconfigure(0, weight=1)
+            left_shell.columnconfigure(0, weight=1)
             right_shell.rowconfigure(0, weight=1)
             right_shell.columnconfigure(0, weight=1)
 
-            # Left: list grows; buttons stay visible.
+            # Left: keep the input list's native scrolling, while allowing
+            # the lower controls to remain reachable when the tab is short.
+            left_scroll, left = self._make_scrollable(left_shell)
+            left_scroll.grid(row=0, column=0, sticky="nsew")
+            self._local_left_scroll_canvas = self._scroll_canvases[-1]
+
+            # The outer canvas scrolls the form; the Listbox itself retains
+            # native selection and mouse-wheel behavior.
             self._card_title(left, "local_select_title", "local_select_hint")
             list_frame = tk.Frame(left, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
             list_frame.pack(fill="both", expand=True)
@@ -523,7 +638,9 @@ if tk is not None:
 
             output_box = self._labeled_frame(left, "result_bundle", padding=8)
             output_box.pack(fill="x")
-            self._path_entry(output_box, self.local_output, self._choose_local_output)
+            self.local_output_entry = self._path_entry(
+                output_box, self.local_output, self._choose_local_output
+            )
             self.chk_recursive = ttk.Checkbutton(
                 output_box, text=self._t("scan_recursive"), variable=self.local_recursive
             )
@@ -603,21 +720,26 @@ if tk is not None:
             self._card_title(left, "mp_discover_title", "mp_discover_hint")
             form = self._labeled_frame(left, "mp_query", padding=10)
             form.pack(fill="x")
+            form.columnconfigure(1, weight=1)
+
             self.lbl_composition = ttk.Label(form, text=self._t("composition"), style="Card.TLabel")
             self.lbl_composition.grid(row=0, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_composition, "composition")
             ttk.Entry(form, textvariable=self.mp_composition).grid(
-                row=0, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=4
+                row=0, column=1, sticky="ew", padx=(12, 0), pady=4
             )
             self.lbl_api_key = ttk.Label(form, text=self._t("api_key"), style="Card.TLabel")
             self.lbl_api_key.grid(row=1, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_api_key, "api_key")
-            self.mp_key_entry = ttk.Entry(form, textvariable=self.mp_key, show="" if self.mp_show_key.get() else "•")
-            self.mp_key_entry.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=4)
+            key_row = ttk.Frame(form, style="Card.TFrame")
+            key_row.grid(row=1, column=1, sticky="ew", padx=(12, 0), pady=4)
+            key_row.columnconfigure(0, weight=1)
+            self.mp_key_entry = ttk.Entry(key_row, textvariable=self.mp_key, show="" if self.mp_show_key.get() else "•")
+            self.mp_key_entry.grid(row=0, column=0, sticky="ew")
             self.chk_show_key = ttk.Checkbutton(
-                form, text=self._t("show_key"), variable=self.mp_show_key, command=self._toggle_key
+                key_row, text=self._t("show_key"), variable=self.mp_show_key, command=self._toggle_key
             )
-            self.chk_show_key.grid(row=1, column=3, sticky="w")
+            self.chk_show_key.grid(row=0, column=1, sticky="w", padx=(8, 0))
             self._register_text(self.chk_show_key, "show_key")
             self.lbl_mode = ttk.Label(form, text=self._t("mode"), style="Card.TLabel")
             self.lbl_mode.grid(row=2, column=0, sticky="w", pady=4)
@@ -627,38 +749,37 @@ if tk is not None:
                 textvariable=self.mp_mode,
                 values=("possible_phases", "near_stable", "single_chemsys", "mpids_only"),
                 state="readonly",
-            ).grid(row=2, column=1, sticky="ew", padx=(8, 12), pady=4)
+                width=24,
+            ).grid(row=2, column=1, sticky="ew", padx=(12, 0), pady=4)
             self.lbl_ehull = ttk.Label(form, text=self._t("e_hull_max"), style="Card.TLabel")
-            self.lbl_ehull.grid(row=2, column=2, sticky="w", pady=4)
+            self.lbl_ehull.grid(row=3, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_ehull, "e_hull_max")
-            ttk.Entry(form, textvariable=self.mp_e_hull).grid(row=2, column=3, sticky="ew", padx=(8, 0), pady=4)
+            ttk.Entry(form, textvariable=self.mp_e_hull).grid(row=3, column=1, sticky="ew", padx=(12, 0), pady=4)
             self.lbl_sub_order = ttk.Label(form, text=self._t("subsystem_order"), style="Card.TLabel")
-            self.lbl_sub_order.grid(row=3, column=0, sticky="w", pady=4)
+            self.lbl_sub_order.grid(row=4, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_sub_order, "subsystem_order")
             ttk.Entry(form, textvariable=self.mp_subsystem_order).grid(
-                row=3, column=1, sticky="ew", padx=(8, 12), pady=4
+                row=4, column=1, sticky="ew", padx=(12, 0), pady=4
             )
             self.lbl_per_sub = ttk.Label(form, text=self._t("per_subsystem"), style="Card.TLabel")
-            self.lbl_per_sub.grid(row=3, column=2, sticky="w", pady=4)
+            self.lbl_per_sub.grid(row=5, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_per_sub, "per_subsystem")
             ttk.Entry(form, textvariable=self.mp_per_subsystem).grid(
-                row=3, column=3, sticky="ew", padx=(8, 0), pady=4
+                row=5, column=1, sticky="ew", padx=(12, 0), pady=4
             )
             self.lbl_max_cand = ttk.Label(form, text=self._t("max_candidates"), style="Card.TLabel")
-            self.lbl_max_cand.grid(row=4, column=0, sticky="w", pady=4)
+            self.lbl_max_cand.grid(row=6, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_max_cand, "max_candidates")
-            ttk.Entry(form, textvariable=self.mp_limit).grid(row=4, column=1, sticky="ew", padx=(8, 12), pady=4)
+            ttk.Entry(form, textvariable=self.mp_limit).grid(row=6, column=1, sticky="ew", padx=(12, 0), pady=4)
             self.chk_deprecated = ttk.Checkbutton(
                 form, text=self._t("include_deprecated"), variable=self.mp_include_deprecated
             )
-            self.chk_deprecated.grid(row=4, column=2, columnspan=2, sticky="w", pady=4)
+            self.chk_deprecated.grid(row=7, column=0, columnspan=2, sticky="w", pady=4)
             self._register_text(self.chk_deprecated, "include_deprecated")
-            form.columnconfigure(1, weight=1)
-            form.columnconfigure(3, weight=1)
 
             output_box = self._labeled_frame(left, "result_bundle", padding=8)
             output_box.pack(fill="x", pady=(10, 0))
-            self._path_entry(output_box, self.mp_output, self._choose_mp_output)
+            self.mp_output_entry = self._path_entry(output_box, self.mp_output, self._choose_mp_output)
             self.chk_conventional = ttk.Checkbutton(
                 output_box, text=self._t("conventional_cells"), variable=self.mp_conventional
             )
@@ -693,6 +814,21 @@ if tk is not None:
             )
             self.chk_excel_mp.pack(anchor="w")
             self._register_text(self.chk_excel_mp, "write_excel")
+            self.chk_lab_views_mp = ttk.Checkbutton(
+                options, text=self._t("export_lab_views"), variable=self.export_lab_views
+            )
+            self.chk_lab_views_mp.pack(anchor="w")
+            self._register_text(self.chk_lab_views_mp, "export_lab_views")
+            self.chk_patterns_mp = ttk.Checkbutton(
+                options, text=self._t("include_patterns"), variable=self.include_patterns
+            )
+            self.chk_patterns_mp.pack(anchor="w")
+            self._register_text(self.chk_patterns_mp, "include_patterns")
+            self.chk_figures_mp = ttk.Checkbutton(
+                options, text=self._t("include_figures"), variable=self.include_figures
+            )
+            self.chk_figures_mp.pack(anchor="w")
+            self._register_text(self.chk_figures_mp, "include_figures")
 
             button = ttk.Button(
                 footer, text=self._t("run_mp"), style="Primary.TButton", command=self._run_mp
@@ -705,40 +841,32 @@ if tk is not None:
             box = self._labeled_frame(parent, "radiation_profile", padding=10)
             box.pack(fill="x")
 
-            lbl_sc = ttk.Label(box, text=self._t("energy_shortcut"), style="Card.TLabel")
-            lbl_sc.grid(row=0, column=0, sticky="w", pady=4)
-            self._register_text(lbl_sc, "energy_shortcut")
-            shortcut = ttk.Combobox(
-                box,
-                textvariable=self.energy_shortcut,
-                values=_ENERGY_SHORTCUTS,
-                state="readonly",
-                width=13,
-            )
-            shortcut.grid(row=0, column=1, sticky="ew", padx=(8, 6), pady=4)
+            # Each control now occupies one label+field row.  This costs a
+            # little vertical space, but avoids clipped labels/combobox values
+            # when the two-column shell is narrow; the surrounding canvas
+            # remains vertically scrollable and the run action stays pinned.
+            box.columnconfigure(1, weight=1)
 
-            lbl_mode = ttk.Label(box, text=self._t("input_mode"), style="Card.TLabel")
-            lbl_mode.grid(row=0, column=2, sticky="w", pady=4)
-            self._register_text(lbl_mode, "input_mode")
-            mode = ttk.Combobox(
-                box,
-                textvariable=self.input_mode,
-                values=("source", "energy", "wavelength"),
-                state="readonly",
-                width=13,
-            )
-            mode.grid(row=0, column=3, sticky="ew", padx=(6, 0), pady=4)
+            def add_label_field(row: int, key: str, variable: Any, *, values: tuple[str, ...] | None = None) -> Any:
+                label = ttk.Label(box, text=self._t(key), style="Card.TLabel")
+                label.grid(row=row, column=0, sticky="w", pady=4)
+                self._register_text(label, key)
+                if values is None:
+                    field: Any = ttk.Entry(box, textvariable=variable)
+                else:
+                    field = ttk.Combobox(box, textvariable=variable, values=values, state="readonly", width=24)
+                field.grid(row=row, column=1, sticky="ew", padx=(12, 0), pady=4)
+                return field
 
-            source = ttk.Combobox(
-                box,
-                textvariable=self.source_preset,
+            add_label_field(0, "energy_shortcut", self.energy_shortcut, values=_ENERGY_SHORTCUTS)
+            add_label_field(1, "input_mode", self.input_mode, values=("source", "energy", "wavelength"))
+            source = add_label_field(
+                2,
+                "source_preset",
+                self.source_preset,
                 values=("Cu Ka", "Co Ka", "Fe Ka", "Mo Ka", "Ag Ka", "Custom"),
-                state="readonly",
-                width=13,
             )
-            source.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=4)
-            value = ttk.Entry(box, textvariable=self.radiation_value, width=13)
-            value.grid(row=1, column=1, sticky="ew", padx=(8, 6), pady=4)
+            value = add_label_field(3, "radiation_value", self.radiation_value)
             self._radiation_source_widgets.append(source)
             self._radiation_value_widgets.append(value)
 
@@ -751,57 +879,26 @@ if tk is not None:
                 ("d_min", self.d_min_A),
                 ("d_max", self.d_max_A),
             )
-            for index, (key, variable) in enumerate(labels):
-                row = 2 + index // 2
-                column = (index % 2) * 2
-                label = ttk.Label(box, text=self._t(key), style="Card.TLabel")
-                label.grid(row=row, column=column, sticky="w", pady=4)
-                self._register_text(label, key)
-                ttk.Entry(box, textvariable=variable, width=13).grid(
-                    row=row, column=column + 1, sticky="ew", padx=(8, 10), pady=4
-                )
-
-            row_pm = 2 + (len(labels) + 1) // 2
-            lbl_pm = ttk.Label(box, text=self._t("profile_model"), style="Card.TLabel")
-            lbl_pm.grid(row=row_pm, column=0, sticky="w", pady=4)
-            self._register_text(lbl_pm, "profile_model")
-            ttk.Combobox(
-                box,
-                textvariable=self.profile_model,
-                values=_PROFILE_MODELS,
-                state="readonly",
-                width=13,
-            ).grid(row=row_pm, column=1, sticky="ew", padx=(8, 10), pady=4)
-            lbl_axis = ttk.Label(box, text=self._t("pattern_axis"), style="Card.TLabel")
-            lbl_axis.grid(row=row_pm, column=2, sticky="w", pady=4)
-            self._register_text(lbl_axis, "pattern_axis")
-            ttk.Combobox(
-                box,
-                textvariable=self.pattern_axis,
-                values=_PATTERN_AXES,
-                state="readonly",
-                width=13,
-            ).grid(row=row_pm, column=3, sticky="ew", padx=(8, 0), pady=4)
-
-            for column in range(4):
-                box.columnconfigure(column, weight=1)
+            for row, (key, variable) in enumerate(labels, start=4):
+                add_label_field(row, key, variable)
+            add_label_field(4 + len(labels), "profile_model", self.profile_model, values=_PROFILE_MODELS)
+            add_label_field(5 + len(labels), "pattern_axis", self.pattern_axis, values=_PATTERN_AXES)
 
             limits = self._labeled_frame(parent, "resource_guards", padding=10)
             limits.pack(fill="x", pady=(8, 0))
             lbl_pp = ttk.Label(limits, text=self._t("profile_points"), style="Card.TLabel")
-            lbl_pp.grid(row=0, column=0, sticky="w")
+            lbl_pp.grid(row=0, column=0, sticky="w", pady=4)
             self._register_text(lbl_pp, "profile_points")
-            ttk.Entry(limits, textvariable=self.max_profile_points, width=13).grid(
-                row=0, column=1, sticky="ew", padx=(8, 16)
+            ttk.Entry(limits, textvariable=self.max_profile_points).grid(
+                row=0, column=1, sticky="ew", padx=(12, 0), pady=4
             )
             lbl_rc = ttk.Label(limits, text=self._t("reciprocal_candidates"), style="Card.TLabel")
-            lbl_rc.grid(row=0, column=2, sticky="w")
+            lbl_rc.grid(row=1, column=0, sticky="w", pady=4)
             self._register_text(lbl_rc, "reciprocal_candidates")
-            ttk.Entry(limits, textvariable=self.max_reflection_estimate, width=13).grid(
-                row=0, column=3, sticky="ew", padx=(8, 0)
+            ttk.Entry(limits, textvariable=self.max_reflection_estimate).grid(
+                row=1, column=1, sticky="ew", padx=(12, 0), pady=4
             )
             limits.columnconfigure(1, weight=1)
-            limits.columnconfigure(3, weight=1)
 
         def _build_cij_panel(self, parent: ttk.Frame) -> None:
             box = self._labeled_frame(parent, "cij_panel", padding=8)
@@ -809,15 +906,21 @@ if tk is not None:
 
             cubic = ttk.Frame(box, style="Card.TFrame")
             cubic.pack(fill="x")
-            for key, var in (("c11", self.cij_c11), ("c12", self.cij_c12), ("c44", self.cij_c44)):
+            cubic.columnconfigure(1, weight=1)
+            for row, (key, var) in enumerate(
+                (("c11", self.cij_c11), ("c12", self.cij_c12), ("c44", self.cij_c44))
+            ):
                 lbl = ttk.Label(cubic, text=self._t(key), style="Card.TLabel")
-                lbl.pack(side="left")
+                lbl.grid(row=row, column=0, sticky="w", pady=2)
                 self._register_text(lbl, key)
-                ttk.Entry(cubic, textvariable=var, width=7).pack(side="left", padx=(4, 8))
+                ttk.Entry(cubic, textvariable=var, width=7).grid(
+                    row=row, column=1, sticky="ew", padx=(8, 0), pady=2
+                )
             btn_cubic = ttk.Button(
                 cubic, text=self._t("apply_cubic"), style="Secondary.TButton", command=self._apply_cubic_cij
             )
-            btn_cubic.pack(side="left")
+            btn_cubic.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+            self.btn_apply_cubic = btn_cubic
             self._register_text(btn_cubic, "apply_cubic")
 
             paste_lbl = ttk.Label(box, text=self._t("cij_paste_hint"), style="Hint.TLabel", wraplength=400)
@@ -861,13 +964,15 @@ if tk is not None:
             status.pack(anchor="w", pady=(6, 0))
             self._wrap_labels.append((status, 400))
 
-        def _path_entry(self, parent: Any, variable: Any, command: Callable[[], None]) -> None:
+        def _path_entry(self, parent: Any, variable: Any, command: Callable[[], None]) -> Any:
             row = ttk.Frame(parent, style="Card.TFrame")
             row.pack(fill="x")
-            ttk.Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True)
+            entry = ttk.Entry(row, textvariable=variable)
+            entry.pack(side="left", fill="x", expand=True)
             btn = ttk.Button(row, text=self._t("browse"), style="Secondary.TButton", command=command)
             btn.pack(side="left", padx=(8, 0))
             self._register_text(btn, "browse")
+            return entry
 
         def _build_activity_panel(self, parent: Any | None = None) -> None:
             host = parent if parent is not None else self
@@ -929,7 +1034,10 @@ if tk is not None:
             self.log.bind("<Button-5>", _log_wheel)
 
         def _build_status_bar(self) -> None:
-            bar = tk.Frame(self, bg="#E5EDF3", height=34)
+            # Keep the button's requested height inside the bar at the
+            # minimum window size; otherwise vertical pack padding clips its
+            # native glyph area before the user can resize the window.
+            bar = tk.Frame(self, bg="#E5EDF3", height=42)
             bar.pack(fill="x", side="bottom")
             bar.pack_propagate(False)
             ttk.Label(bar, textvariable=self.status_text, background="#E5EDF3", foreground=NAVY).pack(
@@ -944,7 +1052,7 @@ if tk is not None:
                 command=self._open_last_output,
                 state="disabled",
             )
-            self.open_button.pack(side="right", pady=3)
+            self.open_button.pack(side="right", pady=4)
             self._register_text(self.open_button, "open_result")
 
         def _enable_dnd(self, widget: Any) -> None:
@@ -1000,18 +1108,34 @@ if tk is not None:
                 self.status_text.set(self._t("status_ready"))
             self._refresh_inputs()
             self._refresh_cij_status()
-            self.after_idle(self._update_wraplengths)
+            self._schedule_wrap_update()
 
         def _on_root_configure(self, event: Any) -> None:
             if event.widget is not self:
                 return
             # Throttle wraplength updates while resizing.
-            if getattr(self, "_wrap_after_id", None) is not None:
-                try:
-                    self.after_cancel(self._wrap_after_id)
-                except Exception:
-                    pass
-            self._wrap_after_id = self.after(120, self._update_wraplengths)
+            self._schedule_wrap_update(120)
+
+        def _schedule_wrap_update(self, delay: int | None = None) -> None:
+            self._cancel_after_id("_wrap_after_id")
+            if delay is None:
+                self._wrap_after_id = self.after_idle(self._update_wraplengths)
+            else:
+                self._wrap_after_id = self.after(delay, self._update_wraplengths)
+
+        def _cancel_after_id(self, attribute: str) -> None:
+            callback_id = getattr(self, attribute, None)
+            setattr(self, attribute, None)
+            if callback_id is None:
+                return
+            try:
+                self.after_cancel(callback_id)
+            except (tk.TclError, ValueError):
+                return
+
+        def _cancel_scheduled_callbacks(self) -> None:
+            self._cancel_after_id("_poll_after_id")
+            self._cancel_after_id("_wrap_after_id")
 
         def _update_wraplengths(self) -> None:
             self._wrap_after_id = None
@@ -1040,7 +1164,13 @@ if tk is not None:
                 elif shortcut == _SHORTCUT_83:
                     self.input_mode.set("energy")
                     self.radiation_value.set("83")
-                # Custom: leave mode/value editable without forcing values.
+                elif shortcut == _SHORTCUT_CUSTOM:
+                    # Select a genuinely editable source instead of merely
+                    # changing the label. Otherwise _sync_radiation_controls
+                    # immediately snaps the shortcut back to Cu Ka.
+                    self.input_mode.set("source")
+                    self.source_preset.set("Custom")
+                # Custom keeps the current value editable for user input.
             finally:
                 self._syncing_shortcut = False
             self._sync_radiation_controls()
@@ -1078,20 +1208,28 @@ if tk is not None:
         def _toggle_key(self) -> None:
             self.mp_key_entry.configure(show="" if self.mp_show_key.get() else "•")
 
-        def _selected_cif_stems(self) -> list[str]:
+        def _selected_input_paths(self) -> list[Path]:
             selected = list(self.input_list.curselection())
-            stems: list[str] = []
+            paths: list[Path] = []
             for index in selected:
                 if index < 0 or index >= len(self.local_inputs):
                     continue
-                path = self.local_inputs[index]
-                if path.is_file() and path.suffix.lower() == ".cif":
-                    stems.append(path.stem)
-            return stems
+                paths.append(self.local_inputs[index])
+            return paths
+
+        def _selected_cif_paths(self) -> list[Path]:
+            return [
+                path
+                for path in self._selected_input_paths()
+                if path.is_file() and path.suffix.lower() == ".cif"
+            ]
+
+        def _selected_cif_identities(self) -> list[str]:
+            return [canonical_input_identity(path) for path in self._selected_cif_paths()]
 
         def _apply_cubic_cij(self) -> None:
-            stems = self._selected_cif_stems()
-            if not stems:
+            identities = self._selected_cif_identities()
+            if not identities:
                 messagebox.showerror(self._t("err_cij_apply"), self._t("err_cij_select"))
                 return
             try:
@@ -1104,16 +1242,16 @@ if tk is not None:
                 if tensor.status == "invalid":
                     raise ValueError(" | ".join(tensor.warnings))
             except ValueError as exc:
-                messagebox.showerror(self._t("err_cij_apply"), str(exc))
+                messagebox.showerror(self._t("err_cij_apply"), self._validation_message(exc))
                 return
-            for stem in stems:
-                self.elastic_overrides[stem] = tensor
+            for identity in identities:
+                self.elastic_overrides[identity] = tensor
             self._refresh_cij_status()
-            self._log(f"Cij cubic override → {', '.join(stems)}", "info")
+            self._log(self._t("log_cij_override", kind="cubic", paths=", ".join(identities)), "info")
 
         def _apply_matrix_cij(self) -> None:
-            stems = self._selected_cif_stems()
-            if not stems:
+            identities = self._selected_cif_identities()
+            if not identities:
                 messagebox.showerror(self._t("err_cij_apply"), self._t("err_cij_select"))
                 return
             try:
@@ -1122,20 +1260,27 @@ if tk is not None:
                 if tensor.status == "invalid":
                     raise ValueError(" | ".join(tensor.warnings))
             except ValueError as exc:
-                messagebox.showerror(self._t("err_cij_apply"), str(exc))
+                messagebox.showerror(self._t("err_cij_apply"), self._validation_message(exc))
                 return
-            for stem in stems:
-                self.elastic_overrides[stem] = tensor
+            for identity in identities:
+                self.elastic_overrides[identity] = tensor
             self._refresh_cij_status()
-            self._log(f"Cij matrix override → {', '.join(stems)}", "info")
+            self._log(self._t("log_cij_override", kind="matrix", paths=", ".join(identities)), "info")
 
         def _clear_cij_override(self) -> None:
-            stems = self._selected_cif_stems()
-            if stems:
-                for stem in stems:
-                    self.elastic_overrides.pop(stem, None)
-            else:
+            selected = self._selected_input_paths()
+            if not selected:
                 self.elastic_overrides.clear()
+            elif any(not (path.is_file() and path.suffix.lower() == ".cif") for path in selected):
+                # A selected folder is an explicit selection, not the same
+                # as no selection. Never interpret it as permission to wipe
+                # overrides for unrelated CIF files.
+                messagebox.showwarning(self._t("err_cij_apply"), self._t("err_cij_select"))
+                return
+            else:
+                identities = [canonical_input_identity(path) for path in selected]
+                for identity in identities:
+                    self.elastic_overrides.pop(identity, None)
             self._refresh_cij_status()
 
         def _refresh_cij_status(self) -> None:
@@ -1143,17 +1288,17 @@ if tk is not None:
                 self.cij_status.set(self._t("cij_none"))
                 return
             keys = ", ".join(sorted(self.elastic_overrides))
-            self.cij_status.set(f"Cij: {keys}")
+            self.cij_status.set(self._t("cij_status", paths=keys))
 
         def _add_cif_files(self) -> None:
             selected = filedialog.askopenfilenames(
-                title="Select CIF files",
-                filetypes=(("CIF structures", "*.cif"), ("All files", "*.*")),
+                title=self._t("dialog_file_select"),
+                filetypes=((self._t("filetype_cif"), "*.cif"), (self._t("filetype_all"), "*.*")),
             )
             self._add_input_paths(Path(item) for item in selected)
 
         def _add_cif_folder(self) -> None:
-            selected = filedialog.askdirectory(title="Select a folder containing CIF files")
+            selected = filedialog.askdirectory(title=self._t("dialog_folder_select"))
             if selected:
                 self._add_input_paths([Path(selected)])
 
@@ -1168,11 +1313,15 @@ if tk is not None:
 
         def _remove_inputs(self) -> None:
             selected = set(self.input_list.curselection())
+            removed = [path for index, path in enumerate(self.local_inputs) if index in selected]
+            for path in removed:
+                self.elastic_overrides.pop(canonical_input_identity(path), None)
             self.local_inputs = [path for index, path in enumerate(self.local_inputs) if index not in selected]
             self._refresh_inputs()
 
         def _clear_inputs(self) -> None:
             self.local_inputs.clear()
+            self.elastic_overrides.clear()
             self._refresh_inputs()
 
         def _refresh_inputs(self) -> None:
@@ -1186,12 +1335,12 @@ if tk is not None:
                 self.input_count_text.set(self._t("inputs_none"))
 
         def _choose_local_output(self) -> None:
-            selected = filedialog.askdirectory(title="Choose or create a result directory", mustexist=False)
+            selected = filedialog.askdirectory(title=self._t("dialog_output_select"), mustexist=False)
             if selected:
                 self.local_output.set(selected)
 
         def _choose_mp_output(self) -> None:
-            selected = filedialog.askdirectory(title="Choose or create a result directory", mustexist=False)
+            selected = filedialog.askdirectory(title=self._t("dialog_output_select"), mustexist=False)
             if selected:
                 self.mp_output.set(selected)
 
@@ -1231,25 +1380,121 @@ if tk is not None:
                 }
             )
 
+        def _validation_message(self, exc: Exception) -> str:
+            """Map stable validation contracts without hiding unknown failures."""
+
+            detail = str(exc)
+            lowered = " ".join(detail.casefold().split())
+
+            def field_label(raw: str) -> str:
+                normalized = raw.strip().rstrip(".").casefold().replace("θ", "theta")
+                labels = {
+                    "2theta minimum": "two_theta_min",
+                    "2theta maximum": "two_theta_max",
+                    "radiation value": "radiation_value",
+                    "profile step": "step",
+                    "fwhm": "fwhm",
+                    "pseudo-voigt η": "eta",
+                    "pseudo-voigt eta": "eta",
+                    "d_min_a": "d_min",
+                    "d_max_a": "d_max",
+                    "maximum profile points": "profile_points",
+                    "maximum reciprocal candidates": "reciprocal_candidates",
+                    "maximum energy above hull": "e_hull_max",
+                    "maximum subsystem order": "subsystem_order",
+                    "maximum per subsystem": "per_subsystem",
+                    "maximum candidates": "max_candidates",
+                    "c11": "c11",
+                    "c12": "c12",
+                    "c44": "c44",
+                }
+                key = labels.get(normalized)
+                return self._t(key) if key is not None else raw.strip().rstrip(".")
+
+            if "2theta range must satisfy" in lowered or "2θ range must satisfy" in lowered:
+                return self._t("validation_range")
+            if "diffraction settings must be finite numbers" in lowered:
+                return self._t("validation_finite")
+            if "step_deg and fwhm_deg must be positive" in lowered:
+                return self._t("validation_positive_profile")
+            if "profile_eta must lie in [0, 1]" in lowered:
+                return self._t("validation_eta")
+            if "unknown profile_model" in lowered or "profile model must be one of" in lowered:
+                return self._t("validation_profile_model")
+            if "unknown pattern_axis" in lowered or "pattern axis must be one of" in lowered:
+                return self._t("validation_pattern_axis")
+            if "d_min_a must be <= d_max_a" in lowered:
+                return self._t("validation_d_order")
+            if ("d_min_a" in lowered or "d_max_a" in lowered) and "finite positive number" in lowered:
+                field = self._t("d_min") if "d_min_a" in lowered else self._t("d_max")
+                return self._t("validation_d_positive", field=field)
+            if "custom source preset" in lowered:
+                return self._t("validation_custom_radiation")
+            if "unknown x-ray source preset" in lowered:
+                return self._t("validation_source_preset")
+            if "energy_kev" in lowered or "wavelength_a" in lowered:
+                if "finite positive number" in lowered or "required" in lowered:
+                    return self._t("validation_radiation")
+            if "unknown discovery mode" in lowered:
+                return self._t("validation_discovery_mode")
+            if any(name in lowered for name in ("max_profile_points", "max_reflection_estimate")) and "positive integer" in lowered:
+                field = (
+                    self._t("profile_points")
+                    if "max_profile_points" in lowered
+                    else self._t("reciprocal_candidates")
+                )
+                return self._t("validation_resource_integer", field=field)
+            discovery_names = (
+                "max_subsystem_order",
+                "max_subsystems",
+                "max_per_subsystem",
+                "max_total",
+            )
+            if any(name in lowered for name in discovery_names) and "positive integer" in lowered:
+                field_keys = {
+                    "max_subsystem_order": "subsystem_order",
+                    "max_subsystems": "resource_guards",
+                    "max_per_subsystem": "per_subsystem",
+                    "max_total": "max_candidates",
+                }
+                name = next(name for name in discovery_names if name in lowered)
+                return self._t("validation_discovery_integer", field=self._t(field_keys[name]))
+            if lowered.endswith(" must be a number."):
+                field = detail[: -len(" must be a number.")]
+                return self._t("validation_gui_number", field=field_label(field))
+            if lowered.endswith(" must be an integer."):
+                field = detail[: -len(" must be an integer.")]
+                return self._t("validation_gui_integer", field=field_label(field))
+            if "output" in lowered or "result directory" in lowered:
+                return self._t("validation_output", error=detail)
+            return self._t("validation_generic", error=detail)
+
         def _run_local(self) -> None:
             if self.running:
                 return
             output = self.local_output.get().strip()
-            if not self.local_inputs or not output:
+            if not self.local_inputs and not output:
                 messagebox.showerror(self._t("err_title_missing"), self._t("err_missing_local"))
+                return
+            if not self.local_inputs:
+                messagebox.showerror(self._t("err_title_missing"), self._t("err_missing_local_inputs"))
+                return
+            if not output:
+                messagebox.showerror(self._t("err_title_missing"), self._t("err_missing_output"))
                 return
             try:
                 settings = self._form_analysis_settings()
             except ValueError as exc:
-                messagebox.showerror(self._t("err_title_settings"), str(exc))
+                messagebox.showerror(self._t("err_title_settings"), self._validation_message(exc))
                 return
             inputs = [str(path) for path in self.local_inputs]
             overrides = dict(self.elastic_overrides) if self.elastic_overrides else None
             recursive = bool(self.local_recursive.get())
             include_excel = bool(self.include_excel.get())
             overwrite = bool(self.overwrite.get())
+            label = self._t("analyze_local") if hasattr(self, "_t") else "Analyze selected CIFs"
             self._start_task(
-                "Analyzing local CIF structures",
+                label,
                 lambda: analyze_cifs(
                     inputs,
                     output,
@@ -1267,8 +1512,17 @@ if tk is not None:
             composition = self.mp_composition.get().strip()
             api_key = self.mp_key.get().strip()
             output = self.mp_output.get().strip()
-            if not composition or not api_key or not output:
+            if not composition and not api_key and not output:
                 messagebox.showerror(self._t("err_title_missing"), self._t("err_missing_mp"))
+                return
+            if not composition:
+                messagebox.showerror(self._t("err_title_missing"), self._t("err_missing_mp_composition"))
+                return
+            if not api_key:
+                messagebox.showerror(self._t("err_title_missing"), self._t("err_missing_mp_api_key"))
+                return
+            if not output:
+                messagebox.showerror(self._t("err_title_missing"), self._t("err_missing_mp_output"))
                 return
             try:
                 discovery = self._form_discovery_settings()
@@ -1279,7 +1533,7 @@ if tk is not None:
                 if not self.mp_conventional.get() and analysis.include_elasticity:
                     raise ValueError("Disable elasticity before requesting primitive cells.")
             except ValueError as exc:
-                messagebox.showerror(self._t("err_title_settings"), str(exc))
+                messagebox.showerror(self._t("err_title_settings"), self._validation_message(exc))
                 return
 
             conventional = bool(self.mp_conventional.get())
@@ -1302,17 +1556,18 @@ if tk is not None:
                     authorize_large_download=True,
                 )
 
-            self._start_task("Running Materials Project workflow", run)
+            self._start_task(self._t("run_mp"), run)
 
         def _start_task(self, label: str, function: Callable[[], PipelineResult]) -> None:
             self.running = True
-            self.status_text.set(label + "…")
+            self.status_text.set(self._t("status_busy", label=label))
             self.progress.start(12)
             self.open_button.configure(state="disabled")
             for button in self._run_buttons:
                 button.configure(state="disabled")
-            self._log(label + "…", "info")
-            threading.Thread(target=self._worker, args=(function,), daemon=True).start()
+            self._log(self._t("log_started", label=label), "info")
+            self._worker_thread = threading.Thread(target=self._worker, args=(function,), daemon=False)
+            self._worker_thread.start()
 
         def _worker(self, function: Callable[[], PipelineResult]) -> None:
             try:
@@ -1334,6 +1589,7 @@ if tk is not None:
             self.log.configure(state="disabled")
 
         def _poll(self) -> None:
+            self._poll_after_id = None
             while True:
                 try:
                     kind, payload = self.events.get_nowait()
@@ -1346,24 +1602,31 @@ if tk is not None:
                     self.last_output = result.output_dir
                     error_count = sum(item.level == "error" for item in result.diagnostics)
                     if not result.analyses:
-                        completion = "Completed with no analyzable phases"
+                        completion = self._t("status_completed_empty")
                         log_level = "warning"
                     elif error_count:
-                        completion = f"Completed with {error_count} error diagnostic(s)"
+                        completion = self._t("status_completed_diagnostics", n=error_count)
                         log_level = "warning"
                     else:
-                        completion = "Completed"
+                        completion = self._t("status_completed")
                         log_level = "success"
-                    self.status_text.set(
-                        f"{completion} · {len(result.analyses)} phases · "
-                        f"{len(result.diagnostics)} diagnostics"
-                    )
+                    self.status_text.set(self._t(
+                        "status_summary",
+                        message=completion,
+                        phases=len(result.analyses),
+                        diagnostics=len(result.diagnostics),
+                    ))
                     self.open_button.configure(state="normal")
-                    self._log(f"{completion}: {result.output_dir}", log_level)
-                    self._log(f"Manifest: {result.manifest_path}", "info")
+                    self._log(self._t("log_completed", message=completion, path=result.output_dir), log_level)
+                    self._log(self._t("log_manifest", path=result.manifest_path), "info")
                     for diagnostic in result.diagnostics:
                         self._log(
-                            f"{diagnostic.stage} · {diagnostic.item}: {diagnostic.message}",
+                            self._t(
+                                "log_diagnostic",
+                                stage=diagnostic.stage,
+                                item=diagnostic.item,
+                                message=diagnostic.message,
+                            ),
                             "error"
                             if diagnostic.level == "error"
                             else "warning"
@@ -1372,46 +1635,92 @@ if tk is not None:
                         )
                     dialog = messagebox.showwarning if (not result.analyses or error_count) else messagebox.showinfo
                     dialog(
-                        "DiffractScout",
-                        f"{completion}\n\n{result.output_dir}",
+                        self._t("dialog_result_title"),
+                        self._t("dialog_result_message", path=result.output_dir),
                     )
                 else:
                     exc, details = payload
-                    self.status_text.set("Failed — see Activity log")
+                    self.status_text.set(self._t("status_failed"))
                     self._log(f"{exc}", "error")
                     self._log(str(details), "error")
-                    messagebox.showerror("DiffractScout", str(exc))
-            self.after(120, self._poll)
+                    messagebox.showerror(
+                        self._t("dialog_failed_title"),
+                        self._t("dialog_failed_message", error=str(exc)),
+                    )
+            try:
+                self._poll_after_id = self.after(120, self._poll)
+            except tk.TclError:
+                self._poll_after_id = None
 
         def _copy_log(self) -> None:
             self.clipboard_clear()
             self.clipboard_append(self.log.get("1.0", "end-1c"))
-            self.status_text.set("Activity log copied")
+            self.status_text.set(self._t("status_log_copied"))
 
         def _clear_log(self) -> None:
             self.log.configure(state="normal")
             self.log.delete("1.0", "end")
             self.log.configure(state="disabled")
 
+        def _preview_workbook(self, workbook: Path) -> Path:
+            """Copy a result workbook outside its bundle before opening it.
+
+            Excel creates ``~$results.xlsx`` beside an opened workbook.  The
+            bundle is immutable evidence, so opening a preview copy keeps
+            verifier inputs unchanged while retaining the user's workbook.
+            """
+
+            preview_dir = Path(tempfile.mkdtemp(prefix="diffractscout-preview-"))
+            preview_path = preview_dir / workbook.name
+            try:
+                shutil.copy2(workbook, preview_path)
+            except Exception:
+                shutil.rmtree(preview_dir, ignore_errors=True)
+                raise
+            self._preview_dirs.append(preview_dir)
+            return preview_path
+
+        def _cleanup_preview_dirs(self) -> None:
+            remaining: list[Path] = []
+            for preview_dir in list(self._preview_dirs):
+                try:
+                    if preview_dir.is_dir():
+                        shutil.rmtree(preview_dir)
+                except OSError:
+                    # Excel may still hold a preview open; leaving a temp
+                    # directory is safer than touching any user bundle.
+                    remaining.append(preview_dir)
+                    continue
+            self._preview_dirs = remaining
+
         def _open_last_output(self) -> None:
             if self.last_output is None:
                 return
             target: Path = Path(self.last_output)
             xlsx = target / "results.xlsx"
-            if xlsx.is_file():
-                target = xlsx
             try:
+                if xlsx.is_file():
+                    target = self._preview_workbook(xlsx)
                 open_path(target)
             except Exception as exc:
                 messagebox.showerror(self._t("err_open_result"), str(exc))
 
         def _on_close(self) -> None:
-            if self.running and not messagebox.askyesno(
-                self._t("msg_close_title"),
-                self._t("msg_close_running"),
-            ):
+            if self.running or (self._worker_thread is not None and self._worker_thread.is_alive()):
+                # Do not destroy a live controller or rely on daemon-thread
+                # truncation. The worker owns a transactional pipeline and
+                # will publish a safe boundary through the event queue.
+                messagebox.showinfo(
+                    self._t("msg_close_title"),
+                    self._t("msg_close_running"),
+                )
                 return
+            self._cleanup_preview_dirs()
             self.destroy()
+
+        def destroy(self) -> None:
+            self._cancel_scheduled_callbacks()
+            super().destroy()
 
 else:
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+import re
 import tempfile
 from typing import Any, Sequence
 
@@ -112,20 +113,34 @@ def _candidate_from_doc(doc: object, chemsys: str) -> CandidateRecord:
 
 
 def _candidate_filename(candidate: CandidateRecord) -> str:
-    parts = [candidate.material_id or "mp-unknown", slugify(candidate.formula, "structure")]
+    def safe_part(value: object, fallback: str) -> str:
+        # ``slugify`` intentionally permits dots for ordinary labels.  A
+        # provider filename needs the stricter basename contract because the
+        # material id is externally sourced and may contain path syntax.
+        text = slugify(str(value or ""), fallback)
+        text = re.sub(r"[^A-Za-z0-9_-]+", "_", text)
+        text = re.sub(r"_+", "_", text).strip("._- ")
+        return text or fallback
+
+    parts = [safe_part(candidate.material_id, "mp-unknown"), safe_part(candidate.formula, "structure")]
     if candidate.structure_type:
-        parts.append(slugify(candidate.structure_type, ""))
+        parts.append(safe_part(candidate.structure_type, "structure"))
     if candidate.space_group_number is not None:
         parts.append(f"sg{candidate.space_group_number}")
     if candidate.space_group:
-        parts.append(slugify(candidate.space_group, ""))
+        parts.append(safe_part(candidate.space_group, "space-group"))
     if candidate.energy_above_hull_eV_atom is not None:
         value = candidate.energy_above_hull_eV_atom
         token = "0" if abs(value) < 5e-7 else f"{value:.3f}".replace("-", "m").replace(".", "p")
         parts.append(f"ehull{token}")
     if candidate.is_stable is True:
         parts.append("stable")
-    return "_".join(part for part in parts if part) + ".cif"
+    filename = "_".join(part for part in parts if part) + ".cif"
+    # This is defensive against future changes to the component list: a
+    # provider-generated filename must remain one ordinary basename.
+    if Path(filename).name != filename or ".." in Path(filename).parts:
+        raise ValueError("Generated provider filename is not a safe basename.")
+    return filename
 
 
 class MaterialsProjectProvider:
@@ -208,10 +223,10 @@ class MaterialsProjectProvider:
 
         with self._mpr_cls(self.api_key) as mpr:
             self._capture_metadata(mpr)
-            try:
-                docs = mpr.materials.summary.search(**kwargs)
-            except TypeError:
-                docs = mpr.materials.summary.search(chemsys=chemsys, fields=fields)
+            docs = self._summary_search_with_compatibility_fallback(
+                mpr.materials.summary,
+                kwargs,
+            )
 
         output: list[CandidateRecord] = []
         for doc in docs:
@@ -222,15 +237,66 @@ class MaterialsProjectProvider:
                 continue
             if e_hull_max_eV_atom is not None:
                 energy = candidate.energy_above_hull_eV_atom
-                if energy is None or energy > e_hull_max_eV_atom:
+                if (
+                    energy is None
+                    or energy < 0.0
+                    or energy > e_hull_max_eV_atom
+                ):
                     continue
             output.append(candidate)
             if max_results is not None and len(output) >= max_results:
                 break
         return output
 
+    def _summary_search_with_compatibility_fallback(
+        self,
+        endpoint: object,
+        kwargs: dict[str, Any],
+    ) -> Any:
+        """Call SummaryRester while preserving filters and local page limits.
+
+        mp-api clients have changed support for optional search keywords over
+        time.  A TypeError fallback is therefore staged: first remove only
+        pagination keywords, then server-side filters one at a time.  The
+        caller always reapplies the requested deprecation/energy filters and
+        max-results limit locally, so compatibility never becomes silent
+        semantic loss.
+        """
+
+        search = getattr(endpoint, "search")
+        attempts = [
+            dict(kwargs),
+            {key: value for key, value in kwargs.items() if key not in {"chunk_size", "num_chunks"}},
+            {key: value for key, value in kwargs.items() if key not in {"energy_above_hull", "chunk_size", "num_chunks"}},
+            {key: value for key, value in kwargs.items() if key not in {"deprecated", "energy_above_hull", "chunk_size", "num_chunks"}},
+        ]
+        last_error: TypeError | None = None
+        for index, attempt in enumerate(attempts):
+            try:
+                result = search(**attempt)
+                if index:
+                    self._metadata["compatibility_fallback"] = (
+                        "SummaryRester optional search keywords were reduced; "
+                        "filters and max-results were reapplied locally."
+                    )
+                return result
+            except TypeError as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Materials Project summary search did not execute.")
+
     def _capture_metadata(self, mpr: object) -> None:
         self._metadata["queried_at_utc"] = utc_now_iso()
+        try:
+            version = getattr(mpr, "db_version", None)
+            if callable(version):
+                version = version()
+            if version not in {None, ""}:
+                self._metadata["database_version"] = version
+                return
+        except Exception:
+            pass
         try:
             self._metadata["database_version"] = mpr.get_database_version()  # type: ignore[attr-defined]
         except Exception:
@@ -252,22 +318,26 @@ class MaterialsProjectProvider:
             "fitting_method",
             "state",
         ]
+        search_kwargs = {
+            "material_ids": material_ids,
+            "fields": fields,
+            "all_fields": False,
+            "chunk_size": min(1000, max(1, len(material_ids))),
+            "num_chunks": None,
+        }
         try:
-            docs = mpr.materials.elasticity.search(  # type: ignore[attr-defined]
-                material_ids=material_ids,
-                fields=fields,
-                all_fields=False,
-                chunk_size=min(1000, max(1, len(material_ids))),
-                num_chunks=None,
-            )
-        except TypeError:
+            search = mpr.materials.elasticity.search  # type: ignore[attr-defined]
             try:
-                docs = mpr.materials.elasticity.search(  # type: ignore[attr-defined]
-                    material_ids=material_ids,
-                    fields=fields,
-                )
-            except Exception as exc:
-                return {}, str(exc)
+                docs = search(**search_kwargs)
+            except TypeError:
+                try:
+                    docs = search(
+                        material_ids=material_ids,
+                        fields=fields,
+                        all_fields=False,
+                    )
+                except TypeError:
+                    docs = search(material_ids=material_ids, fields=fields)
         except Exception as exc:
             return {}, str(exc)
         return (

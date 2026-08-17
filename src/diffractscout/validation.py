@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 from .utils import sha256_file
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
 
 
 def _report(manifest_path: Path, errors: list[str], checks: list[dict[str, Any]]) -> dict[str, Any]:
@@ -21,21 +23,63 @@ def _report(manifest_path: Path, errors: list[str], checks: list[dict[str, Any]]
     }
 
 
+def _is_reparse_point(path: Path) -> bool:
+    """Return whether *path* is a symlink or Windows reparse point."""
+
+    try:
+        stat_result = path.stat(follow_symlinks=False)
+    except (OSError, TypeError):
+        try:
+            stat_result = path.lstat()
+        except OSError:
+            return path.is_symlink()
+    return path.is_symlink() or bool(
+        getattr(stat_result, "st_file_attributes", 0)
+        & _FILE_ATTRIBUTE_REPARSE_POINT
+    )
+
+
+def _reject_reparse_components(path: Path, *, label: str) -> None:
+    """Reject reparse components before any path resolution follows them."""
+
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    components: list[Path] = []
+    current = absolute
+    while True:
+        components.append(current)
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    for component in reversed(components):
+        if component.exists() or component.is_symlink():
+            if _is_reparse_point(component):
+                raise FileExistsError(
+                    f"Refusing to verify a symbolic link or Windows reparse-point "
+                    f"{label}: {component}"
+                )
+
+
 def verify_bundle(bundle: str | Path) -> dict[str, Any]:
     supplied = Path(bundle).expanduser()
-    if supplied.is_symlink():
-        manifest_guess = supplied / "manifest.json" if supplied.name != "manifest.json" else supplied
-        return _report(manifest_guess, [f"bundle path is a symbolic link: {supplied}"], [])
-    root_or_manifest = supplied.resolve()
+    supplied = Path(os.path.abspath(os.fspath(supplied)))
+    manifest_guess = supplied if supplied.name == "manifest.json" else supplied / "manifest.json"
+    try:
+        _reject_reparse_components(supplied, label="bundle or manifest path")
+    except (OSError, ValueError) as exc:
+        return _report(manifest_guess, [str(exc)], [])
+    root_or_manifest = supplied
     manifest_path = (
         root_or_manifest
         if root_or_manifest.name == "manifest.json"
         else root_or_manifest / "manifest.json"
     )
+    try:
+        _reject_reparse_components(manifest_path, label="manifest path")
+    except (OSError, ValueError) as exc:
+        return _report(manifest_path, [str(exc)], [])
     if not manifest_path.is_file():
         return _report(manifest_path, ["manifest.json not found"], [])
-    if manifest_path.is_symlink():
-        return _report(manifest_path, ["manifest.json must not be a symbolic link"], [])
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -43,7 +87,7 @@ def verify_bundle(bundle: str | Path) -> dict[str, Any]:
     if not isinstance(manifest, dict):
         return _report(manifest_path, ["manifest root must be a JSON object"], [])
 
-    root = manifest_path.parent.resolve()
+    root = manifest_path.parent
     errors: list[str] = []
     checks: list[dict[str, Any]] = []
     if manifest.get("schema") != "diffractscout_bundle_manifest_v1":
@@ -91,14 +135,15 @@ def verify_bundle(bundle: str | Path) -> dict[str, Any]:
 
         path = root / relative
         try:
+            _reject_reparse_components(path, label=f"manifest file {normalized}")
+        except (OSError, ValueError):
+            errors.append(f"unsafe or reparse manifest path: {normalized}")
+            continue
+        try:
             resolved = path.resolve(strict=False)
             resolved.relative_to(root)
         except (OSError, ValueError):
             errors.append(f"manifest path escapes bundle root: {normalized}")
-            continue
-        if path.is_symlink():
-            checks.append({"path": normalized, "ok": False, "reason": "symlink"})
-            errors.append(f"symbolic link is not allowed: {normalized}")
             continue
         if not path.is_file():
             checks.append({"path": normalized, "ok": False, "reason": "missing"})
@@ -132,6 +177,15 @@ def verify_bundle(bundle: str | Path) -> dict[str, Any]:
     actual: set[str] = set()
     for path in sorted(root.rglob("*")):
         if path == manifest_path:
+            continue
+        try:
+            _reject_reparse_components(path, label="bundle member")
+        except (OSError, ValueError) as exc:
+            relative = path.relative_to(root).as_posix()
+            if path.is_symlink():
+                errors.append(f"symbolic link is not allowed: {relative}")
+            else:
+                errors.append(f"unsafe or reparse bundle member: {relative} ({exc})")
             continue
         if path.is_symlink():
             try:

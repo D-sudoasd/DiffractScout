@@ -1,12 +1,20 @@
 import csv
+import os
 from pathlib import Path
 import shutil
+import subprocess
+from types import SimpleNamespace
 
 from openpyxl import load_workbook
 import pytest
 
 from diffractscout.models import AnalysisSettings
-from diffractscout.pipeline import analyze_cifs, collect_cif_paths, run_pipeline
+from diffractscout.pipeline import (
+    _lookup_elastic_override,
+    analyze_cifs,
+    collect_cif_paths,
+    run_pipeline,
+)
 from diffractscout.validation import verify_bundle
 
 
@@ -14,6 +22,14 @@ def test_local_pipeline_is_self_contained_and_verifiable(demo_inputs: Path, tmp_
     output = tmp_path / "bundle"
     result = analyze_cifs([demo_inputs], output)
     assert len(result.analyses) == 1
+    assert result.manifest_path == output / "manifest.json"
+    assert result.analyses[0].structure.cif_path == output / "inputs" / "synthetic_fcc_al.cif"
+    assert result.analyses[0].structure.cif_path.is_file()
+    assert result.analyses[0].elastic_tensor is not None
+    assert result.analyses[0].elastic_tensor.raw_payload_path == (
+        output / "inputs" / "synthetic_fcc_al_elasticity.json"
+    )
+    assert result.analyses[0].elastic_tensor.raw_payload_path.is_file()
     assert (output / "inputs" / "synthetic_fcc_al.cif").is_file()
     assert (output / "peak_reference.csv").is_file()
     assert (output / "results.xlsx").is_file()
@@ -249,3 +265,103 @@ def test_remote_provider_is_not_contacted_when_output_is_unsafe(tmp_path: Path) 
     with pytest.raises(FileExistsError, match="not empty"):
         run_pipeline("Ti-Al", Provider(), output)
     assert (output / "user.txt").read_text(encoding="utf-8") == "keep"
+
+
+def _real_directory_reparse_point(tmp_path: Path) -> tuple[Path, callable]:
+    target = tmp_path / "junction-target"
+    target.mkdir()
+    link = tmp_path / "junction-like"
+    if os.name == "nt":
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if powershell is None:
+            pytest.skip("PowerShell is unavailable; cannot create a real Windows junction")
+        environment = os.environ.copy()
+        environment["DIFRACTSCOUT_JUNCTION_TARGET"] = str(target)
+        environment["DIFRACTSCOUT_JUNCTION_LINK"] = str(link)
+        command = (
+            "$ErrorActionPreference='Stop'; "
+            "New-Item -ItemType Junction "
+            "-Path $env:DIFRACTSCOUT_JUNCTION_LINK "
+            "-Target $env:DIFRACTSCOUT_JUNCTION_TARGET | Out-Null"
+        )
+        completed = subprocess.run(
+            [powershell, "-NoProfile", "-NonInteractive", "-Command", command],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            pytest.skip(
+                "Windows junction creation unavailable: "
+                + (completed.stderr or completed.stdout).strip()
+            )
+
+        def cleanup() -> None:
+            subprocess.run(
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "Remove-Item -LiteralPath $env:DIFRACTSCOUT_JUNCTION_LINK -Force",
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        return link, cleanup
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"POSIX directory symlink creation unavailable: {exc}")
+    return link, link.unlink
+
+
+def test_pipeline_rejects_real_reparse_point_final_and_parent(tmp_path: Path) -> None:
+    import diffractscout.pipeline as pipeline
+
+    reparse_component, cleanup = _real_directory_reparse_point(tmp_path)
+    try:
+        assert pipeline._is_reparse_point(reparse_component)
+        for output in (reparse_component, reparse_component / "nested" / "bundle"):
+            with pytest.raises(FileExistsError, match="reparse-point"):
+                pipeline._validate_output_target(output, overwrite=False)
+    finally:
+        cleanup()
+
+
+def test_pipeline_reparse_detector_reads_raw_windows_attribute() -> None:
+    import diffractscout.pipeline as pipeline
+
+    class RawAttributePath:
+        def stat(self, *, follow_symlinks: bool = True) -> object:
+            assert follow_symlinks is False
+            return SimpleNamespace(st_file_attributes=0x0400)
+
+        @staticmethod
+        def is_symlink() -> bool:
+            return False
+
+    assert pipeline._is_reparse_point(RawAttributePath())  # type: ignore[arg-type]
+
+
+def test_elastic_override_prefers_canonical_path_and_rejects_legacy_ambiguity(
+    demo_inputs: Path,
+) -> None:
+    cif = (demo_inputs / "synthetic_fcc_al.cif").resolve()
+    canonical = object()
+    legacy_filename = object()
+    legacy_stem = object()
+    assert _lookup_elastic_override(cif, {str(cif): canonical}) is canonical  # type: ignore[arg-type]
+    assert _lookup_elastic_override(cif, {cif.name: legacy_filename}) is legacy_filename  # type: ignore[arg-type]
+    assert _lookup_elastic_override(cif, {cif.stem: legacy_stem}) is legacy_stem  # type: ignore[arg-type]
+    assert (
+        _lookup_elastic_override(
+            cif,
+            {cif.name: legacy_filename, cif.stem: legacy_stem},
+        )
+        is None
+    )

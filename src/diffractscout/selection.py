@@ -53,30 +53,28 @@ def search_candidates(
 
     def resolve_explicit_ids() -> dict[str, CandidateRecord]:
         resolved: dict[str, CandidateRecord] = {}
-        if callable(resolver) and parsed.material_ids:
-            try:
-                resolved = {
-                    item.material_id.lower(): item
-                    for item in resolver(parsed.material_ids)
-                    if item.material_id
-                }
-            except Exception as exc:
-                warnings.append(f"Provider lookup failed for explicit material IDs: {exc}")
-        provider_name = str(getattr(provider, "name", "") or "")
-        for material_id in parsed.material_ids:
-            source_url = (
-                f"https://materialsproject.org/materials/{material_id}"
-                if provider_name.lower() == "materials project"
-                else ""
+        if not parsed.material_ids:
+            return resolved
+        if not callable(resolver):
+            warnings.append(
+                "Provider does not support explicit material-ID lookup; no IDs were resolved."
             )
-            resolved.setdefault(
-                material_id,
-                CandidateRecord(
-                    material_id=material_id,
-                    queried_chemsys="explicit_material_id",
-                    source_provider=provider_name,
-                    source_url=source_url,
-                ),
+            return resolved
+        try:
+            requested = {material_id.lower() for material_id in parsed.material_ids}
+            resolved = {
+                item.material_id.lower(): item
+                for item in resolver(parsed.material_ids)
+                if item.material_id and item.material_id.lower() in requested
+            }
+        except Exception as exc:
+            warnings.append(f"Provider lookup failed for explicit material IDs: {exc}")
+            return {}
+        missing = sorted(requested - set(resolved))
+        if missing:
+            warnings.append(
+                "Provider lookup returned no record for explicit material ID(s): "
+                + ", ".join(missing)
             )
         return resolved
 

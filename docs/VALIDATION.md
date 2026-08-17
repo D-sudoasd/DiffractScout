@@ -8,7 +8,7 @@ The default suite is offline and deterministic:
 pytest -q
 ```
 
-Current v0.3.0 release-candidate status: **68 tests passing**, plus **45/45 analytic scientific benchmark checks**.
+Current v0.3.0 release-candidate status: the deterministic offline test suite passes, plus **45/45 analytic scientific benchmark checks**.
 
 The suite covers:
 

@@ -41,6 +41,13 @@ SCIENTIFIC_BOUNDARY = (
 # the requested boundary. The exact 2theta interval is enforced after candidate
 # generation, so this margin changes completeness without widening the output.
 DMIN_SEARCH_RELATIVE_MARGIN = 1e-10
+# A profile accumulation performs one vector addition per reflection and grid
+# sample.  Keep that product bounded independently of the two input limits so
+# a valid-but-large pair cannot allocate an impractical temporary workload.
+MAX_PROFILE_WORK = 50_000_000
+# A tiny margin absorbs a final-bit rounding overshoot in lambda/(2d). Values
+# farther above one are physically inaccessible and remain rejected.
+BRAGG_ARGUMENT_TOLERANCE = 1e-12
 
 
 def resolve_wavelength(settings: AnalysisSettings) -> tuple[float, float | None, str]:
@@ -69,15 +76,26 @@ def resolve_wavelength(settings: AnalysisSettings) -> tuple[float, float | None,
     return wavelength, ENERGY_WAVELENGTH_KEV_A / wavelength, f"source_preset:{settings.source_preset}"
 
 
-def two_theta_for_d(d_spacing_A: float, wavelength_A: float) -> float | None:
-    """Bragg 2θ (degrees) for spacing d and wavelength λ, or None if inaccessible."""
-
+def _bragg_argument(d_spacing_A: float, wavelength_A: float) -> float | None:
     if not np.isfinite(d_spacing_A) or not np.isfinite(wavelength_A):
         return None
     if d_spacing_A <= 0 or wavelength_A <= 0:
         return None
-    argument = wavelength_A / (2.0 * d_spacing_A)
-    if argument <= 0 or argument > 1.0:
+    argument = float(wavelength_A / (2.0 * d_spacing_A))
+    if argument <= 0:
+        return None
+    if argument > 1.0:
+        if argument <= 1.0 + BRAGG_ARGUMENT_TOLERANCE:
+            return 1.0
+        return None
+    return argument
+
+
+def two_theta_for_d(d_spacing_A: float, wavelength_A: float) -> float | None:
+    """Bragg 2θ (degrees) for spacing d and wavelength λ, or None if inaccessible."""
+
+    argument = _bragg_argument(d_spacing_A, wavelength_A)
+    if argument is None:
         return None
     return float(np.rad2deg(2.0 * np.arcsin(argument)))
 
@@ -240,10 +258,10 @@ def canonical_hkl_family(space_group: gemmi.SpaceGroup, hkl: Iterable[int]) -> t
     return representative, len(_equivalent_hkls(space_group, hkl))
 
 
-def _lp_factor(theta_rad: float) -> float:
+def _lp_factor(theta_rad: float) -> float | None:
     denominator = np.sin(theta_rad) ** 2 * np.cos(theta_rad)
     if abs(float(denominator)) < 1e-14:
-        return float("nan")
+        return None
     return float((1.0 + np.cos(2.0 * theta_rad) ** 2) / denominator)
 
 
@@ -299,12 +317,19 @@ def _elastic_annotation(
         return None, "not_available", "No paired numerical 6x6 elastic tensor was found."
     if tensor.status == "invalid":
         return None, "invalid", " | ".join(tensor.warnings)
+    if tensor.status == "frame_transform_required":
+        note = (
+            "A coordinate-frame transform is required before hkl-normal modulus calculation."
+        )
+        return None, "frame_transform_required", " | ".join(
+            dict.fromkeys([*tensor.warnings, note])
+        )
     if tensor.coordinate_frame not in SUPPORTED_DIRECTIONAL_FRAMES:
         note = (
             f"Tensor frame '{tensor.coordinate_frame}' is not coupled to the CIF Cartesian frame; "
             "an explicit rotation is required before hkl-normal modulus calculation."
         )
-        return None, "frame_unverified", " | ".join(dict.fromkeys([*tensor.warnings, note]))
+        return None, "frame_transform_required", " | ".join(dict.fromkeys([*tensor.warnings, note]))
     modulus = young_modulus_hkl_normal_GPa(tensor, structure.small_structure.cell, hkl)
     note_parts = [*tensor.warnings]
     if tensor.coordinate_frame == "materials_project_conventional_cif_cartesian":
@@ -378,8 +403,8 @@ def simulate_powder_pattern(
             continue
         if settings.d_max_A is not None and d_spacing > float(settings.d_max_A) + 1e-12:
             continue
-        argument = wavelength / (2.0 * d_spacing)
-        if argument <= 0 or argument > 1:
+        argument = _bragg_argument(d_spacing, wavelength)
+        if argument is None:
             continue
         theta_rad = float(np.arcsin(argument))
         two_theta = float(np.rad2deg(2.0 * theta_rad))
@@ -392,7 +417,17 @@ def simulate_powder_pattern(
         structure_factor_sq = float(abs(structure_factor) ** 2)
         no_lp = float(multiplicity * structure_factor_sq)
         lp = _lp_factor(theta_rad)
+        if lp is None:
+            raise ValueError(
+                "Lorentz-polarization factor is singular for a reflection at "
+                "2theta=180 degrees; reduce two_theta_max_deg below 180."
+            )
         with_lp = float(no_lp * lp) if np.isfinite(lp) else float("nan")
+        if not np.isfinite(with_lp):
+            raise ValueError(
+                "Lorentz-polarization intensity became non-finite for a reflection; "
+                "the profile was not exported."
+            )
         q_invA = float(2.0 * np.pi / d_spacing)
         g_invA = float(1.0 / d_spacing)
         r_with_lp = float(with_lp / cell_volume**2) if cell_volume > 0 and np.isfinite(with_lp) else float("nan")
@@ -515,7 +550,18 @@ def simulate_powder_pattern(
     ]
 
     grid = settings.two_theta_min_deg + np.arange(point_count, dtype=float) * settings.step_deg
-    grid = grid[grid <= settings.two_theta_max_deg + settings.step_deg * 0.5]
+    # Do not use a half-step tolerance here: it can emit samples above the
+    # user-requested upper bound when the span is not an integer number of
+    # steps.
+    grid = grid[grid <= settings.two_theta_max_deg]
+    profile_work = len(reflections) * int(grid.size)
+    if profile_work > MAX_PROFILE_WORK:
+        raise ValueError(
+            "Reflection-by-profile accumulation would require "
+            f"{profile_work:,} sample operations, exceeding MAX_PROFILE_WORK="
+            f"{MAX_PROFILE_WORK:,}. Reduce the 2theta range/step or review the "
+            "explicit resource limits."
+        )
     profile = np.zeros_like(grid)
     for item in reflections:
         if np.isfinite(item.intensity_with_lp):

@@ -169,7 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="diffractscout-quick-export",
         description=(
-            "One-shot DiffractScout export: Cu Kα defaults, optional .xlsx path, "
+            "One-shot DiffractScout export: Cu K-alpha defaults, optional .xlsx path, "
             "verifiable result bundle."
         ),
     )

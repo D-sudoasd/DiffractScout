@@ -69,6 +69,30 @@ def test_explicit_material_ids_use_provider_metadata() -> None:
     assert result.subsystem_counts == {"material_ids": 1}
 
 
+def test_explicit_material_id_lookup_failure_does_not_create_placeholder() -> None:
+    class FailingIdProvider(FakeProvider):
+        def search_material_ids(self, _material_ids: object) -> list[CandidateRecord]:
+            raise RuntimeError("lookup unavailable")
+
+    result = search_candidates(
+        FailingIdProvider(),
+        parse_composition_text("mp-404"),
+        DiscoverySettings(mode="mpids_only"),
+    )
+    assert result.candidates == []
+    assert any("lookup failed" in warning for warning in result.warnings)
+
+
+def test_provider_without_explicit_id_lookup_is_not_a_resolved_success() -> None:
+    result = search_candidates(
+        FakeProvider(),
+        parse_composition_text("mp-404"),
+        DiscoverySettings(mode="mpids_only"),
+    )
+    assert result.candidates == []
+    assert any("does not support" in warning for warning in result.warnings)
+
+
 def test_invalid_discovery_limits_fail_before_provider_access() -> None:
     parsed = parse_composition_text("Ti-Al")
     try:

@@ -1,4 +1,6 @@
+import csv
 from pathlib import Path
+import shutil
 
 import numpy as np
 import pytest
@@ -42,8 +44,51 @@ def test_unrotated_ieee_tensor_does_not_emit_hkl_modulus(demo_inputs: Path) -> N
     structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
     matrix = np.eye(6) * 100.0
     tensor = validate_elastic_tensor(matrix, coordinate_frame=MP_IEEE_CONVENTIONAL_FRAME)
-    assert tensor.status == "valid_with_warnings"
+    assert tensor.status == "frame_transform_required"
     assert young_modulus_hkl_normal_GPa(tensor, structure.small_structure.cell, (1, 1, 1)) is None
+
+
+def test_index_frame_transform_required_preserves_numerical_tensor(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    cif = tmp_path / "mp-123_Al.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    index = tmp_path / "elasticity_index.csv"
+    fields = [
+        "cif_filename",
+        "status",
+        "numerical_cij",
+        "provider",
+        "material_id",
+        "coordinate_frame",
+        *[f"C{i}{j}_GPa" for i in range(1, 7) for j in range(1, 7)],
+    ]
+    row = {
+        "cif_filename": cif.name,
+        "status": "frame_transform_required",
+        "numerical_cij": "true",
+        "provider": "Materials Project",
+        "material_id": "mp-123",
+        "coordinate_frame": MP_IEEE_CONVENTIONAL_FRAME,
+        **{f"C{i}{j}_GPa": "100" if i == j else "0" for i in range(1, 7) for j in range(1, 7)},
+    }
+    with index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(row)
+
+    structure = load_structure(cif)
+    tensor = discover_elastic_tensor(cif)
+
+    assert tensor is not None
+    assert tensor.status == "frame_transform_required"
+    assert tensor.coordinate_frame == MP_IEEE_CONVENTIONAL_FRAME
+    assert tensor.source_record_id == "mp-123"
+    assert tensor.raw_payload_path == index
+    assert tensor.stiffness_GPa == pytest.approx(np.eye(6) * 100.0)
+    assert young_modulus_hkl_normal_GPa(
+        tensor, structure.small_structure.cell, (1, 1, 1)
+    ) is None
 
 
 def test_exact_sidecar_with_conflicting_pair_is_rejected(demo_inputs: Path, tmp_path: Path) -> None:
@@ -60,6 +105,30 @@ def test_exact_sidecar_with_conflicting_pair_is_rejected(demo_inputs: Path, tmp_
     assert tensor is not None
     assert tensor.status == "invalid"
     assert any("do not match" in warning for warning in tensor.warnings)
+
+
+def test_exact_sidecar_with_conflicting_material_id_is_rejected(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    import json
+    import shutil
+
+    cif = tmp_path / "mp-123_Al.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    payload = json.loads(
+        (demo_inputs / "synthetic_fcc_al_elasticity.json").read_text(encoding="utf-8")
+    )
+    payload["cif_filename"] = cif.name
+    payload["provenance"]["paired_cif"] = cif.name
+    payload["provenance"]["material_id"] = "mp-999"
+    payload["diffractscout"]["paired_cif"] = cif.name
+    (tmp_path / "mp-123_Al_elasticity.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+    tensor = discover_elastic_tensor(cif)
+    assert tensor is not None
+    assert tensor.status == "invalid"
+    assert any("material_id" in warning for warning in tensor.warnings)
 
 
 def test_compliance_matrix_is_cached() -> None:

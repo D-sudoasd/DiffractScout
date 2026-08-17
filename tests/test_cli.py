@@ -61,6 +61,15 @@ def test_analyze_help_includes_d_min() -> None:
     assert exc_info.value.code == 0
 
 
+def test_quick_export_help_is_legacy_windows_console_safe(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["quick-export", "--help"])
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Angstrom" in help_text
+    help_text.encode("cp936")
+
+
 def test_cli_rejects_conflicting_radiation_inputs(tmp_path: Path) -> None:
     output = tmp_path / "conflicting-radiation"
     with pytest.raises(SystemExit) as exc_info:
