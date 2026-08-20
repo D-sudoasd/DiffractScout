@@ -227,6 +227,19 @@ def _record_transaction_warning(
         pass
 
 
+def _add_exception_note(error: BaseException, message: str) -> None:
+    """Attach rollback context when the runtime supports ``add_note``."""
+
+    add_note = getattr(error, "add_note", None)
+    if not callable(add_note):
+        return
+    try:
+        add_note(message)
+    except Exception:
+        # A diagnostic must never replace the active transaction exception.
+        pass
+
+
 def _safe_unlink(
     path: Path,
     *,
@@ -623,7 +636,7 @@ def _attempt_restore_backup(
         )
         _record_transaction_warning(message, warning_sink)
         if primary_error is not None:
-            primary_error.add_note(message)
+            _add_exception_note(primary_error, message)
         return
     try:
         backup.replace(target)
@@ -634,7 +647,7 @@ def _attempt_restore_backup(
         )
         _record_transaction_warning(message, warning_sink)
         if primary_error is not None:
-            primary_error.add_note(message)
+            _add_exception_note(primary_error, message)
 
 
 def _raise_publication_error(

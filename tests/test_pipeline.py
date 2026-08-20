@@ -17,6 +17,7 @@ from diffractscout.models import AnalysisSettings
 from diffractscout.pipeline import (
     _TargetState,
     _acquire_transaction_lock,
+    _attempt_restore_backup,
     _capture_target_state,
     _commit_staging_output,
     _copy_local_input,
@@ -349,6 +350,28 @@ def test_rollback_conflict_preserves_old_bundle_backup(
     backups = sorted(tmp_path.glob(".rollback-conflict.backup-*"))
     assert len(backups) == 1
     assert verify_bundle(backups[0])["ok"]
+
+
+def test_rollback_diagnostic_preserves_primary_exception_without_add_note(
+    tmp_path: Path,
+) -> None:
+    backup = tmp_path / "legacy-backup"
+    backup.mkdir()
+    (backup / "old.txt").write_text("old", encoding="utf-8")
+    target = tmp_path / "legacy-target"
+    target.mkdir()
+    (target / "external.txt").write_text("external", encoding="utf-8")
+
+    class LegacyException(Exception):
+        add_note = None
+
+    primary = LegacyException("primary rollback failure")
+    with pytest.warns(RuntimeWarning, match="Rollback conflict"):
+        _attempt_restore_backup(backup, target, primary_error=primary)
+
+    assert str(primary) == "primary rollback failure"
+    assert (target / "external.txt").read_text(encoding="utf-8") == "external"
+    assert (backup / "old.txt").read_text(encoding="utf-8") == "old"
 
 
 def test_target_state_survives_same_filesystem_directory_rename(
