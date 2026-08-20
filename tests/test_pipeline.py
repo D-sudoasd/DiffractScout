@@ -351,6 +351,26 @@ def test_rollback_conflict_preserves_old_bundle_backup(
     assert verify_bundle(backups[0])["ok"]
 
 
+def test_target_state_survives_same_filesystem_directory_rename(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    output = tmp_path / "rename-stable-state"
+    analyze_cifs([demo_inputs], output, include_excel=False)
+    before = _capture_target_state(output)
+
+    renamed = tmp_path / "rename-stable-state-moved"
+    output.rename(renamed)
+    after = _capture_target_state(renamed)
+
+    assert after == before
+    if before.identity not in {None, (0, 0)}:
+        identical_swap = tmp_path / "rename-stable-state-identical"
+        shutil.copytree(renamed, identical_swap)
+        swapped = _capture_target_state(identical_swap)
+        assert swapped.members == before.members
+        assert swapped.identity != before.identity
+
+
 def test_stale_lock_recovery_and_live_lock_protection(
     tmp_path: Path, monkeypatch
 ) -> None:

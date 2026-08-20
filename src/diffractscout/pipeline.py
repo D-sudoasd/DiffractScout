@@ -207,7 +207,7 @@ class _TargetState:
 
     exists: bool
     is_dir: bool = False
-    identity: tuple[int, int, int, int] | None = None
+    identity: tuple[int, int] | None = None
     manifest_sha256: str | None = None
     manifest_size: int | None = None
     members: tuple[tuple[str, int, str], ...] | None = None
@@ -297,12 +297,10 @@ def _bundle_member_fingerprint(target: Path) -> tuple[tuple[str, int, str], ...]
     return tuple(sorted(members))
 
 
-def _target_identity(stat_result: os.stat_result) -> tuple[int, int, int, int]:
+def _target_identity(stat_result: os.stat_result) -> tuple[int, int]:
     return (
         int(getattr(stat_result, "st_dev", 0)),
         int(getattr(stat_result, "st_ino", 0)),
-        int(getattr(stat_result, "st_ctime_ns", 0)),
-        int(getattr(stat_result, "st_mtime_ns", 0)),
     )
 
 
@@ -824,9 +822,9 @@ def _commit_staging_output(
                     f"backup preserved at {backup}."
                 )
 
-        # Re-check immediately before the no-replace directory rename.  The
-        # operation remains fail-closed on Windows and for non-empty POSIX
-        # directories if an external writer wins this last race.
+        # Re-check immediately before the platform adapter's atomic
+        # no-replace directory publication if an external writer wins this
+        # last race.
         current = _capture_target_state(target)
         if current.reparse:
             raise FileExistsError(
