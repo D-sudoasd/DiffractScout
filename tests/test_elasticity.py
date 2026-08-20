@@ -91,6 +91,49 @@ def test_index_frame_transform_required_preserves_numerical_tensor(
     ) is None
 
 
+@pytest.mark.parametrize("status", ["invalid", "elasticity_query_failed"])
+def test_index_explicit_failure_status_returns_invalid_tensor(
+    demo_inputs: Path, tmp_path: Path, status: str
+) -> None:
+    cif = tmp_path / "failed-index.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    index = tmp_path / "elasticity_index.csv"
+    with index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["cif_filename", "status", "error"])
+        writer.writeheader()
+        writer.writerow(
+            {
+                "cif_filename": cif.name,
+                "status": status,
+                "error": "provider-side elasticity failure",
+            }
+        )
+
+    tensor = discover_elastic_tensor(cif)
+
+    assert tensor is not None
+    assert tensor.status == "invalid"
+    assert tensor.raw_payload_path == index
+    assert any("provider-side elasticity failure" in warning for warning in tensor.warnings)
+    assert young_modulus_hkl_normal_GPa(
+        tensor, load_structure(cif).small_structure.cell, (1, 1, 1)
+    ) is None
+
+
+def test_index_failure_for_unmatched_cif_does_not_create_invalid_tensor(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    cif = tmp_path / "unmatched.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    index = tmp_path / "elasticity_index.csv"
+    with index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["cif_filename", "status"])
+        writer.writeheader()
+        writer.writerow({"cif_filename": "other.cif", "status": "invalid"})
+
+    assert discover_elastic_tensor(cif) is None
+
+
 def test_exact_sidecar_with_conflicting_pair_is_rejected(demo_inputs: Path, tmp_path: Path) -> None:
     import json
     import shutil

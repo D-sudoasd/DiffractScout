@@ -7,6 +7,8 @@ import os
 import platform
 import re
 import sys
+import tempfile
+import warnings
 from dataclasses import fields, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,12 +75,45 @@ def to_jsonable(value: Any) -> Any:
 def write_json(path: str | Path, payload: Any) -> Path:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_suffix(output.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(to_jsonable(payload), indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}-",
+        suffix=".tmp",
+        dir=str(output.parent),
     )
-    temporary.replace(output)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            handle.write(
+                json.dumps(
+                    to_jsonable(payload),
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+        temporary.replace(output)
+    finally:
+        if descriptor != -1:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            try:
+                warnings.warn(
+                    f"Could not remove JSON temporary file {temporary}: "
+                    f"{type(exc).__name__}: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            except Exception:
+                pass
     return output
 
 

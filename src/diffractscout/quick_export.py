@@ -15,7 +15,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from .models import AnalysisSettings, PipelineResult
+from .models import AnalysisSettings, PipelineResult, XrayInputMode
 from .pipeline import analyze_cifs
 from .utils import to_jsonable
 
@@ -185,6 +185,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--source", default="Cu Ka")
+    radiation = parser.add_mutually_exclusive_group()
+    radiation.add_argument(
+        "--wavelength-A",
+        type=float,
+        default=None,
+        help="Explicit X-ray wavelength in Angstrom (selects wavelength mode).",
+    )
+    radiation.add_argument(
+        "--energy-keV",
+        type=float,
+        default=None,
+        help="Explicit photon energy in keV (selects energy mode).",
+    )
     parser.add_argument("--two-theta-min", type=float, default=5.0)
     parser.add_argument("--two-theta-max", type=float, default=120.0)
     parser.add_argument("--step", type=float, default=0.02)
@@ -218,9 +231,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        input_mode: XrayInputMode
+        if args.wavelength_A is not None:
+            input_mode = "wavelength"
+            wavelength_A = args.wavelength_A
+            energy_keV = None
+        elif args.energy_keV is not None:
+            input_mode = "energy"
+            wavelength_A = None
+            energy_keV = args.energy_keV
+        else:
+            input_mode = "source"
+            wavelength_A = None
+            energy_keV = None
+            if args.source == "Custom":
+                raise ValueError(
+                    "Custom source requires --wavelength-A or --energy-keV."
+                )
         settings = AnalysisSettings(
-            input_mode="source",
+            input_mode=input_mode,
             source_preset=args.source,
+            wavelength_A=wavelength_A,
+            energy_keV=energy_keV,
             two_theta_min_deg=args.two_theta_min,
             two_theta_max_deg=args.two_theta_max,
             step_deg=args.step,

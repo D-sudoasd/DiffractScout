@@ -4,7 +4,7 @@ import pytest
 
 from diffractscout.composition import parse_composition_text
 from diffractscout.models import CandidateRecord, DiscoverySettings
-from diffractscout.selection import search_candidates
+from diffractscout.selection import _sort_key, search_candidates
 
 
 class FakeProvider:
@@ -121,3 +121,14 @@ def test_subsystem_expansion_limit_fails_before_provider_access() -> None:
             parsed,
             DiscoverySettings(max_subsystems=10),
         )
+
+
+def test_nonfinite_energy_is_ranked_as_infinite() -> None:
+    for energy in (float("nan"), float("inf"), float("-inf")):
+        key = _sort_key(
+            CandidateRecord(
+                material_id="mp-nonfinite",
+                energy_above_hull_eV_atom=energy,
+            )
+        )
+        assert key[0] == float("inf")

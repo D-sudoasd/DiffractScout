@@ -609,6 +609,22 @@ def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
     row = matches[0]
     status = str(row.get("status") or "").strip().lower()
     numerical = str(row.get("numerical_cij") or "").strip().lower()
+    if status in _ELASTICITY_FAILURE_STATUSES:
+        detail = next(
+            (
+                str(row.get(key) or "").strip()
+                for key in ("error", "elasticity_error", "message", "reason")
+                if str(row.get(key) or "").strip()
+            ),
+            "",
+        )
+        message = (
+            f"Elasticity index row for {cif_path.name} reports explicit failure status "
+            f"{status!r}."
+        )
+        if detail:
+            message += f" {detail}"
+        return _invalid_tensor(message, path=index_path)
     if status and status not in {
         "ok",
         "valid",

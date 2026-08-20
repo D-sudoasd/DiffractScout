@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 
 import gemmi
 import numpy as np
@@ -70,6 +71,41 @@ def test_unknown_source_preset_is_rejected(demo_inputs: Path) -> None:
             structure,
             AnalysisSettings(source_preset="not-a-source"),
         )
+
+
+def test_energy_input_rejects_nonfinite_derived_wavelength() -> None:
+    with pytest.raises(ValueError, match="Radiation input"):
+        diffraction.resolve_wavelength(
+            AnalysisSettings(input_mode="energy", energy_keV=1e-323)
+        )
+
+
+def test_reflection_search_estimate_bounds_highly_skewed_cell() -> None:
+    cell = gemmi.UnitCell(1.0, 1.0, 1.0, 119.99, 119.99, 119.99)
+    d_min = 0.200764
+    old_volume_estimate = math.ceil(
+        (4.0 * np.pi / 3.0) * cell.volume / d_min**3
+    )
+    actual_candidates = len(
+        gemmi.make_miller_array(
+            cell,
+            gemmi.find_spacegroup_by_number(1),
+            d_min,
+            0.0,
+            True,
+        )
+    )
+    estimate = diffraction._reflection_search_estimate(cell, d_min)
+    assert old_volume_estimate == 14
+    assert actual_candidates == 30
+    assert estimate >= actual_candidates
+    assert estimate > old_volume_estimate
+
+
+def test_reflection_search_estimate_fails_closed_for_near_singular_cell() -> None:
+    cell = gemmi.UnitCell(1.0, 1.0, 1.0, 120.0, 120.0, 120.0)
+    with pytest.raises(ValueError, match="near-singular"):
+        diffraction._reflection_search_estimate(cell, 0.2)
 
 
 def test_exact_upper_boundary_reflection_is_retained(demo_inputs: Path) -> None:

@@ -1,8 +1,13 @@
 import csv
+import ctypes
+import errno
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 from openpyxl import load_workbook
@@ -10,11 +15,20 @@ import pytest
 
 from diffractscout.models import AnalysisSettings
 from diffractscout.pipeline import (
+    _TargetState,
+    _acquire_transaction_lock,
+    _attempt_restore_backup,
+    _capture_target_state,
+    _commit_staging_output,
+    _copy_local_input,
+    _lock_path_for,
     _lookup_elastic_override,
+    _release_transaction_lock,
     analyze_cifs,
     collect_cif_paths,
     run_pipeline,
 )
+from diffractscout.utils import write_json
 from diffractscout.validation import verify_bundle
 
 
@@ -243,6 +257,677 @@ def test_target_created_during_run_is_not_silently_replaced(
 
     assert (output / "user.txt").read_text(encoding="utf-8") == "keep"
     assert not list(tmp_path.glob(".raced-target.diffractscout-*"))
+
+
+def test_target_created_after_final_validation_is_not_deleted(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    output = tmp_path / "post-validation-race"
+    original_validate = pipeline._validate_output_target
+    call_count = 0
+
+    def validate_then_occupy(path: str | Path, *, overwrite: bool) -> Path:
+        nonlocal call_count
+        call_count += 1
+        result = original_validate(path, overwrite=overwrite)
+        if call_count == 2:
+            result.mkdir()
+            (result / "user.txt").write_text("keep", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(pipeline, "_validate_output_target", validate_then_occupy)
+    with pytest.raises(FileExistsError, match="changed during"):
+        analyze_cifs([demo_inputs], output, include_excel=False)
+
+    assert (output / "user.txt").read_text(encoding="utf-8") == "keep"
+    assert not list(tmp_path.glob(".post-validation-race.diffractscout-*"))
+
+
+def test_manifest_member_mutation_after_final_validation_is_not_overwritten(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    output = tmp_path / "member-race"
+    analyze_cifs([demo_inputs], output, include_excel=False)
+    original_validate = pipeline._validate_output_target
+    call_count = 0
+
+    def validate_then_mutate(path: str | Path, *, overwrite: bool) -> Path:
+        nonlocal call_count
+        call_count += 1
+        result = original_validate(path, overwrite=overwrite)
+        if call_count == 2:
+            (result / "phase_summary.csv").write_text(
+                "changed-after-final-validation\n",
+                encoding="utf-8",
+            )
+        return result
+
+    monkeypatch.setattr(pipeline, "_validate_output_target", validate_then_mutate)
+    with pytest.raises(FileExistsError, match="changed|unverifiable"):
+        analyze_cifs(
+            [demo_inputs],
+            output,
+            include_excel=False,
+            overwrite=True,
+        )
+
+    assert (output / "phase_summary.csv").read_text(encoding="utf-8") == (
+        "changed-after-final-validation\n"
+    )
+    assert not list(tmp_path.glob(".member-race.diffractscout-*"))
+
+
+def test_rollback_conflict_preserves_old_bundle_backup(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    output = tmp_path / "rollback-conflict"
+    analyze_cifs([demo_inputs], output, include_excel=False)
+    expected_state = _capture_target_state(output)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    original_replace = Path.replace
+
+    def isolate_then_occupy(self: Path, target: str | Path) -> Path:
+        result = original_replace(self, target)
+        if self == output and Path(target).name.startswith(f".{output.name}.backup-"):
+            output.mkdir()
+            (output / "user.txt").write_text("external", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(Path, "replace", isolate_then_occupy)
+    with pytest.raises(FileExistsError, match="Rollback conflict"):
+        _commit_staging_output(
+            output,
+            staging,
+            expected_state=expected_state,
+        )
+
+    assert (output / "user.txt").read_text(encoding="utf-8") == "external"
+    backups = sorted(tmp_path.glob(".rollback-conflict.backup-*"))
+    assert len(backups) == 1
+    assert verify_bundle(backups[0])["ok"]
+
+
+def test_rollback_diagnostic_preserves_primary_exception_without_add_note(
+    tmp_path: Path,
+) -> None:
+    backup = tmp_path / "legacy-backup"
+    backup.mkdir()
+    (backup / "old.txt").write_text("old", encoding="utf-8")
+    target = tmp_path / "legacy-target"
+    target.mkdir()
+    (target / "external.txt").write_text("external", encoding="utf-8")
+
+    class LegacyException(Exception):
+        add_note = None
+
+    primary = LegacyException("primary rollback failure")
+    with pytest.warns(RuntimeWarning, match="Rollback conflict"):
+        _attempt_restore_backup(backup, target, primary_error=primary)
+
+    assert str(primary) == "primary rollback failure"
+    assert (target / "external.txt").read_text(encoding="utf-8") == "external"
+    assert (backup / "old.txt").read_text(encoding="utf-8") == "old"
+
+
+def test_target_state_survives_same_filesystem_directory_rename(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    output = tmp_path / "rename-stable-state"
+    analyze_cifs([demo_inputs], output, include_excel=False)
+    before = _capture_target_state(output)
+
+    renamed = tmp_path / "rename-stable-state-moved"
+    output.rename(renamed)
+    after = _capture_target_state(renamed)
+
+    assert after == before
+    if before.identity not in {None, (0, 0)}:
+        identical_swap = tmp_path / "rename-stable-state-identical"
+        shutil.copytree(renamed, identical_swap)
+        swapped = _capture_target_state(identical_swap)
+        assert swapped.members == before.members
+        assert swapped.identity != before.identity
+
+
+def test_stale_lock_recovery_and_live_lock_protection(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    target = tmp_path / "locked-target"
+    lock = _lock_path_for(target)
+    lock.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "host": pipeline._lock_host(),
+                "pid": 424242,
+                "created_at": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pipeline, "_process_is_alive", lambda pid: pid == os.getpid())
+
+    acquired = _acquire_transaction_lock(target)
+    metadata = json.loads(acquired.read_text(encoding="utf-8"))
+    assert metadata["pid"] == os.getpid()
+    assert metadata["host"] == pipeline._lock_host()
+    _release_transaction_lock(acquired)
+    assert not lock.exists()
+
+    lock.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "host": pipeline._lock_host(),
+                "pid": os.getpid(),
+                "created_at": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(FileExistsError, match="active"):
+        _acquire_transaction_lock(target)
+    assert lock.exists()
+
+
+def test_lock_snapshot_identity_is_rename_stable_and_replacement_sensitive(
+    tmp_path: Path,
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    lock = tmp_path / "identity-lock"
+    lock.write_bytes(b"original-lock")
+    original_raw, original_identity = pipeline._lock_snapshot(lock)
+
+    renamed = tmp_path / "identity-lock-renamed"
+    lock.replace(renamed)
+    renamed_raw, renamed_identity = pipeline._lock_snapshot(renamed)
+    assert renamed_raw == original_raw
+    assert renamed_identity == original_identity
+
+    replacement = tmp_path / "identity-lock-replacement"
+    replacement.write_bytes(b"replaced-lock")
+    replacement.replace(renamed)
+    replaced_raw, replaced_identity = pipeline._lock_snapshot(renamed)
+    assert replaced_raw != original_raw
+    if original_identity[:2] != (0, 0):
+        assert replaced_identity != original_identity
+
+
+def test_lock_release_preserves_replacement_after_metadata_read(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    target = tmp_path / "release-race-target"
+    lock = _lock_path_for(target)
+    lock.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "host": pipeline._lock_host(),
+                "pid": os.getpid(),
+                "created_at": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    replacement = tmp_path / "replacement-lock"
+    original_read = pipeline._read_lock_metadata
+
+    def read_then_replace(path: Path) -> dict[str, object]:
+        metadata = original_read(path)
+        replacement.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "host": pipeline._lock_host(),
+                    "pid": os.getpid(),
+                    "created_at": 2.0,
+                }
+            ),
+            encoding="utf-8",
+        )
+        replacement.replace(path)
+        return metadata
+
+    monkeypatch.setattr(pipeline, "_read_lock_metadata", read_then_replace)
+    warning_sink: list[str] = []
+    with pytest.warns(RuntimeWarning, match="changed during release"):
+        _release_transaction_lock(lock, warning_sink=warning_sink)
+
+    assert lock.exists()
+    assert json.loads(lock.read_text(encoding="utf-8"))["created_at"] == 2.0
+    assert any("changed during release" in message for message in warning_sink)
+
+
+def test_lock_release_preserves_replacement_after_final_snapshot(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    target = tmp_path / "release-final-race-target"
+    lock = _lock_path_for(target)
+    lock.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "host": pipeline._lock_host(),
+                "pid": os.getpid(),
+                "created_at": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    replacement = tmp_path / "replacement-final-lock"
+    original_snapshot = pipeline._lock_snapshot
+    snapshot_calls = 0
+
+    def snapshot_then_replace(path: Path) -> tuple[bytes, tuple[int, int, int]]:
+        nonlocal snapshot_calls
+        snapshot = original_snapshot(path)
+        snapshot_calls += 1
+        if snapshot_calls == 2:
+            replacement.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "host": pipeline._lock_host(),
+                        "pid": os.getpid(),
+                        "created_at": 3.0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replacement.replace(path)
+        return snapshot
+
+    monkeypatch.setattr(pipeline, "_lock_snapshot", snapshot_then_replace)
+    warning_sink: list[str] = []
+    with pytest.warns(RuntimeWarning, match="changed while being isolated"):
+        _release_transaction_lock(lock, warning_sink=warning_sink)
+
+    assert snapshot_calls >= 3
+    assert lock.exists()
+    assert json.loads(lock.read_text(encoding="utf-8"))["created_at"] == 3.0
+    assert any("changed while being isolated" in message for message in warning_sink)
+
+
+def test_lock_cleanup_failure_does_not_mask_success_or_primary_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    output = tmp_path / "cleanup-success"
+    staging = tmp_path / "success-staging"
+    staging.mkdir()
+
+    def fail_release(*_args, **_kwargs) -> None:
+        raise PermissionError("simulated lock cleanup failure")
+
+    monkeypatch.setattr(pipeline, "_release_transaction_lock", fail_release)
+    with pytest.warns(RuntimeWarning, match="lock cleanup"):
+        _commit_staging_output(output, staging, expected_state=_TargetState(False))
+    assert output.is_dir()
+    assert _lock_path_for(output).exists()
+
+    primary_output = tmp_path / "cleanup-primary"
+    primary_staging = tmp_path / "primary-staging"
+    primary_staging.mkdir()
+    def fail_staging_rename(source: Path, target: Path) -> None:
+        if source == primary_staging:
+            raise RuntimeError("primary publish failure")
+        raise AssertionError("unexpected publication source")
+
+    monkeypatch.setattr(pipeline, "_rename_directory_noreplace", fail_staging_rename)
+    with pytest.raises(RuntimeError, match="primary publish failure"):
+        _commit_staging_output(
+            primary_output,
+            primary_staging,
+            expected_state=_TargetState(False),
+        )
+    assert not primary_output.exists()
+
+
+def test_publication_primitive_target_race_preserves_external_target_and_backup(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    output = tmp_path / "publication-race"
+    analyze_cifs([demo_inputs], output, include_excel=False)
+    expected_state = _capture_target_state(output)
+    staging = tmp_path / "publication-staging"
+    staging.mkdir()
+
+    def publish_then_occupy(source: Path, target: Path) -> None:
+        assert source == staging
+        target.mkdir()
+        raise FileExistsError(errno.EEXIST, "target appeared at publication")
+
+    monkeypatch.setattr(pipeline, "_rename_directory_noreplace", publish_then_occupy)
+    with pytest.raises(FileExistsError, match="target appeared"):
+        _commit_staging_output(
+            output,
+            staging,
+            expected_state=expected_state,
+        )
+
+    assert output.is_dir()
+    assert list(output.iterdir()) == []
+    assert staging.is_dir()
+    backups = sorted(tmp_path.glob(".publication-race.backup-*"))
+    assert len(backups) == 1
+    assert verify_bundle(backups[0])["ok"]
+
+
+def test_windows_publication_normalizes_existing_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    error = OSError(5, "access denied")
+    error.winerror = 183  # type: ignore[attr-defined]
+    monkeypatch.setattr(pipeline.os, "rename", lambda *_args: (_ for _ in ()).throw(error))
+    with pytest.raises(FileExistsError):
+        pipeline._rename_directory_noreplace_windows(
+            tmp_path / "staging", tmp_path / "target"
+        )
+
+
+def test_linux_publication_uses_renameat2_and_normalizes_errno(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    class FakeRenameat2:
+        argtypes = None
+        restype = None
+
+        def __call__(self, *_args) -> int:
+            ctypes.set_errno(errno.EEXIST)
+            return -1
+
+    class FakeLibc:
+        renameat2 = FakeRenameat2()
+
+    monkeypatch.setattr(pipeline.ctypes, "CDLL", lambda *_args, **_kwargs: FakeLibc())
+    with pytest.raises(FileExistsError):
+        pipeline._rename_directory_noreplace_linux(
+            tmp_path / "staging", tmp_path / "target"
+        )
+    assert FakeLibc.renameat2.argtypes[-1] is pipeline.ctypes.c_uint
+    assert FakeLibc.renameat2.restype is pipeline.ctypes.c_int
+
+
+def test_linux_publication_fails_closed_without_libc_primitive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    class MissingLibc:
+        def __getattr__(self, _name: str) -> object:
+            raise AttributeError("missing primitive")
+
+    monkeypatch.setattr(pipeline.ctypes, "CDLL", lambda *_args, **_kwargs: MissingLibc())
+    with pytest.raises(OSError, match="refusing a racy publication"):
+        pipeline._rename_directory_noreplace_linux(
+            tmp_path / "staging", tmp_path / "target"
+        )
+
+
+def test_macos_publication_uses_renamex_np_exclusive_flag(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    class FakeRenamex:
+        argtypes = None
+        restype = None
+        flags: int | None = None
+
+        def __call__(self, _source: bytes, _target: bytes, flags: int) -> int:
+            self.flags = flags
+            ctypes.set_errno(errno.EEXIST)
+            return -1
+
+    class FakeLibc:
+        renamex_np = FakeRenamex()
+
+    monkeypatch.setattr(pipeline.ctypes, "CDLL", lambda *_args, **_kwargs: FakeLibc())
+    with pytest.raises(FileExistsError):
+        pipeline._rename_directory_noreplace_macos(
+            tmp_path / "staging", tmp_path / "target"
+        )
+    assert FakeLibc.renamex_np.flags == 0x00000004
+
+
+def test_unsupported_posix_publication_fails_closed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline.os, "name", "posix")
+    monkeypatch.setattr(pipeline.sys, "platform", "freebsd")
+    with pytest.raises(OSError, match="refusing a racy rename"):
+        pipeline._rename_directory_noreplace(
+            tmp_path / "staging", tmp_path / "target"
+        )
+
+
+def test_provider_copy_falls_back_without_hardlink(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    source = tmp_path / "source.cif"
+    source.write_bytes(b"complete provider artifact")
+    destination = tmp_path / "inputs"
+    original_link = pipeline.os.link
+
+    def no_hardlink(*_args, **_kwargs) -> None:
+        raise OSError(errno.EOPNOTSUPP, "hardlinks unavailable")
+
+    monkeypatch.setattr(pipeline.os, "link", no_hardlink)
+    published = pipeline._copy_provider_artifact(
+        source,
+        destination,
+        preferred_name="source.cif",
+        suffix=".cif",
+    )
+
+    assert published.read_bytes() == source.read_bytes()
+    assert not list(destination.glob("*.tmp"))
+    monkeypatch.setattr(pipeline.os, "link", original_link)
+
+
+def test_dangling_probe_is_not_captured_as_vacant_and_commit_rejects_reparse(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    class DanglingProbe:
+        def stat(self, *, follow_symlinks: bool = True) -> object:
+            raise FileNotFoundError
+
+        def lstat(self) -> object:
+            return SimpleNamespace(
+                st_mode=0o120777,
+                st_dev=1,
+                st_ino=2,
+                st_ctime_ns=3,
+                st_mtime_ns=4,
+            )
+
+        @staticmethod
+        def is_symlink() -> bool:
+            return True
+
+    captured = pipeline._capture_target_state(DanglingProbe())  # type: ignore[arg-type]
+    assert captured.exists is True
+    assert captured.reparse is True
+
+    target = tmp_path / "reparse-race"
+    staging = tmp_path / "reparse-staging"
+    staging.mkdir()
+    monkeypatch.setattr(
+        pipeline,
+        "_capture_target_state",
+        lambda _path: _TargetState(exists=True, reparse=True),
+    )
+    with pytest.raises(FileExistsError, match="symbolic link or reparse"):
+        _commit_staging_output(target, staging, expected_state=_TargetState(False))
+
+
+def test_local_cif_copy_fails_closed_when_source_mutates(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    source = demo_inputs / "synthetic_fcc_al.cif"
+    destination = tmp_path / "staged-inputs"
+    original_copy = pipeline.shutil.copy2
+
+    def copy_then_mutate(source_path: str | Path, target: str | Path, **kwargs) -> Path:
+        result = original_copy(source_path, target, **kwargs)
+        if Path(source_path) == source:
+            source.write_bytes(source.read_bytes() + b"\n# source changed\n")
+        return result
+
+    monkeypatch.setattr(pipeline.shutil, "copy2", copy_then_mutate)
+    with pytest.raises(RuntimeError, match="source changed"):
+        _copy_local_input(source, destination, include_elasticity=False)
+    assert not list(destination.glob("*.cif"))
+    assert not list(destination.glob("*.tmp"))
+
+
+def test_json_cleanup_failure_warns_without_masking_success(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.utils as utils
+
+    output = tmp_path / "cleanup-warning.json"
+    original_unlink = utils.Path.unlink
+
+    def fail_temp_unlink(self: Path, *args, **kwargs) -> None:
+        if self.parent == tmp_path and self.suffix == ".tmp":
+            raise PermissionError("simulated temporary cleanup failure")
+        original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(utils.Path, "unlink", fail_temp_unlink)
+    with pytest.warns(RuntimeWarning, match="JSON temporary file"):
+        result = write_json(output, {"ok": True})
+    assert result == output
+    assert json.loads(output.read_text(encoding="utf-8")) == {"ok": True}
+
+
+def test_concurrent_overwrite_writers_leave_at_most_one_committed_bundle(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    output = tmp_path / "concurrent-writers"
+    analyze_cifs([demo_inputs], output, include_excel=False)
+
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", left / "left.cif")
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", right / "right.cif")
+
+    original_export = pipeline.export_result_bundle
+    ready = threading.Barrier(2)
+
+    def export_then_race(*args, **kwargs):
+        result = original_export(*args, **kwargs)
+        ready.wait(timeout=30)
+        return result
+
+    monkeypatch.setattr(pipeline, "export_result_bundle", export_then_race)
+
+    def run(source: Path) -> object:
+        try:
+            return analyze_cifs(
+                [source], output, include_excel=False, overwrite=True
+            )
+        except Exception as exc:  # the losing transaction is expected to fail closed
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(run, (left, right)))
+
+    assert sum(not isinstance(result, Exception) for result in results) == 1
+    assert sum(isinstance(result, Exception) for result in results) == 1
+    assert verify_bundle(output)["ok"]
+    phase_summary = (output / "phase_summary.csv").read_text(encoding="utf-8-sig")
+    assert "left.cif" in phase_summary or "right.cif" in phase_summary
+
+
+def test_write_json_concurrent_writers_use_distinct_temps(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.utils as utils
+
+    output = tmp_path / "concurrent.json"
+    original_replace = utils.Path.replace
+    replace_barrier = threading.Barrier(2)
+    replace_lock = threading.Lock()
+
+    def synchronize_replacements(self: Path, target: str | Path) -> Path:
+        if self.parent == tmp_path and self.suffix == ".tmp":
+            replace_barrier.wait(timeout=30)
+            with replace_lock:
+                return original_replace(self, target)
+        return original_replace(self, target)
+
+    monkeypatch.setattr(utils.Path, "replace", synchronize_replacements)
+
+    def write(index: int) -> Path:
+        return write_json(output, {"index": index})
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(write, (1, 2)))
+
+    assert all(path == output for path in results)
+    assert json.loads(output.read_text(encoding="utf-8"))["index"] in {1, 2}
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_write_json_encoding_failure_cleans_temporary_file(tmp_path: Path) -> None:
+    output = tmp_path / "encoding-failure.json"
+    with pytest.raises(UnicodeEncodeError):
+        write_json(output, {"invalid": "\udcff"})
+    assert not output.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_staged_cif_modified_after_analysis_fails_closed(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    output = tmp_path / "changed-staging-cif"
+    original_export = pipeline.export_result_bundle
+
+    def modify_before_export(staging: Path, *args, **kwargs):
+        cif = next((staging / "inputs").glob("*.cif"))
+        cif.write_bytes(cif.read_bytes() + b"\n# changed after analysis\n")
+        return original_export(staging, *args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "export_result_bundle", modify_before_export)
+    with pytest.raises(RuntimeError, match="CIF.*changed"):
+        analyze_cifs([demo_inputs], output, include_excel=False)
+
+    assert not output.exists()
+    assert not list(tmp_path.glob(".changed-staging-cif.diffractscout-*"))
 
 
 def test_remote_provider_is_not_contacted_when_output_is_unsafe(tmp_path: Path) -> None:

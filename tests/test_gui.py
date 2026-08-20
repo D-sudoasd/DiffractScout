@@ -65,6 +65,30 @@ def test_analysis_form_includes_d_min_and_profile_model() -> None:
     assert settings.include_patterns is False
 
 
+def test_analysis_form_ignores_stale_non_numeric_source_radiation() -> None:
+    """A built-in source does not consume the disabled custom-value field."""
+
+    settings = analysis_settings_from_form(
+        {
+            "input_mode": "source",
+            "source_preset": "Cu Ka",
+            "radiation_value": "not-a-number",
+            "two_theta_min": "5",
+            "two_theta_max": "120",
+            "step": "0.02",
+            "fwhm": "0.15",
+            "eta": "0.5",
+            "max_profile_points": "1000000",
+            "max_reflection_estimate": "2000000",
+        }
+    )
+
+    assert settings.input_mode == "source"
+    assert settings.source_preset == "Cu Ka"
+    assert settings.wavelength_A is None
+    assert settings.energy_keV is None
+
+
 def test_analysis_form_rejects_unknown_profile_model() -> None:
     with pytest.raises(ValueError, match="Profile model"):
         analysis_settings_from_form(
@@ -357,6 +381,10 @@ def test_scrollable_focus_bindings_are_idempotent_and_cover_all_tabs(geometry: s
                 assert len(bindings) == len(targets)
                 for widget in targets:
                     assert widget.bind("<FocusIn>").count("_focus_into_view") == 1
+                    if widget.winfo_class() not in {"Text", "TCombobox", "Listbox", "Spinbox"}:
+                        assert widget.bind("<MouseWheel>").count("_on_wheel") == 1
+                        assert widget.bind("<Button-4>").count("_on_wheel") == 1
+                        assert widget.bind("<Button-5>").count("_on_wheel") == 1
                     widget.focus_force()
                     app.update_idletasks()
                     app.update()

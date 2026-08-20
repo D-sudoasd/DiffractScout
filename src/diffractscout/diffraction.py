@@ -45,35 +45,76 @@ DMIN_SEARCH_RELATIVE_MARGIN = 1e-10
 # sample.  Keep that product bounded independently of the two input limits so
 # a valid-but-large pair cannot allocate an impractical temporary workload.
 MAX_PROFILE_WORK = 50_000_000
+# A reciprocal search through a direct-cell metric this ill-conditioned is not
+# numerically trustworthy.  Fail closed before handing it to Gemmi's native
+# Miller-array builder.
+MAX_DIRECT_METRIC_CONDITION = 1e8
 # A tiny margin absorbs a final-bit rounding overshoot in lambda/(2d). Values
 # farther above one are physically inaccessible and remain rejected.
 BRAGG_ARGUMENT_TOLERANCE = 1e-12
 
 
 def resolve_wavelength(settings: AnalysisSettings) -> tuple[float, float | None, str]:
+    def validate_result(
+        wavelength: float, energy: float | None, source: str
+    ) -> tuple[float, float | None, str]:
+        energy_valid = energy is None or (
+            math.isfinite(float(energy)) and float(energy) > 0.0
+        )
+        if not math.isfinite(float(wavelength)) or float(wavelength) <= 0.0 or not energy_valid:
+            raise ValueError(
+                "Radiation input produced a non-finite or non-positive derived "
+                f"wavelength/energy pair (wavelength_A={wavelength!r}, energy_keV={energy!r})."
+            )
+        return float(wavelength), float(energy) if energy is not None else None, source
+
     if settings.input_mode == "energy":
         if settings.energy_keV is None or not np.isfinite(settings.energy_keV) or settings.energy_keV <= 0:
-            raise ValueError("energy_keV must be a finite positive number when input_mode='energy'.")
+            raise ValueError(
+                "Radiation input energy_keV must be a finite positive number when "
+                "input_mode='energy'."
+            )
         energy = float(settings.energy_keV)
-        return ENERGY_WAVELENGTH_KEV_A / energy, energy, "energy_keV"
+        return validate_result(ENERGY_WAVELENGTH_KEV_A / energy, energy, "energy_keV")
     if settings.input_mode == "wavelength":
         if settings.wavelength_A is None or not np.isfinite(settings.wavelength_A) or settings.wavelength_A <= 0:
-            raise ValueError("wavelength_A must be a finite positive number when input_mode='wavelength'.")
+            raise ValueError(
+                "Radiation input wavelength_A must be a finite positive number when "
+                "input_mode='wavelength'."
+            )
         wavelength = float(settings.wavelength_A)
-        return wavelength, ENERGY_WAVELENGTH_KEV_A / wavelength, "wavelength_A"
+        return validate_result(
+            wavelength, ENERGY_WAVELENGTH_KEV_A / wavelength, "wavelength_A"
+        )
     if settings.input_mode != "source":
-        raise ValueError(f"Unsupported input_mode: {settings.input_mode!r}.")
+        raise ValueError(
+            f"Unsupported input_mode: {settings.input_mode!r} (radiation input)."
+        )
     if settings.source_preset not in X_RAY_SOURCES_A:
         choices = ", ".join(sorted(X_RAY_SOURCES_A))
-        raise ValueError(f"Unknown X-ray source preset {settings.source_preset!r}; choose one of: {choices}.")
+        raise ValueError(
+            f"Unknown X-ray source preset {settings.source_preset!r} in radiation input; "
+            f"choose one of: {choices}."
+        )
     preset = X_RAY_SOURCES_A[settings.source_preset]
     if preset is None:
         if settings.wavelength_A is None or not np.isfinite(settings.wavelength_A) or settings.wavelength_A <= 0:
-            raise ValueError("A finite positive wavelength_A is required for the Custom source preset.")
+            raise ValueError(
+                "A finite positive wavelength_A is required for the Custom source "
+                "preset (radiation input)."
+            )
         wavelength = float(settings.wavelength_A)
-        return wavelength, ENERGY_WAVELENGTH_KEV_A / wavelength, "custom_source_wavelength"
+        return validate_result(
+            wavelength,
+            ENERGY_WAVELENGTH_KEV_A / wavelength,
+            "custom_source_wavelength",
+        )
     wavelength = float(preset)
-    return wavelength, ENERGY_WAVELENGTH_KEV_A / wavelength, f"source_preset:{settings.source_preset}"
+    return validate_result(
+        wavelength,
+        ENERGY_WAVELENGTH_KEV_A / wavelength,
+        f"source_preset:{settings.source_preset}",
+    )
 
 
 def _bragg_argument(d_spacing_A: float, wavelength_A: float) -> float | None:
@@ -204,20 +245,47 @@ def _profile_point_count(settings: AnalysisSettings) -> int:
     return int(math.ceil(span / settings.step_deg)) + 1
 
 
-def _reflection_search_estimate(cell_volume_A3: float, d_min_A: float) -> int:
-    """Estimate reciprocal-lattice points inside the 1/d sphere.
+def _reflection_search_estimate(cell: gemmi.UnitCell, d_min_A: float) -> int:
+    """Return a conservative integer box bound for Gemmi's Miller search.
 
-    Reciprocal-space point density is the direct-cell volume when reciprocal
-    vectors are expressed without the 2π factor. The estimate intentionally
-    counts both Friedel mates and therefore serves as a conservative resource
-    guard, not as a crystallographic reflection count.
+    For a reciprocal quadratic form ``q(h) = hᵀ G* h`` and radius
+    ``R = 1 / d_min``, minimizing over the other two indices gives
+    ``|h_i| <= R * sqrt(G_ii)`` because ``(G*)⁻¹ = G`` is the direct-cell
+    metric.  The product of the three inclusive integer intervals therefore
+    bounds every reciprocal-lattice candidate before native array generation.
     """
 
-    if not np.isfinite(cell_volume_A3) or cell_volume_A3 <= 0:
-        raise ValueError("Unit-cell volume must be finite and positive.")
     if not np.isfinite(d_min_A) or d_min_A <= 0:
         raise ValueError("Calculated d_min must be finite and positive.")
-    return int(math.ceil((4.0 * math.pi / 3.0) * cell_volume_A3 / d_min_A**3))
+    try:
+        direct_metric = np.asarray(cell.metric_tensor().as_mat33(), dtype=float)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("Unit-cell direct metric could not be evaluated safely.") from exc
+    if direct_metric.shape != (3, 3) or not np.all(np.isfinite(direct_metric)):
+        raise ValueError("Unit-cell direct metric is non-finite.")
+    try:
+        eigenvalues = np.linalg.eigvalsh(direct_metric)
+    except np.linalg.LinAlgError as exc:
+        raise ValueError("Unit-cell direct metric could not be evaluated safely.") from exc
+    smallest = float(np.min(eigenvalues))
+    largest = float(np.max(eigenvalues))
+    if smallest <= 0.0 or largest <= 0.0:
+        raise ValueError("Unit-cell direct metric is not positive definite.")
+    condition_number = largest / smallest
+    if not np.isfinite(condition_number) or condition_number > MAX_DIRECT_METRIC_CONDITION:
+        raise ValueError(
+            "Unit-cell direct metric is near-singular; reciprocal reflection search was stopped "
+            f"(condition number={condition_number:.3g})."
+        )
+    radius = 1.0 / float(d_min_A)
+    limits = radius * np.sqrt(np.diag(direct_metric))
+    if not np.all(np.isfinite(limits)) or np.any(limits < 0.0):
+        raise ValueError("Unit-cell reciprocal index bounds are non-finite.")
+    counts = [
+        2 * math.ceil(float(np.nextafter(limit, math.inf))) + 1
+        for limit in limits
+    ]
+    return int(math.prod(counts))
 
 
 def _equivalent_hkls(space_group: gemmi.SpaceGroup, hkl: Iterable[int]) -> set[tuple[int, int, int]]:
@@ -368,8 +436,9 @@ def simulate_powder_pattern(
     )
     # If user d_min is stricter (larger) than Bragg d_min, still search to Bragg
     # d_min but filter reflections; if user d_min is smaller, Bragg already limits.
-    cell_volume = float(structure.small_structure.cell.volume)
-    reflection_estimate = _reflection_search_estimate(cell_volume, float(d_min_search))
+    cell = structure.small_structure.cell
+    cell_volume = float(cell.volume)
+    reflection_estimate = _reflection_search_estimate(cell, float(d_min_search))
     if reflection_estimate > settings.max_reflection_estimate:
         raise ValueError(
             f"Reciprocal search is estimated at {reflection_estimate:,} points, exceeding "
@@ -377,7 +446,7 @@ def simulate_powder_pattern(
             "use a longer wavelength, or raise the explicit safety limit after reviewing memory use."
         )
     miller_array = gemmi.make_miller_array(
-        structure.small_structure.cell,
+        cell,
         structure.space_group_object,
         float(d_min_search),
         0.0,

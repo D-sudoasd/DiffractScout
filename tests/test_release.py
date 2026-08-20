@@ -54,7 +54,10 @@ def test_prepare_dist_dir_rejects_symlink_relative_to_repository_root(
     target = tmp_path / "target"
     target.mkdir()
     link = root / "dist-link"
-    link.symlink_to(target, target_is_directory=True)
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Symlink creation unavailable due to platform or permissions: {exc}")
     monkeypatch.setattr(module, "ROOT", root)
 
     with pytest.raises(SystemExit, match="must not be a symlink"):
