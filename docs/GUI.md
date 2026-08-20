@@ -15,7 +15,7 @@ On Windows, after an editable or environment install, double-click `启动Diffra
 
 A normal Python installation with Tk support is required. On Linux, the operating-system package is commonly named `python3-tk` or `tk`.
 
-Optional extra `.[gui-dnd]` installs `tkinterdnd2` for future drag-and-drop enhancements; the current GUI does not require it.
+Optional extra `.[gui-dnd]` installs `tkinterdnd2` and enables file/folder drop onto the local CIF list; the button-based workflow remains available without it.
 
 ## Layout and scrolling
 
@@ -63,6 +63,8 @@ The API key remains in process memory. DiffractScout does not save it in configu
 | `energy` | Radiation value | Explicit photon energy in keV |
 
 Energy and wavelength inputs must be finite and positive. The CLI also makes explicit energy and wavelength options mutually exclusive.
+When the source preset is `Custom`, enter one explicit wavelength or energy; a
+built-in source ignores stale text left in the disabled radiation-value field.
 
 ## Scientific controls
 
@@ -101,11 +103,14 @@ For a Cu Kα, 5–120° lab-default one-shot export without opening the notebook
 
 ```bash
 diffractscout-quick-export path/to/sample.cif -o path/to/sample_out.xlsx
+# explicit custom radiation (the options are mutually exclusive)
+diffractscout-quick-export path/to/sample.cif -o path/to/sample_out.xlsx --source Custom --wavelength-A 1.2
+diffractscout-quick-export path/to/sample.cif -o path/to/energy_out.xlsx --energy-keV 20
 # or
 diffractscout quick-export path/to/cifs -o path/to/bundle_dir
 ```
 
-On Windows, drag CIF files or folders onto `quick_export_diffractscout.bat`. The script writes `<first-stem>_diffractscout.xlsx` next to the first input (bundle: `<stem>_diffractscout_bundle/`).
+On Windows, drag CIF files or folders onto `quick_export_diffractscout.bat`. The script normalizes a trailing folder separator and writes `<first-stem>_diffractscout.xlsx` next to the first input (bundle: `<stem>_diffractscout_bundle/`).
 
 An existing workbook is never replaced implicitly. Choose a different path or enable the explicit overwrite option; an authorized replacement is written through a temporary file so a failed copy does not expose a partial workbook.
 
@@ -121,7 +126,7 @@ The `Open result folder` action is enabled after a result bundle has been writte
 
 ## Threading and window closure
 
-One pipeline task can run at a time. Run buttons are disabled while a worker thread is active, preventing duplicate downloads or simultaneous writes to the same target. All run options are validated and snapshotted on the GUI thread before the worker starts, so later interface edits cannot change an in-flight run and the worker never reads Tk state. Closing the window during a task requires confirmation. The scientific output transaction remains responsible for preserving an existing valid bundle when a run fails.
+One pipeline task can run at a time. Run buttons are disabled while a worker thread is active, preventing duplicate downloads or simultaneous writes to the same target. All run options are validated and snapshotted on the GUI thread before the worker starts, so later interface edits cannot change an in-flight run and the worker never reads Tk state. Closing the window during a task is blocked with an informational message; there is no force-close or cancel action, so wait for the worker to publish its safe completion before closing. The scientific output transaction remains responsible for preserving an existing valid bundle when a run fails.
 
 ## Headless smoke test
 

@@ -120,7 +120,18 @@ def analysis_settings_from_form(values: Mapping[str, object]) -> AnalysisSetting
     mode = str(values.get("input_mode", "source")).strip().lower()
     if mode not in {"source", "wavelength", "energy"}:
         raise ValueError("Radiation mode must be source, wavelength, or energy.")
-    radiation = _optional_float(values.get("radiation_value"), "Radiation value")
+    source_preset = str(values.get("source_preset", "Cu Ka") or "Cu Ka")
+    needs_radiation_value = mode in {"wavelength", "energy"} or (
+        mode == "source" and source_preset == "Custom"
+    )
+    # A disabled entry can retain stale text from a previous Custom/energy
+    # selection.  Do not parse it unless the selected mode actually consumes
+    # the value.
+    radiation = (
+        _optional_float(values.get("radiation_value"), "Radiation value")
+        if needs_radiation_value
+        else None
+    )
     profile_model = str(values.get("profile_model", "pseudo_voigt")).strip()
     if profile_model not in _PROFILE_MODELS:
         raise ValueError(
@@ -131,10 +142,8 @@ def analysis_settings_from_form(values: Mapping[str, object]) -> AnalysisSetting
         raise ValueError(f"Pattern axis must be one of: {', '.join(_PATTERN_AXES)}.")
     settings = AnalysisSettings(
         input_mode=mode,  # type: ignore[arg-type]
-        source_preset=str(values.get("source_preset", "Cu Ka")),
-        wavelength_A=radiation
-        if mode == "wavelength" or (mode == "source" and str(values.get("source_preset")) == "Custom")
-        else None,
+        source_preset=source_preset,
+        wavelength_A=radiation if mode == "wavelength" or (mode == "source" and source_preset == "Custom") else None,
         energy_keV=radiation if mode == "energy" else None,
         two_theta_min_deg=_required_float(values.get("two_theta_min", 5), "2θ minimum"),
         two_theta_max_deg=_required_float(values.get("two_theta_max", 120), "2θ maximum"),
@@ -234,6 +243,7 @@ if tk is not None:
             self._scroll_canvases: list[Any] = []
             self._scroll_interiors: list[Any] = []
             self._scroll_focus_bindings: dict[str, set[str]] = {}
+            self._scroll_wheel_bindings: dict[str, set[str]] = {}
             self._syncing_shortcut = False
             self._poll_after_id: str | None = None
             self._wrap_after_id: str | None = None
@@ -437,6 +447,8 @@ if tk is not None:
             self._scroll_interiors.append(interior)
             focus_bound: set[str] = set()
             self._scroll_focus_bindings[str(canvas)] = focus_bound
+            wheel_bound: set[str] = set()
+            self._scroll_wheel_bindings[str(canvas)] = wheel_bound
 
             def _sync_scrollregion(_event: object | None = None) -> None:
                 canvas.configure(scrollregion=canvas.bbox("all"))
@@ -536,18 +548,19 @@ if tk is not None:
                 # either gesture makes editing a long form frustrating.
                 if str(widget.winfo_class()) in {"Text", "TCombobox", "Listbox", "Spinbox"}:
                     return
-                widget.bind("<MouseWheel>", _on_wheel, add="+")
-                widget.bind("<Button-4>", _on_wheel, add="+")
-                widget.bind("<Button-5>", _on_wheel, add="+")
+                widget_path = str(widget)
+                for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                    binding_key = f"{widget_path}|{sequence}"
+                    if binding_key not in wheel_bound:
+                        widget.bind(sequence, _on_wheel, add="+")
+                        wheel_bound.add(binding_key)
                 for child in widget.winfo_children():
                     _bind_recursive(child)
 
             def _bind_tree(_event: object | None = None) -> None:
                 _bind_focus_recursive(interior)
                 _bind_recursive(interior)
-                canvas.bind("<MouseWheel>", _on_wheel, add="+")
-                canvas.bind("<Button-4>", _on_wheel, add="+")
-                canvas.bind("<Button-5>", _on_wheel, add="+")
+                _bind_recursive(canvas)
 
             interior.bind("<Map>", lambda _e: self.after_idle(_bind_tree), add="+")
             self.after_idle(_bind_tree)

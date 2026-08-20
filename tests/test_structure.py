@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import sys
 import warnings
 
@@ -302,6 +303,77 @@ Al1 Al 0 0 0 {occupancy}
     )
     with pytest.raises(ValueError, match="occupancy"):
         load_structure(cif)
+
+
+@pytest.mark.parametrize("coordinate", ["?", ".", "nan", "inf", "-inf"])
+def test_unknown_or_nonfinite_fractional_coordinate_fails_before_gemmi(
+    tmp_path: Path, coordinate: str
+) -> None:
+    cif = tmp_path / "invalid_fractional_coordinate.cif"
+    cif.write_text(
+        f"""data_invalid_fractional_coordinate
+_cell_length_a 4
+_cell_length_b 4
+_cell_length_c 4
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_space_group_IT_number 225
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_occupancy
+Al1 Al {coordinate} 0 0 1
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="fractional coordinate"):
+        load_structure(cif)
+
+
+def test_invalid_fractional_coordinate_subprocess_exits_without_native_crash(
+    tmp_path: Path,
+) -> None:
+    cif = tmp_path / "invalid_fractional_coordinate_subprocess.cif"
+    cif.write_text(
+        """data_invalid_fractional_coordinate_subprocess
+_cell_length_a 4
+_cell_length_b 4
+_cell_length_c 4
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_space_group_IT_number 225
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_occupancy
+Al1 Al ? 0 0 1
+""",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from diffractscout.structure import load_structure; "
+                f"load_structure({str(cif)!r})"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).parents[1],
+    )
+    assert result.returncode == 1
+    assert "ValueError" in result.stderr
+    assert "fractional coordinate" in result.stderr
 
 
 def test_spglib_dict_and_attribute_datasets_are_supported(

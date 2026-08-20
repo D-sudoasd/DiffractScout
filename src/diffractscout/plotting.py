@@ -230,16 +230,25 @@ def _ps_escape(text: str) -> str:
 
 
 def _ascii_plot_title(title: str) -> str:
-    return title.encode("ascii", errors="replace").decode("ascii")
+    """Return a neutral ASCII title for the dependency-free raster path.
+
+    The bitmap fallback intentionally does not transliterate a phase name:
+    question marks or partial transliterations could be mistaken for the
+    material identity.  Provenance and tabular exports retain the original
+    Unicode phase/CIF name; the figure title only states what was plotted.
+    """
+
+    text = str(title)
+    return text if text.isascii() else "Theoretical powder XRD"
 
 
 def _require_ascii_title(title: str, backend: str) -> str:
     """Return a title supported by the legacy text backend.
 
-    The pure raster/EPS/PDF writers use a deliberately small ASCII font or a
-    built-in Helvetica Type-1 font.  Replacing unsupported characters with
-    ``?`` would make a scientific label silently incorrect, so callers must
-    fail explicitly and can choose SVG or matplotlib instead.
+    The pure EPS/PDF writers use a built-in Helvetica Type-1 font.  Replacing
+    unsupported characters with ``?`` would make a scientific label silently
+    incorrect, so those callers must fail explicitly and can choose SVG or
+    matplotlib instead; the raster path uses :func:`_ascii_plot_title`.
     """
 
     text = str(title)
@@ -508,7 +517,7 @@ def _raster_xrd_pattern(
         anchor="mm",
         rotation=-90,
     )
-    safe_title = _require_ascii_title(title, "Raster fallback")
+    safe_title = _ascii_plot_title(title)
     _draw_text(buffer, width, height, safe_title, width / 2, 4.2 * title_scale, title_scale, axis_color, anchor="mm")
 
     raster_points = [to_raster((float(x), float(y))) for x, y in points]
@@ -736,16 +745,24 @@ def export_xrd_pattern_png(
         intensity_profile=intensity_profile,
         title=title,
     )
-    width, height, dpi, buffer, description = _matplotlib_xrd_pattern(
+    matplotlib_result = _matplotlib_xrd_pattern(
         x_values, y_values, title=plot_title, preset_name=preset_name
-    ) or _raster_xrd_pattern(x_values, y_values, title=plot_title, preset_name=preset_name)
+    )
+    if matplotlib_result is None:
+        width, height, dpi, buffer, description = _raster_xrd_pattern(
+            x_values, y_values, title=plot_title, preset_name=preset_name
+        )
+        output_title = _ascii_plot_title(plot_title)
+    else:
+        width, height, dpi, buffer, description = matplotlib_result
+        output_title = plot_title
     return _write_png(
         output_path,
         width=width,
         height=height,
         dpi=dpi,
         buffer=buffer,
-        title=plot_title,
+        title=output_title,
         description=description,
     )
 
@@ -763,16 +780,24 @@ def export_xrd_pattern_tiff(
         intensity_profile=intensity_profile,
         title=title,
     )
-    width, height, dpi, buffer, description = _matplotlib_xrd_pattern(
+    matplotlib_result = _matplotlib_xrd_pattern(
         x_values, y_values, title=plot_title, preset_name=preset_name
-    ) or _raster_xrd_pattern(x_values, y_values, title=plot_title, preset_name=preset_name)
+    )
+    if matplotlib_result is None:
+        width, height, dpi, buffer, description = _raster_xrd_pattern(
+            x_values, y_values, title=plot_title, preset_name=preset_name
+        )
+        output_title = _ascii_plot_title(plot_title)
+    else:
+        width, height, dpi, buffer, description = matplotlib_result
+        output_title = plot_title
     return _write_tiff(
         output_path,
         width=width,
         height=height,
         dpi=dpi,
         buffer=buffer,
-        title=plot_title,
+        title=output_title,
         description=description,
     )
 

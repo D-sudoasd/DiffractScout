@@ -31,9 +31,10 @@ def validate_discovery_settings(settings: DiscoverySettings) -> None:
 
 
 def _sort_key(candidate: CandidateRecord) -> tuple[float, int, str]:
+    raw_energy = candidate.energy_above_hull_eV_atom
     energy = (
-        candidate.energy_above_hull_eV_atom
-        if candidate.energy_above_hull_eV_atom is not None
+        float(raw_energy)
+        if raw_energy is not None and math.isfinite(float(raw_energy))
         else float("inf")
     )
     stable_priority = 0 if candidate.is_stable is True else 1

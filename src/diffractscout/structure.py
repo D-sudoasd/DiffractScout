@@ -388,6 +388,60 @@ def _validate_raw_occupancies(block: gemmi.cif.Block) -> None:
             )
 
 
+def _validate_raw_fractional_coordinates(block: gemmi.cif.Block) -> None:
+    """Reject unknown or non-finite fractional coordinates before Gemmi parses them.
+
+    Gemmi's native structure builder is not a safe boundary for CIF values such
+    as ``?`` or ``nan``.  Validate the raw loop tokens first so malformed input
+    produces a normal Python exception instead of entering native code with an
+    invalid coordinate.
+    """
+
+    columns = {
+        axis: block.find_loop(f"_atom_site_fract_{axis}")
+        for axis in ("x", "y", "z")
+    }
+    lengths = {axis: len(column) for axis, column in columns.items()}
+    if len(set(lengths.values())) != 1:
+        raise ValueError(
+            "CIF atom-site fractional coordinate columns have inconsistent row counts: "
+            f"{lengths}."
+        )
+    row_count = next(iter(lengths.values()), 0)
+    if row_count == 0:
+        raise ValueError("CIF contains no complete fractional coordinate rows.")
+
+    numeric_with_uncertainty = re.compile(
+        r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?(?:\(\d+\))?$"
+    )
+    for index in range(row_count):
+        for axis, column in columns.items():
+            raw = _clean_cif_value(column[index])
+            if raw in {"", "?", "."}:
+                raise ValueError(
+                    f"CIF atom-site fractional coordinate {axis} at row {index + 1} "
+                    f"is unknown ({raw or 'empty'}); provide a finite numeric value."
+                )
+            token = raw.split("(", 1)[0].strip()
+            try:
+                coordinate = float(token)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"CIF atom-site fractional coordinate {axis} at row {index + 1} "
+                    f"is not numeric: {raw!r}."
+                ) from exc
+            if not math.isfinite(coordinate):
+                raise ValueError(
+                    f"CIF atom-site fractional coordinate {axis} at row {index + 1} "
+                    f"is non-finite: {raw!r}."
+                )
+            if not numeric_with_uncertainty.fullmatch(raw):
+                raise ValueError(
+                    f"CIF atom-site fractional coordinate {axis} at row {index + 1} "
+                    f"is malformed: {raw!r}."
+                )
+
+
 def _dataset_value(dataset: object, name: str) -> object:
     if isinstance(dataset, dict):
         return dataset.get(name)
@@ -527,6 +581,7 @@ def load_structure(cif_path: str | Path) -> StructureRecord:
         raise ValueError(f"Gemmi could not read CIF {path.name}: {exc}") from exc
     block = select_structure_block(document)
     _validate_raw_occupancies(block)
+    _validate_raw_fractional_coordinates(block)
     try:
         small = gemmi.make_small_structure_from_block(block)
         structure_factor_small = gemmi.make_small_structure_from_block(block)

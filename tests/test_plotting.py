@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -14,8 +15,10 @@ from diffractscout.plotting import (
     FIGURE_EXPORT_PRESETS,
     export_phase_figures,
     export_xrd_pattern_pdf,
+    export_xrd_pattern_png,
     export_xrd_pattern_svg,
 )
+import diffractscout.plotting as plotting
 
 
 def test_export_svg_from_synthetic_arrays(tmp_path: Path) -> None:
@@ -138,3 +141,51 @@ def test_unicode_title_is_preserved_or_rejected_explicitly(tmp_path: Path) -> No
             intensity_profile=y_values,
             title=title,
         )
+
+
+def test_unicode_phase_bundle_uses_ascii_raster_fallback(
+    demo_inputs: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The base install still emits both figure formats for a Unicode phase."""
+
+    monkeypatch.setattr(plotting, "_matplotlib_xrd_pattern", lambda *_args, **_kwargs: None)
+    unicode_inputs = tmp_path / "unicode-inputs"
+    unicode_inputs.mkdir()
+    cif = unicode_inputs / "铝合金_α.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    shutil.copy2(demo_inputs / "synthetic_fcc_al_elasticity.json", unicode_inputs / "铝合金_α_elasticity.json")
+
+    output = tmp_path / "unicode-bundle"
+    result = analyze_cifs(
+        [unicode_inputs],
+        output,
+        settings=AnalysisSettings(include_elasticity=False, include_figures=True),
+        include_excel=False,
+    )
+
+    assert len(result.analyses) == 1
+    assert result.analyses[0].phase_name == "铝合金_α"
+    assert list((output / "figures").glob("*.svg"))
+    pngs = list((output / "figures").glob("*.png"))
+    assert pngs
+    assert "铝合金_α" in (output / "phase_summary.csv").read_text(encoding="utf-8-sig")
+    provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["phase_metadata"][0]["phase_name"] == "铝合金_α"
+    assert b"Theoretical powder XRD" in pngs[0].read_bytes()
+
+
+def test_unicode_png_title_is_ascii_safe_when_matplotlib_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(plotting, "_matplotlib_xrd_pattern", lambda *_args, **_kwargs: None)
+    path = export_xrd_pattern_png(
+        tmp_path / "unicode-fallback.png",
+        two_theta_grid=np.linspace(10.0, 20.0, 5),
+        intensity_profile=np.linspace(1.0, 5.0, 5),
+        title="铝合金 α 相",
+    )
+
+    payload = path.read_bytes()
+    assert path.is_file()
+    assert b"Theoretical powder XRD" in payload
+    assert "铝合金".encode("utf-8") not in payload

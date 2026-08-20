@@ -8,6 +8,7 @@ import math
 from dataclasses import asdict, fields, is_dataclass
 import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import numpy as np
@@ -269,10 +270,38 @@ def _portable_json_value(value: Any, bundle_root: Path | None = None) -> Any:
 
 def _write_text_atomic(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(text, encoding="utf-8")
-    temporary.replace(path)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(path)
+    finally:
+        _unlink_temporary(temporary)
     return path
+
+
+def _unlink_temporary(path: Path | None) -> None:
+    """Best-effort cleanup that never masks an export result or its error."""
+
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        # A published result (or the primary write/replace exception) is more
+        # important than a cleanup failure caused by another process or the
+        # filesystem.  The leftover same-directory temp is recoverable.
+        return
 
 
 def _write_csv(

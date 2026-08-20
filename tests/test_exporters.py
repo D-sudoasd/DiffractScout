@@ -2,6 +2,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from openpyxl import load_workbook
 
 import diffractscout.exporters as exporters
@@ -37,6 +39,56 @@ def test_empty_csv_keeps_a_stable_header(tmp_path: Path) -> None:
     path = tmp_path / "empty.csv"
     _write_csv(path, [], ["a", "b"])
     assert path.read_text(encoding="utf-8-sig").splitlines() == ["a,b"]
+
+
+def test_write_text_atomic_cleans_unique_temp_after_replace_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "README.md"
+    path.write_text("old", encoding="utf-8")
+
+    def fail_replace(self: Path, _target: Path) -> Path:
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    with pytest.raises(OSError, match="simulated replace failure"):
+        exporters._write_text_atomic(path, "new")
+
+    assert path.read_text(encoding="utf-8") == "old"
+    assert not list(tmp_path.glob("*.tmp"))
+    assert not list(tmp_path.glob(".README.md.*.tmp"))
+
+
+def test_write_text_atomic_preserves_replace_error_when_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "README.md"
+
+    def fail_replace(self: Path, _target: Path) -> Path:
+        raise OSError("primary replace failure")
+
+    def fail_unlink(self: Path, *, missing_ok: bool = False) -> None:
+        raise PermissionError("cleanup failure")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+
+    with pytest.raises(OSError, match="primary replace failure"):
+        exporters._write_text_atomic(path, "new")
+
+
+def test_write_text_atomic_returns_published_path_when_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "README.md"
+
+    def fail_unlink(self: Path, *, missing_ok: bool = False) -> None:
+        raise PermissionError("cleanup failure")
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+
+    assert exporters._write_text_atomic(path, "new") == path
+    assert path.read_text(encoding="utf-8") == "new"
 
 
 def test_excel_uses_an_omission_note_above_row_limit(

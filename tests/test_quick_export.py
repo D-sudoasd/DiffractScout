@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import shutil
 
 import pytest
@@ -102,6 +103,82 @@ def test_quick_export_cli_entry(demo_inputs: Path, tmp_path: Path) -> None:
     assert code == 0
     assert excel.is_file()
     assert (tmp_path / "cli_out_bundle" / "manifest.json").is_file()
+
+
+@pytest.mark.parametrize(
+    ("radiation_option", "radiation_value", "expected_mode", "expected_wavelength", "expected_energy"),
+    [
+        ("--wavelength-A", "1.2", "wavelength", pytest.approx(1.2), None),
+        ("--energy-keV", "20", "energy", None, pytest.approx(20.0)),
+    ],
+)
+def test_standalone_quick_export_custom_radiation_modes(
+    demo_inputs: Path,
+    tmp_path: Path,
+    radiation_option: str,
+    radiation_value: str,
+    expected_mode: str,
+    expected_wavelength: object,
+    expected_energy: object,
+) -> None:
+    output = tmp_path / f"custom-{expected_mode}"
+    code = quick_export_main(
+        [
+            str(demo_inputs),
+            "-o",
+            str(output),
+            "--source",
+            "Custom",
+            radiation_option,
+            radiation_value,
+            "--no-elasticity",
+            "--no-excel",
+        ]
+    )
+
+    assert code == 0
+    provenance = json.loads(
+        (output / "provenance.json").read_text(encoding="utf-8")
+    )
+    settings = provenance["analysis_settings"]
+    assert settings["input_mode"] == expected_mode
+    assert settings["wavelength_A"] == expected_wavelength
+    assert settings["energy_keV"] == expected_energy
+
+
+def test_standalone_quick_export_custom_source_requires_explicit_radiation(
+    demo_inputs: Path, tmp_path: Path, capsys
+) -> None:
+    code = quick_export_main(
+        [
+            str(demo_inputs),
+            "-o",
+            str(tmp_path / "missing-custom"),
+            "--source",
+            "Custom",
+            "--no-elasticity",
+            "--no-excel",
+        ]
+    )
+
+    assert code == 2
+    assert "Custom source requires --wavelength-A or --energy-keV" in capsys.readouterr().err
+
+
+def test_standalone_quick_export_radiation_options_are_mutually_exclusive() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        build_quick_export_parser().parse_args(
+            [
+                "sample.cif",
+                "-o",
+                "out",
+                "--wavelength-A",
+                "1.2",
+                "--energy-keV",
+                "20",
+            ]
+        )
+    assert exc_info.value.code == 2
 
 
 def test_standalone_quick_export_help_is_legacy_windows_console_safe() -> None:

@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import errno
+import ctypes
 import json
+import math
 import os
 import shutil
+import socket
+import stat
+import sys
 import tempfile
-from dataclasses import replace
+import time
+import warnings
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 from uuid import uuid4
@@ -193,22 +201,680 @@ def _create_staging_output(target: Path) -> Path:
     ).resolve()
 
 
-def _commit_staging_output(target: Path, staging: Path) -> None:
-    """Replace a verified result directory while retaining rollback capability."""
+@dataclass(frozen=True)
+class _TargetState:
+    """Identity and observable contents captured for a commit precondition."""
 
-    backup: Path | None = None
+    exists: bool
+    is_dir: bool = False
+    identity: tuple[int, int, int, int] | None = None
+    manifest_sha256: str | None = None
+    manifest_size: int | None = None
+    members: tuple[tuple[str, int, str], ...] | None = None
+    reparse: bool = False
+
+
+def _record_transaction_warning(
+    message: str,
+    warning_sink: list[str] | None = None,
+) -> None:
+    if warning_sink is not None:
+        warning_sink.append(message)
     try:
-        if target.exists():
-            backup = target.with_name(f".{target.name}.backup-{uuid4().hex}")
-            target.replace(backup)
-        staging.replace(target)
+        warnings.warn(message, RuntimeWarning, stacklevel=3)
     except Exception:
-        if not target.exists() and backup is not None and backup.exists():
-            backup.replace(target)
+        # Diagnostics must never replace the active transaction exception.
+        pass
+
+
+def _safe_unlink(
+    path: Path,
+    *,
+    warning_sink: list[str] | None = None,
+    context: str = "temporary file",
+) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        _record_transaction_warning(
+            f"Could not remove {context} {path}: {type(exc).__name__}: {exc}",
+            warning_sink,
+        )
+
+
+def _safe_rmtree(
+    path: Path,
+    *,
+    warning_sink: list[str] | None = None,
+    context: str = "directory",
+) -> None:
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        _record_transaction_warning(
+            f"Could not remove {context} {path}: {type(exc).__name__}: {exc}",
+            warning_sink,
+        )
+
+
+def _path_exists(path: Path) -> bool:
+    """Return true for ordinary paths and dangling links alike."""
+
+    try:
+        return path.exists() or path.is_symlink()
+    except OSError:
+        # An inaccessible path must never be treated as vacant.
+        return True
+
+
+def _bundle_member_fingerprint(target: Path) -> tuple[tuple[str, int, str], ...] | None:
+    """Fingerprint every manifest-declared member of a verified bundle."""
+
+    manifest = target / "manifest.json"
+    if not _path_exists(manifest):
+        return None
+    report = verify_bundle(target)
+    if not report["ok"]:
+        details = "; ".join(report["errors"][:5])
+        raise FileExistsError(
+            f"Cannot fingerprint an unverifiable output target {target}: {details}"
+        )
+    members: list[tuple[str, int, str]] = []
+    for entry in report["files"]:
+        try:
+            relative = str(entry["path"])
+            size = int(entry["actual_size_bytes"])
+            digest = str(entry["actual_sha256"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FileExistsError(
+                f"Cannot fingerprint malformed output target {target}."
+            ) from exc
+        members.append((relative, size, digest))
+    return tuple(sorted(members))
+
+
+def _target_identity(stat_result: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        int(getattr(stat_result, "st_dev", 0)),
+        int(getattr(stat_result, "st_ino", 0)),
+        int(getattr(stat_result, "st_ctime_ns", 0)),
+        int(getattr(stat_result, "st_mtime_ns", 0)),
+    )
+
+
+def _capture_target_state(target: Path) -> _TargetState:
+    """Capture a target state without following the target itself."""
+
+    try:
+        stat_result = target.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        try:
+            stat_result = target.lstat()
+        except (FileNotFoundError, OSError, AttributeError):
+            try:
+                dangling = target.is_symlink()
+            except OSError:
+                dangling = True
+            if dangling:
+                return _TargetState(exists=True, reparse=True)
+            return _TargetState(exists=False)
+    except (OSError, TypeError):
+        try:
+            stat_result = target.lstat()
+        except (FileNotFoundError, OSError, AttributeError) as exc:
+            raise OSError(f"Could not inspect output target {target}.") from exc
+
+    try:
+        reparse = _is_reparse_point(target)
+    except (OSError, TypeError, AttributeError):
+        reparse = bool(getattr(target, "is_symlink", lambda: False)())
+    identity = _target_identity(stat_result)
+    if reparse:
+        return _TargetState(
+            exists=True,
+            identity=identity,
+            reparse=True,
+        )
+
+    is_dir = stat.S_ISDIR(getattr(stat_result, "st_mode", 0))
+    if not is_dir:
+        return _TargetState(
+            exists=True,
+            is_dir=False,
+            identity=identity,
+        )
+
+    manifest = target / "manifest.json"
+    manifest_sha256: str | None = None
+    manifest_size: int | None = None
+    if _path_exists(manifest):
+        try:
+            manifest_sha256 = sha256_file(manifest)
+            manifest_size = manifest.stat().st_size
+        except OSError as exc:
+            raise FileExistsError(
+                f"Cannot read output target manifest for {target}."
+            ) from exc
+    return _TargetState(
+        exists=True,
+        is_dir=True,
+        identity=identity,
+        manifest_sha256=manifest_sha256,
+        manifest_size=manifest_size,
+        members=_bundle_member_fingerprint(target),
+    )
+
+
+def _lock_path_for(target: Path) -> Path:
+    return target.parent / f".{target.name}.diffractscout-lock"
+
+
+def _lock_host() -> str:
+    return socket.gethostname()
+
+
+def _process_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return False
+        if getattr(exc, "winerror", None) == 87:  # ERROR_INVALID_PARAMETER: no such PID
+            return False
+        # Permission denied and platform-specific errors are ambiguous; never
+        # remove a lock that might still belong to a live process.
+        return True
+    return True
+
+
+def _lock_snapshot(lock_path: Path) -> tuple[bytes, tuple[int, int, int, int, int]]:
+    raw = lock_path.read_bytes()
+    stat_result = lock_path.stat(follow_symlinks=False)
+    identity = (
+        int(getattr(stat_result, "st_dev", 0)),
+        int(getattr(stat_result, "st_ino", 0)),
+        int(getattr(stat_result, "st_ctime_ns", 0)),
+        int(getattr(stat_result, "st_mtime_ns", 0)),
+        int(getattr(stat_result, "st_size", 0)),
+    )
+    return raw, identity
+
+
+def _read_lock_metadata(lock_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FileExistsError(
+            f"Active transaction lock {lock_path} has unreadable metadata; "
+            "refusing unsafe recovery."
+        ) from exc
+    if not isinstance(payload, dict):
+        raise FileExistsError(
+            f"Active transaction lock {lock_path} has ambiguous metadata; "
+            "refusing unsafe recovery."
+        )
+    host = payload.get("host")
+    pid = payload.get("pid")
+    created_at = payload.get("created_at")
+    if (
+        not isinstance(host, str)
+        or not host.strip()
+        or isinstance(pid, bool)
+        or not isinstance(pid, int)
+        or pid <= 0
+        or isinstance(created_at, bool)
+        or not isinstance(created_at, (int, float))
+        or not math.isfinite(float(created_at))
+        or float(created_at) > time.time() + 5.0
+    ):
+        raise FileExistsError(
+            f"Active transaction lock {lock_path} has ambiguous metadata; "
+            "refusing unsafe recovery."
+        )
+    return {"host": host, "pid": pid, "created_at": float(created_at)}
+
+
+def _recover_stale_transaction_lock(
+    lock_path: Path,
+    warning_sink: list[str] | None = None,
+) -> bool:
+    """Recover a lock only after same-host owner death is proven."""
+
+    try:
+        raw, identity = _lock_snapshot(lock_path)
+    except FileNotFoundError:
+        return True
+    metadata = _read_lock_metadata(lock_path)
+    if metadata["host"].casefold() != _lock_host().casefold():
+        raise FileExistsError(
+            f"Transaction lock {lock_path} belongs to another host; "
+            "refusing unsafe recovery."
+        )
+    if _process_is_alive(metadata["pid"]):
+        raise FileExistsError(
+            f"Output transaction is already active (pid={metadata['pid']}) for {lock_path}."
+        )
+
+    try:
+        current_raw, current_identity = _lock_snapshot(lock_path)
+    except FileNotFoundError:
+        return True
+    if current_raw != raw or current_identity != identity:
+        raise FileExistsError(
+            f"Transaction lock {lock_path} changed during stale recovery; "
+            "retry after confirming the owner."
+        )
+
+    quarantine = lock_path.with_name(f"{lock_path.name}.stale-{uuid4().hex}")
+    try:
+        lock_path.replace(quarantine)
+    except FileNotFoundError:
+        return True
+    except OSError as exc:
+        raise FileExistsError(
+            f"Could not isolate stale transaction lock {lock_path}; "
+            "refusing unsafe recovery."
+        ) from exc
+
+    try:
+        moved_raw = quarantine.read_bytes()
+        if moved_raw != raw:
+            if not _path_exists(lock_path):
+                try:
+                    quarantine.replace(lock_path)
+                except OSError as exc:
+                    _record_transaction_warning(
+                        f"Could not restore changed transaction lock {lock_path}: {exc}",
+                        warning_sink,
+                    )
+            raise FileExistsError(
+                f"Transaction lock {lock_path} changed while being isolated; "
+                "the lock was preserved."
+            )
+        if _path_exists(lock_path):
+            # A new owner won the race after the stale file was isolated.  The
+            # old owner is proven dead, so removing only the quarantine is safe.
+            _safe_unlink(
+                quarantine,
+                warning_sink=warning_sink,
+                context="stale lock quarantine",
+            )
+            raise FileExistsError(
+                f"A new transaction acquired {lock_path} during stale recovery; "
+                "the live lock was preserved."
+            )
+        _safe_unlink(
+            quarantine,
+            warning_sink=warning_sink,
+            context="stale lock quarantine",
+        )
+        return True
+    except FileNotFoundError as exc:
+        raise FileExistsError(
+            f"Stale transaction lock quarantine {quarantine} disappeared; "
+            "refusing unsafe recovery."
+        ) from exc
+
+
+def _acquire_transaction_lock(
+    target: Path,
+    *,
+    warning_sink: list[str] | None = None,
+) -> Path:
+    """Create an exclusive lock marker with conservative stale recovery."""
+
+    lock_path = _lock_path_for(target)
+    for _attempt in range(3):
+        try:
+            descriptor = os.open(
+                os.fspath(lock_path),
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            )
+        except FileExistsError:
+            if _recover_stale_transaction_lock(lock_path, warning_sink):
+                continue
+            raise FileExistsError(f"Output transaction lock is unavailable: {lock_path}.")
+
+        descriptor_open = True
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                descriptor_open = False
+                json.dump(
+                    {
+                        "version": 1,
+                        "host": _lock_host(),
+                        "pid": os.getpid(),
+                        "created_at": time.time(),
+                    },
+                    handle,
+                    sort_keys=True,
+                )
+                handle.write("\n")
+        except Exception:
+            if descriptor_open:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            _safe_unlink(
+                lock_path,
+                warning_sink=warning_sink,
+                context="partially written transaction lock",
+            )
+            raise
+        return lock_path
+    raise FileExistsError(f"Could not acquire output transaction lock {lock_path}.")
+
+
+def _release_transaction_lock(
+    lock_path: Path,
+    *,
+    warning_sink: list[str] | None = None,
+) -> None:
+    """Release a lock without masking a commit result or primary error."""
+
+    try:
+        metadata = _read_lock_metadata(lock_path)
+    except FileNotFoundError:
+        return
+    except FileExistsError as exc:
+        _record_transaction_warning(str(exc), warning_sink)
+        return
+    if (
+        metadata["host"].casefold() != _lock_host().casefold()
+        or metadata["pid"] != os.getpid()
+    ):
+        _record_transaction_warning(
+            f"Transaction lock {lock_path} is owned by another process; "
+            "leaving it in place.",
+            warning_sink,
+        )
+        return
+    _safe_unlink(
+        lock_path,
+        warning_sink=warning_sink,
+        context="transaction lock",
+    )
+
+
+def _attempt_restore_backup(
+    backup: Path | None,
+    target: Path,
+    *,
+    primary_error: BaseException | None = None,
+    warning_sink: list[str] | None = None,
+) -> None:
+    """Restore an isolated target only while its path is still vacant."""
+
+    if backup is None or not _path_exists(backup):
+        return
+    if _path_exists(target):
+        message = (
+            f"Rollback conflict for {target}: target reappeared; "
+            f"isolated backup preserved at {backup}."
+        )
+        _record_transaction_warning(message, warning_sink)
+        if primary_error is not None:
+            primary_error.add_note(message)
+        return
+    try:
+        backup.replace(target)
+    except OSError as exc:
+        message = (
+            f"Could not restore isolated backup {backup} to {target}: "
+            f"{type(exc).__name__}: {exc}; backup was preserved."
+        )
+        _record_transaction_warning(message, warning_sink)
+        if primary_error is not None:
+            primary_error.add_note(message)
+
+
+def _raise_publication_error(
+    error_number: int,
+    source: Path,
+    target: Path,
+    *,
+    operation: str,
+) -> None:
+    message = f"Atomic no-replace directory publication failed ({operation}): {source} -> {target}"
+    if error_number == errno.EEXIST:
+        raise FileExistsError(errno.EEXIST, message, os.fspath(target))
+    raise OSError(error_number or errno.EIO, message, os.fspath(target))
+
+
+def _rename_directory_noreplace_windows(source: Path, target: Path) -> None:
+    """Use Windows' documented no-replace behavior for ``os.rename``."""
+
+    try:
+        os.rename(os.fspath(source), os.fspath(target))
+    except FileExistsError:
         raise
+    except OSError as exc:
+        if exc.errno == errno.EEXIST or getattr(exc, "winerror", None) in {80, 183}:
+            _raise_publication_error(
+                errno.EEXIST,
+                source,
+                target,
+                operation="Windows no-replace rename",
+            )
+        raise
+
+
+def _rename_directory_noreplace_linux(source: Path, target: Path) -> None:
+    """Call libc ``renameat2(..., RENAME_NOREPLACE)`` without raw syscalls."""
+
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = getattr(libc, "renameat2")
+    except (AttributeError, OSError) as exc:
+        raise OSError(
+            errno.ENOTSUP,
+            "Linux atomic directory no-replace primitive renameat2 is unavailable; "
+            "refusing a racy publication.",
+        ) from exc
+    renameat2.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
+    renameat2.restype = ctypes.c_int
+    at_fdcwd = getattr(os, "AT_FDCWD", -100)
+    result = renameat2(
+        at_fdcwd,
+        os.fsencode(source),
+        at_fdcwd,
+        os.fsencode(target),
+        1,  # Linux RENAME_NOREPLACE, a documented renameat2 flag.
+    )
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    _raise_publication_error(
+        error_number or errno.EIO,
+        source,
+        target,
+        operation="Linux renameat2 RENAME_NOREPLACE",
+    )
+
+
+def _rename_directory_noreplace_macos(source: Path, target: Path) -> None:
+    """Call macOS ``renamex_np(..., RENAME_EXCL)`` through libc."""
+
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+    except OSError as exc:
+        raise OSError(
+            errno.ENOTSUP,
+            "macOS atomic directory no-replace libc is unavailable; "
+            "refusing a racy publication.",
+        ) from exc
+
+    source_bytes = os.fsencode(source)
+    target_bytes = os.fsencode(target)
+    try:
+        renamex_np = getattr(libc, "renamex_np")
+    except AttributeError:
+        try:
+            renameatx_np = getattr(libc, "renameatx_np")
+        except AttributeError as exc:
+            raise OSError(
+                errno.ENOTSUP,
+                "macOS atomic directory no-replace primitive renamex_np/renameatx_np "
+                "is unavailable; refusing a racy publication.",
+            ) from exc
+        renameatx_np.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        renameatx_np.restype = ctypes.c_int
+        result = renameatx_np(-2, source_bytes, -2, target_bytes, 0x00000004)
     else:
-        if backup is not None:
-            shutil.rmtree(backup, ignore_errors=True)
+        renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        renamex_np.restype = ctypes.c_int
+        result = renamex_np(source_bytes, target_bytes, 0x00000004)
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    _raise_publication_error(
+        error_number or errno.EIO,
+        source,
+        target,
+        operation="macOS renamex_np/renameatx_np RENAME_EXCL",
+    )
+
+
+def _rename_directory_noreplace(source: Path, target: Path) -> None:
+    """Publish a directory with an atomic, no-replace primitive."""
+
+    if os.name == "nt":
+        _rename_directory_noreplace_windows(source, target)
+        return
+    if sys.platform.startswith("linux"):
+        _rename_directory_noreplace_linux(source, target)
+        return
+    if sys.platform == "darwin":
+        _rename_directory_noreplace_macos(source, target)
+        return
+    raise OSError(
+        errno.ENOTSUP,
+        f"Atomic directory no-replace publication is unsupported on {sys.platform!r}; "
+        "refusing a racy rename.",
+    )
+
+
+def _commit_staging_output(
+    target: Path,
+    staging: Path,
+    *,
+    expected_state: _TargetState | None = None,
+    warning_sink: list[str] | None = None,
+) -> None:
+    """Commit a verified staging tree without deleting a changed target."""
+
+    if expected_state is None:
+        expected_state = _capture_target_state(target)
+    lock_path = _acquire_transaction_lock(target, warning_sink=warning_sink)
+    backup: Path | None = None
+    committed = False
+    primary_error: BaseException | None = None
+    try:
+        current = _capture_target_state(target)
+        if current.reparse:
+            raise FileExistsError(
+                f"Output target is a symbolic link or reparse point: {target}."
+            )
+        if current != expected_state:
+            raise FileExistsError(
+                f"Output target changed during analysis; refusing to replace {target}."
+            )
+
+        if _path_exists(target):
+            backup = target.with_name(f".{target.name}.backup-{uuid4().hex}")
+            # Directory replacement is atomic on the same filesystem.  The
+            # backup is retained until the new target has been published.
+            target.replace(backup)
+            isolated = _capture_target_state(backup)
+            if isolated.reparse:
+                raise FileExistsError(
+                    f"Isolated output target is a symbolic link or reparse point: {backup}."
+                )
+            if _path_exists(target):
+                raise FileExistsError(
+                    f"Rollback conflict for {target}: target reappeared; "
+                    f"isolated backup preserved at {backup}."
+                )
+            if isolated != expected_state:
+                raise FileExistsError(
+                    f"Output target changed while being isolated; "
+                    f"backup preserved at {backup}."
+                )
+
+        # Re-check immediately before the no-replace directory rename.  The
+        # operation remains fail-closed on Windows and for non-empty POSIX
+        # directories if an external writer wins this last race.
+        current = _capture_target_state(target)
+        if current.reparse:
+            raise FileExistsError(
+                f"Output target is a symbolic link or reparse point: {target}."
+            )
+        if current.exists:
+            raise FileExistsError(
+                f"Output target appeared during commit; refusing to replace {target}."
+            )
+        try:
+            _rename_directory_noreplace(staging, target)
+        except Exception as exc:
+            primary_error = exc
+            _attempt_restore_backup(
+                backup,
+                target,
+                primary_error=exc,
+                warning_sink=warning_sink,
+            )
+            backup = None
+            raise
+        committed = True
+    except Exception as exc:
+        primary_error = primary_error or exc
+        raise
+    finally:
+        if committed:
+            if backup is not None:
+                _safe_rmtree(
+                    backup,
+                    warning_sink=warning_sink,
+                    context="published transaction backup",
+                )
+        elif backup is not None:
+            _attempt_restore_backup(
+                backup,
+                target,
+                primary_error=primary_error,
+                warning_sink=warning_sink,
+            )
+        try:
+            _release_transaction_lock(lock_path, warning_sink=warning_sink)
+        except Exception as exc:
+            _record_transaction_warning(
+                f"Transaction lock cleanup failed for {lock_path}: "
+                f"{type(exc).__name__}: {exc}",
+                warning_sink,
+            )
 
 
 def _lookup_elastic_override(
@@ -275,6 +941,136 @@ def _revalidate_user_tensor(tensor: ElasticTensor) -> ElasticTensor:
     )
 
 
+_HARDLINK_UNSUPPORTED_ERRNOS = frozenset(
+    value
+    for value in (
+        getattr(errno, "EOPNOTSUPP", None),
+        getattr(errno, "ENOTSUP", None),
+        getattr(errno, "EPERM", None),
+        getattr(errno, "EXDEV", None),
+        getattr(errno, "ENOSYS", None),
+        getattr(errno, "EINVAL", None),
+    )
+    if value is not None
+)
+
+
+def _hardlink_unsupported(exc: OSError) -> bool:
+    return isinstance(exc, PermissionError) or exc.errno in _HARDLINK_UNSUPPORTED_ERRNOS
+
+
+def _publish_private_snapshot(
+    temporary: Path,
+    candidate: Path,
+    *,
+    expected_digest: str,
+    expected_size: int,
+    warning_sink: list[str] | None = None,
+) -> bool:
+    """Publish a private snapshot without replacing a candidate path."""
+
+    try:
+        os.link(os.fspath(temporary), os.fspath(candidate))
+        return True
+    except FileExistsError:
+        return False
+    except OSError as exc:
+        if not _hardlink_unsupported(exc):
+            raise
+
+    # Hardlinks are unavailable on some filesystems.  O_EXCL keeps this
+    # fallback no-overwrite, while the file remains private to the staging
+    # directory and is verified before the caller exports a manifest.
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            os.fspath(candidate),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0),
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as output:
+            descriptor = None
+            with temporary.open("rb") as source:
+                shutil.copyfileobj(source, output)
+            output.flush()
+            os.fsync(output.fileno())
+        if (
+            sha256_file(candidate) != expected_digest
+            or candidate.stat().st_size != expected_size
+        ):
+            raise OSError("Published provider snapshot failed integrity verification.")
+        return True
+    except FileExistsError:
+        return False
+    except Exception:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _safe_unlink(
+            candidate,
+            warning_sink=warning_sink,
+            context="partial snapshot fallback",
+        )
+        raise
+
+
+def _copy_local_snapshot(
+    source: Path,
+    candidate: Path,
+    *,
+    expected_digest: str,
+    expected_size: int,
+) -> Path:
+    """Copy one local CIF through a verified private snapshot."""
+
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{candidate.name}-",
+        suffix=".tmp",
+        dir=str(candidate.parent),
+    )
+    temporary = Path(temporary_name)
+    descriptor_open = True
+    try:
+        os.close(descriptor)
+        descriptor_open = False
+        shutil.copy2(source, temporary)
+        source_after_digest = sha256_file(source)
+        source_after_size = source.stat().st_size
+        if (
+            sha256_file(temporary) != expected_digest
+            or temporary.stat().st_size != expected_size
+            or source_after_digest != expected_digest
+            or source_after_size != expected_size
+        ):
+            raise RuntimeError(
+                f"Local CIF source changed while being copied: {source}."
+            )
+        if _path_exists(candidate):
+            raise FileExistsError(
+                f"Local CIF staging target appeared during copy: {candidate}."
+            )
+        if not _publish_private_snapshot(
+            temporary,
+            candidate,
+            expected_digest=expected_digest,
+            expected_size=expected_size,
+        ):
+            raise FileExistsError(
+                f"Local CIF staging target appeared during publish: {candidate}."
+            )
+        return candidate
+    finally:
+        if descriptor_open:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _safe_unlink(temporary, context="local CIF temporary snapshot")
+
+
 def _copy_local_input(
     cif_path: Path,
     inputs_dir: Path,
@@ -283,8 +1079,14 @@ def _copy_local_input(
     elastic_override: ElasticTensor | None = None,
 ) -> tuple[Path, ElasticTensor | None]:
     digest = sha256_file(cif_path)
+    size = cif_path.stat().st_size
     target = _unique_input_target(cif_path, inputs_dir, digest)
-    shutil.copy2(cif_path, target)
+    _copy_local_snapshot(
+        cif_path,
+        target,
+        expected_digest=digest,
+        expected_size=size,
+    )
 
     if not include_elasticity:
         return target, None
@@ -341,6 +1143,7 @@ def _copy_provider_artifact(
     )
     _reject_reparse_components(preferred, label="staged provider artifact")
     digest = sha256_file(source_path)
+    size = source_path.stat().st_size
     candidate = preferred
     if candidate.exists():
         if candidate.is_file() and sha256_file(candidate) == digest:
@@ -356,8 +1159,50 @@ def _copy_provider_artifact(
                 f"{preferred.stem}_{digest[:8]}_{counter}{preferred.suffix}"
             )
             counter += 1
-    shutil.copy2(source_path, candidate)
-    return candidate
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{candidate.name}-",
+        suffix=".tmp",
+        dir=str(destination_dir),
+    )
+    temporary = Path(temporary_name)
+    descriptor_open = True
+    try:
+        os.close(descriptor)
+        descriptor_open = False
+        shutil.copy2(source_path, temporary)
+        source_after_digest = sha256_file(source_path)
+        source_after_size = source_path.stat().st_size
+        if (
+            sha256_file(temporary) != digest
+            or temporary.stat().st_size != size
+            or source_after_digest != digest
+            or source_after_size != size
+        ):
+            raise OSError("Provider artifact changed while it was being copied.")
+
+        while True:
+            if _path_exists(candidate):
+                if candidate.is_file() and sha256_file(candidate) == digest:
+                    return candidate
+                candidate = destination_dir / (
+                    f"{preferred.stem}_{digest[:8]}_{uuid4().hex[:8]}{preferred.suffix}"
+                )
+                continue
+            if _publish_private_snapshot(
+                temporary,
+                candidate,
+                expected_digest=digest,
+                expected_size=size,
+            ):
+                return candidate
+    finally:
+        if descriptor_open:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _safe_unlink(temporary, context="provider artifact temporary snapshot")
 
 
 def _stable_provider_artifact_error(prefix: str, source: object, exc: Exception) -> str:
@@ -395,6 +1240,12 @@ def _failed_download_artifact(item: DownloadArtifact, message: str) -> DownloadA
     )
 
 
+def _canonical_material_id(value: object) -> str:
+    """Return an internal material key without changing the source record."""
+
+    return str(value).strip().casefold()
+
+
 def _reconcile_download_coverage(
     candidates: Sequence[Any],
     downloads: Sequence[DownloadArtifact] | None,
@@ -409,7 +1260,7 @@ def _reconcile_download_coverage(
     requested: dict[str, Any] = {}
     requested_order: list[str] = []
     for candidate in candidates:
-        material_id = str(candidate.material_id)
+        material_id = _canonical_material_id(candidate.material_id)
         if material_id not in requested:
             requested[material_id] = candidate
             requested_order.append(material_id)
@@ -418,14 +1269,17 @@ def _reconcile_download_coverage(
     unrequested: list[DownloadArtifact] = []
     diagnostics: list[DiagnosticRecord] = []
     for item in list(downloads or []):
-        material_id = str(item.candidate.material_id)
+        material_id = _canonical_material_id(item.candidate.material_id)
         if material_id not in requested:
             message = (
-                f"unrequested provider download artifact for candidate {material_id!r}; "
+                f"unrequested provider download artifact for candidate "
+                f"{item.candidate.material_id!r}; "
                 "artifact was rejected."
             )
             unrequested.append(_failed_download_artifact(item, message))
-            diagnostics.append(DiagnosticRecord("download", material_id, "error", message))
+            diagnostics.append(
+                DiagnosticRecord("download", item.candidate.material_id, "error", message)
+            )
             continue
         returned.setdefault(material_id, []).append(item)
 
@@ -434,7 +1288,8 @@ def _reconcile_download_coverage(
         matches = returned.get(material_id, [])
         if not matches:
             message = (
-                f"missing provider download artifact for requested candidate {material_id!r}."
+                "missing provider download artifact for requested candidate "
+                f"{requested[material_id].material_id!r}."
             )
             reconciled.append(
                 DownloadArtifact(
@@ -444,15 +1299,24 @@ def _reconcile_download_coverage(
                     error=message,
                 )
             )
-            diagnostics.append(DiagnosticRecord("download", material_id, "error", message))
+            diagnostics.append(
+                DiagnosticRecord(
+                    "download", requested[material_id].material_id, "error", message
+                )
+            )
             continue
         if len(matches) > 1:
             message = (
-                f"duplicate provider download artifacts for requested candidate {material_id!r}; "
+                "duplicate provider download artifacts for requested candidate "
+                f"{requested[material_id].material_id!r}; "
                 "all duplicates were rejected."
             )
             reconciled.extend(_failed_download_artifact(item, message) for item in matches)
-            diagnostics.append(DiagnosticRecord("download", material_id, "error", message))
+            diagnostics.append(
+                DiagnosticRecord(
+                    "download", requested[material_id].material_id, "error", message
+                )
+            )
             continue
         reconciled.append(matches[0])
 
@@ -740,17 +1604,68 @@ def _diagnostic_warnings(diagnostics: list[DiagnosticRecord]) -> list[str]:
     )
 
 
-def _verify_and_commit(target: Path, staging: Path, *, overwrite: bool) -> Path:
+def _verify_staged_analysis_inputs(
+    analyses: Sequence[PhaseAnalysis], staging: Path
+) -> None:
+    """Ensure exported analysis tables still describe the staged CIF bytes."""
+
+    staging_abs = Path(os.path.abspath(os.fspath(staging)))
+    for analysis in analyses:
+        cif_path = Path(analysis.structure.cif_path)
+        cif_abs = Path(os.path.abspath(os.fspath(cif_path)))
+        try:
+            cif_abs.relative_to(staging_abs)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Analysis CIF is outside the staging directory: {cif_path}"
+            ) from exc
+        try:
+            actual_hash = sha256_file(cif_abs)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Could not re-read analysis CIF before commit: {cif_path}"
+            ) from exc
+        if actual_hash != analysis.structure.cif_sha256:
+            raise RuntimeError(
+                f"Analysis CIF hash changed before commit: {cif_path.name}."
+            )
+
+
+def _verify_and_commit(
+    target: Path,
+    staging: Path,
+    *,
+    overwrite: bool,
+    analyses: Sequence[PhaseAnalysis] = (),
+    expected_state: _TargetState | None = None,
+    diagnostics: list[DiagnosticRecord] | None = None,
+) -> Path:
     report = verify_bundle(staging)
     if not report["ok"]:
         raise RuntimeError(
             "Generated bundle failed its integrity check: " + "; ".join(report["errors"])
         )
+    _verify_staged_analysis_inputs(analyses, staging)
     # Close the long-running transaction's time-of-check/time-of-use gap. A
     # target created or modified during analysis must satisfy the same overwrite
     # policy as it did before the run started.
     _validate_output_target(target, overwrite=overwrite)
-    _commit_staging_output(target, staging)
+    if expected_state is None:
+        expected_state = _capture_target_state(target)
+    transaction_warnings: list[str] = []
+    try:
+        _commit_staging_output(
+            target,
+            staging,
+            expected_state=expected_state,
+            warning_sink=transaction_warnings,
+        )
+    finally:
+        if diagnostics is not None:
+            diagnostics.extend(
+                DiagnosticRecord("transaction", target.name, "warning", message)
+                for message in transaction_warnings
+            )
     return target / "manifest.json"
 
 
@@ -771,6 +1686,7 @@ def analyze_cifs(
     if not paths:
         raise FileNotFoundError("No CIF files were found in the supplied inputs.")
     target = _validate_output_target(output_dir, overwrite=overwrite)
+    expected_target_state = _capture_target_state(target)
     staging = _create_staging_output(target)
     try:
         inputs_dir = staging / "inputs"
@@ -797,7 +1713,14 @@ def analyze_cifs(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
-        manifest = _verify_and_commit(target, staging, overwrite=overwrite)
+        manifest = _verify_and_commit(
+            target,
+            staging,
+            overwrite=overwrite,
+            analyses=analyses,
+            expected_state=expected_target_state,
+            diagnostics=diagnostics,
+        )
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -833,6 +1756,7 @@ def export_discovery(
     overwrite: bool = False,
 ) -> PipelineResult:
     target = _validate_output_target(output_dir, overwrite=overwrite)
+    expected_target_state = _capture_target_state(target)
     discovery = discover_candidates(
         composition,
         provider,
@@ -853,7 +1777,13 @@ def export_discovery(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
-        manifest = _verify_and_commit(target, staging, overwrite=overwrite)
+        manifest = _verify_and_commit(
+            target,
+            staging,
+            overwrite=overwrite,
+            expected_state=expected_target_state,
+            diagnostics=diagnostics,
+        )
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -900,6 +1830,7 @@ def run_pipeline(
         raise ValueError("confirm_above must be a positive integer.")
 
     target = _validate_output_target(output_dir, overwrite=overwrite)
+    expected_target_state = _capture_target_state(target)
     discovery = discover_candidates(
         composition,
         provider,
@@ -1016,7 +1947,14 @@ def run_pipeline(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
-        manifest = _verify_and_commit(target, staging, overwrite=overwrite)
+        manifest = _verify_and_commit(
+            target,
+            staging,
+            overwrite=overwrite,
+            analyses=analyses,
+            expected_state=expected_target_state,
+            diagnostics=diagnostics,
+        )
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise

@@ -42,6 +42,20 @@ All notable changes are recorded here. The project follows semantic versioning a
   multiplicity-greater-than-one regression.
 - Migrated package licensing metadata to the SPDX form required by current
   setuptools while retaining the complete MIT license file.
+- Made GUI scroll-wheel and focus bindings idempotent across repeated widget
+  mapping, and stopped disabled built-in-source radiation fields from blocking
+  a run with stale non-numeric text.
+- Added explicit `--wavelength-A` / `--energy-keV` modes to standalone
+  quick-export, with an actionable error for an under-specified `Custom`
+  source; normalized trailing folder paths in the Windows drag-and-drop
+  launcher.
+- Kept Unicode phase/CIF names in provenance and tabular exports while using
+  a neutral ASCII title for dependency-free raster figures, so base installs
+  still emit both SVG and PNG outputs.
+- Cleaned unique same-directory text-export temporary files on every failure
+  path and constrained the Materials Project extras for Python 3.10 to
+  `mp-api<0.46` and `pymatgen<2026` while leaving newer Python lower bounds
+  unbounded.
 
 ### Notes
 

@@ -44,8 +44,10 @@ dependencies = [
 
 [project.optional-dependencies]
 mp = [
-  "mp-api>=0.43",
-  "pymatgen>=2024.11.13",
+  "mp-api>=0.43,<0.46; python_version < '3.11'",
+  "mp-api>=0.43; python_version >= '3.11'",
+  "pymatgen>=2024.11.13,<2026; python_version < '3.11'",
+  "pymatgen>=2024.11.13; python_version >= '3.11'",
 ]
 test = [
   "pytest>=8.0",

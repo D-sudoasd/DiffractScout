@@ -11,7 +11,11 @@ import pytest
 from diffractscout.demo import write_demo_inputs
 from diffractscout.elasticity import discover_elastic_tensor
 from diffractscout.models import CandidateRecord, DiscoverySettings, DownloadArtifact
-from diffractscout.pipeline import run_pipeline
+from diffractscout.pipeline import (
+    _copy_provider_artifact,
+    _reconcile_download_coverage,
+    run_pipeline,
+)
 from diffractscout.validation import verify_bundle
 
 
@@ -245,6 +249,49 @@ def test_provider_artifacts_are_copied_and_rebound_into_committed_bundle(
     assert nested[0] == "inputs/provider-metadata.txt"
     assert nested[1]["tuple"][0] == "inputs/provider-metadata.txt"
     assert verify_bundle(output)["ok"]
+
+
+def test_provider_artifact_copy_cleans_partial_file_on_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    source = tmp_path / "source.cif"
+    source.write_bytes(b"complete CIF payload")
+    destination = tmp_path / "inputs"
+
+    def partial_copy(_source: str | Path, target: str | Path, **_kwargs: object) -> None:
+        Path(target).write_bytes(b"partial")
+        raise OSError("simulated copy failure")
+
+    monkeypatch.setattr(pipeline.shutil, "copy2", partial_copy)
+    with pytest.raises(OSError, match="simulated copy failure"):
+        _copy_provider_artifact(
+            source,
+            destination,
+            preferred_name="source.cif",
+            suffix=".cif",
+        )
+
+    assert not list(destination.iterdir())
+
+
+def test_provider_download_reconciliation_matches_material_ids_case_insensitively() -> None:
+    requested = CandidateRecord(material_id="MP-1", formula="Al")
+    returned_candidate = CandidateRecord(material_id="mp-1", formula="Al")
+    returned = DownloadArtifact(
+        candidate=returned_candidate,
+        cif_path=None,
+        status="failed",
+        error="provider fixture",
+    )
+
+    reconciled, diagnostics = _reconcile_download_coverage([requested], [returned])
+
+    assert diagnostics == []
+    assert len(reconciled) == 1
+    assert reconciled[0].candidate is returned_candidate
+    assert reconciled[0].candidate.material_id == "mp-1"
 
 
 def test_successful_candidate_without_cif_or_elasticity_is_diagnosed(tmp_path: Path) -> None:
