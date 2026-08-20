@@ -421,6 +421,82 @@ def _lock_snapshot(lock_path: Path) -> tuple[bytes, tuple[int, int, int, int, in
     return raw, identity
 
 
+def _restore_isolated_transaction_lock(
+    isolated_path: Path,
+    lock_path: Path,
+    raw: bytes | None,
+    warning_sink: list[str] | None = None,
+) -> None:
+    """Restore an isolated lock without replacing a lock that won the race."""
+
+    try:
+        os.link(os.fspath(isolated_path), os.fspath(lock_path))
+    except FileExistsError:
+        # The current path is another lock.  Keep both objects rather than
+        # replacing the live lock or deleting the isolated one.
+        _record_transaction_warning(
+            f"Transaction lock {lock_path} appeared while restoring {isolated_path}; "
+            "preserving both locks.",
+            warning_sink,
+        )
+        return
+    except FileNotFoundError:
+        _record_transaction_warning(
+            f"Isolated transaction lock {isolated_path} disappeared while restoring; "
+            f"leaving {lock_path} untouched.",
+            warning_sink,
+        )
+        return
+    except OSError:
+        # Hardlinks are unavailable on some filesystems.  O_EXCL still makes
+        # this fallback no-replace; the isolated object remains until the
+        # restored copy is complete.
+        if raw is None:
+            _record_transaction_warning(
+                f"Could not restore isolated transaction lock {isolated_path} to "
+                f"{lock_path} without verifying its contents; isolated lock preserved.",
+                warning_sink,
+            )
+            return
+        descriptor: int | None = None
+        try:
+            descriptor = os.open(
+                os.fspath(lock_path),
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0),
+                0o600,
+            )
+            with os.fdopen(descriptor, "wb") as output:
+                descriptor = None
+                output.write(raw)
+                output.flush()
+                os.fsync(output.fileno())
+        except FileExistsError:
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            return
+        except OSError as exc:
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            _record_transaction_warning(
+                f"Could not restore changed transaction lock {lock_path}: "
+                f"{type(exc).__name__}: {exc}; isolated lock preserved at {isolated_path}.",
+                warning_sink,
+            )
+            return
+
+    _safe_unlink(
+        isolated_path,
+        warning_sink=warning_sink,
+        context="isolated transaction lock",
+    )
+
+
 def _read_lock_metadata(lock_path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(lock_path.read_text(encoding="utf-8"))
@@ -595,6 +671,18 @@ def _release_transaction_lock(
     """Release a lock without masking a commit result or primary error."""
 
     try:
+        raw, identity = _lock_snapshot(lock_path)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        _record_transaction_warning(
+            f"Could not inspect transaction lock {lock_path} before release: "
+            f"{type(exc).__name__}: {exc}",
+            warning_sink,
+        )
+        return
+
+    try:
         metadata = _read_lock_metadata(lock_path)
     except FileNotFoundError:
         return
@@ -611,8 +699,81 @@ def _release_transaction_lock(
             warning_sink,
         )
         return
+
+    try:
+        current_raw, current_identity = _lock_snapshot(lock_path)
+    except FileNotFoundError:
+        _record_transaction_warning(
+            f"Transaction lock {lock_path} disappeared during release; "
+            "leaving the current lock untouched.",
+            warning_sink,
+        )
+        return
+    except OSError as exc:
+        _record_transaction_warning(
+            f"Could not verify transaction lock {lock_path} before release: "
+            f"{type(exc).__name__}: {exc}; leaving it in place.",
+            warning_sink,
+        )
+        return
+    if current_raw != raw or current_identity != identity:
+        _record_transaction_warning(
+            f"Transaction lock {lock_path} changed during release; "
+            "leaving the current lock in place.",
+            warning_sink,
+        )
+        return
+
+    quarantine = lock_path.with_name(f"{lock_path.name}.release-{uuid4().hex}")
+    try:
+        # Isolate the exact directory entry atomically before removing it.  A
+        # replacement that wins after the last snapshot is moved instead and
+        # is detected below, rather than being unlinked in place.
+        lock_path.replace(quarantine)
+    except FileNotFoundError:
+        _record_transaction_warning(
+            f"Transaction lock {lock_path} disappeared during release; "
+            "leaving the current lock untouched.",
+            warning_sink,
+        )
+        return
+    except OSError as exc:
+        _record_transaction_warning(
+            f"Could not isolate transaction lock {lock_path}: "
+            f"{type(exc).__name__}: {exc}; leaving it in place.",
+            warning_sink,
+        )
+        return
+
+    try:
+        isolated_raw, isolated_identity = _lock_snapshot(quarantine)
+    except FileNotFoundError:
+        _record_transaction_warning(
+            f"Isolated transaction lock {quarantine} disappeared during release; "
+            "refusing unsafe cleanup.",
+            warning_sink,
+        )
+        return
+    except OSError as exc:
+        _record_transaction_warning(
+            f"Could not verify isolated transaction lock {quarantine}: "
+            f"{type(exc).__name__}: {exc}; preserving it.",
+            warning_sink,
+        )
+        _restore_isolated_transaction_lock(quarantine, lock_path, None, warning_sink)
+        return
+
+    if isolated_raw != raw or isolated_identity != identity:
+        _record_transaction_warning(
+            f"Transaction lock {lock_path} changed while being isolated; "
+            "preserving the current lock.",
+            warning_sink,
+        )
+        _restore_isolated_transaction_lock(quarantine, lock_path, isolated_raw, warning_sink)
+        return
+
     _safe_unlink(
-        lock_path,
+        quarantine,
         warning_sink=warning_sink,
         context="transaction lock",
     )

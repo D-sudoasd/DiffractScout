@@ -437,6 +437,105 @@ def test_stale_lock_recovery_and_live_lock_protection(
     assert lock.exists()
 
 
+def test_lock_release_preserves_replacement_after_metadata_read(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    target = tmp_path / "release-race-target"
+    lock = _lock_path_for(target)
+    lock.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "host": pipeline._lock_host(),
+                "pid": os.getpid(),
+                "created_at": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    replacement = tmp_path / "replacement-lock"
+    original_read = pipeline._read_lock_metadata
+
+    def read_then_replace(path: Path) -> dict[str, object]:
+        metadata = original_read(path)
+        replacement.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "host": pipeline._lock_host(),
+                    "pid": os.getpid(),
+                    "created_at": 2.0,
+                }
+            ),
+            encoding="utf-8",
+        )
+        replacement.replace(path)
+        return metadata
+
+    monkeypatch.setattr(pipeline, "_read_lock_metadata", read_then_replace)
+    warning_sink: list[str] = []
+    with pytest.warns(RuntimeWarning, match="changed during release"):
+        _release_transaction_lock(lock, warning_sink=warning_sink)
+
+    assert lock.exists()
+    assert json.loads(lock.read_text(encoding="utf-8"))["created_at"] == 2.0
+    assert any("changed during release" in message for message in warning_sink)
+
+
+def test_lock_release_preserves_replacement_after_final_snapshot(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    target = tmp_path / "release-final-race-target"
+    lock = _lock_path_for(target)
+    lock.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "host": pipeline._lock_host(),
+                "pid": os.getpid(),
+                "created_at": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    replacement = tmp_path / "replacement-final-lock"
+    original_snapshot = pipeline._lock_snapshot
+    snapshot_calls = 0
+
+    def snapshot_then_replace(path: Path) -> tuple[bytes, tuple[int, int, int, int, int]]:
+        nonlocal snapshot_calls
+        snapshot = original_snapshot(path)
+        snapshot_calls += 1
+        if snapshot_calls == 2:
+            replacement.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "host": pipeline._lock_host(),
+                        "pid": os.getpid(),
+                        "created_at": 3.0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replacement.replace(path)
+        return snapshot
+
+    monkeypatch.setattr(pipeline, "_lock_snapshot", snapshot_then_replace)
+    warning_sink: list[str] = []
+    with pytest.warns(RuntimeWarning, match="changed while being isolated"):
+        _release_transaction_lock(lock, warning_sink=warning_sink)
+
+    assert snapshot_calls >= 3
+    assert lock.exists()
+    assert json.loads(lock.read_text(encoding="utf-8"))["created_at"] == 3.0
+    assert any("changed while being isolated" in message for message in warning_sink)
+
+
 def test_lock_cleanup_failure_does_not_mask_success_or_primary_error(
     tmp_path: Path, monkeypatch
 ) -> None:
