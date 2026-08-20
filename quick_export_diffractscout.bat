@@ -22,20 +22,36 @@ goto :trim_first
 for %%I in ("%FIRST%") do set "FIRST_FULL=%%~fI"
 for %%I in ("%FIRST_FULL%") do set "OUT=%%~dpI%%~nI_diffractscout.xlsx"
 
-where py >nul 2>&1
-if not errorlevel 1 goto :run_py
-
 where diffractscout-quick-export >nul 2>&1
+if not errorlevel 1 goto :run_installed
+
+REM Prefer an interpreter only after proving it imports the installed package.
+REM Once an actual export starts, its failure is final; there is no retry with
+REM another runtime that could produce a second bundle or hide the first error.
+where python >nul 2>&1
+if errorlevel 1 goto :check_py_launcher
+call python -c "import diffractscout" >nul 2>&1
+if not errorlevel 1 goto :run_python
+
+:check_py_launcher
+where py >nul 2>&1
 if errorlevel 1 goto :missing_runtime
-goto :run_installed
+call py -3 -c "import diffractscout" >nul 2>&1
+if errorlevel 1 goto :missing_runtime
+goto :run_py
 
 :run_py
-py -3 -m diffractscout quick-export -o "%OUT%" %*
+call py -3 -m diffractscout quick-export -o "%OUT%" %*
+set "RC=%ERRORLEVEL%"
+goto :report
+
+:run_python
+call python -m diffractscout quick-export -o "%OUT%" %*
 set "RC=%ERRORLEVEL%"
 goto :report
 
 :run_installed
-diffractscout-quick-export -o "%OUT%" %*
+call diffractscout-quick-export -o "%OUT%" %*
 set "RC=%ERRORLEVEL%"
 
 :report
@@ -66,8 +82,10 @@ endlocal
 exit /b 1
 
 :missing_runtime
-echo ERROR: Neither "py -3" nor diffractscout-quick-export was found.
-echo Install with:  py -3 -m pip install -e .
+echo ERROR: DiffractScout quick-export is unavailable in the current environment.
+echo Checked the installed diffractscout-quick-export command and Python import preflights.
+echo Install or activate the package with:
+echo   py -3 -m pip install -e .
 pause
 endlocal
 exit /b 1

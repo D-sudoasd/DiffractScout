@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -164,3 +165,46 @@ def test_quick_export_batch_reports_special_character_sibling_path(
     expected = input_dir.parent / f"{input_dir.name}_diffractscout.xlsx"
     assert completed.returncode == 0, completed.stderr
     assert f'Excel: "{expected}"' in completed.stdout
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="requires Windows cmd.exe")
+def test_quick_export_batch_prefers_installed_console_over_unrelated_py(
+    tmp_path: Path,
+) -> None:
+    """A working console entry point wins over an unrelated ``py -3``."""
+
+    root = Path(__file__).resolve().parents[1]
+    script = root / "quick_export_diffractscout.bat"
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    console_marker = tmp_path / "console-used.txt"
+    py_marker = tmp_path / "py-used.txt"
+    console_stub = tmp_path / "diffractscout-quick-export.cmd"
+    console_stub.write_text(
+        "@echo off\r\necho console>\"%CONSOLE_MARKER%\"\r\nexit /b 0\r\n",
+        encoding="ascii",
+    )
+    py_stub = tmp_path / "py.cmd"
+    py_stub.write_text(
+        "@echo off\r\necho py>\"%PY_MARKER%\"\r\nexit /b 9\r\n",
+        encoding="ascii",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = str(tmp_path) + os.pathsep + environment.get("PATH", "")
+    environment["CONSOLE_MARKER"] = str(console_marker)
+    environment["PY_MARKER"] = str(py_marker)
+    completed = subprocess.run(
+        ["cmd.exe", "/d", "/c", "call", str(script), str(input_dir)],
+        input="\r\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert console_marker.read_text(encoding="ascii").strip() == "console"
+    assert not py_marker.exists()
