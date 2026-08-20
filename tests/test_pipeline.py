@@ -437,6 +437,30 @@ def test_stale_lock_recovery_and_live_lock_protection(
     assert lock.exists()
 
 
+def test_lock_snapshot_identity_is_rename_stable_and_replacement_sensitive(
+    tmp_path: Path,
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    lock = tmp_path / "identity-lock"
+    lock.write_bytes(b"original-lock")
+    original_raw, original_identity = pipeline._lock_snapshot(lock)
+
+    renamed = tmp_path / "identity-lock-renamed"
+    lock.replace(renamed)
+    renamed_raw, renamed_identity = pipeline._lock_snapshot(renamed)
+    assert renamed_raw == original_raw
+    assert renamed_identity == original_identity
+
+    replacement = tmp_path / "identity-lock-replacement"
+    replacement.write_bytes(b"replaced-lock")
+    replacement.replace(renamed)
+    replaced_raw, replaced_identity = pipeline._lock_snapshot(renamed)
+    assert replaced_raw != original_raw
+    if original_identity[:2] != (0, 0):
+        assert replaced_identity != original_identity
+
+
 def test_lock_release_preserves_replacement_after_metadata_read(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -506,7 +530,7 @@ def test_lock_release_preserves_replacement_after_final_snapshot(
     original_snapshot = pipeline._lock_snapshot
     snapshot_calls = 0
 
-    def snapshot_then_replace(path: Path) -> tuple[bytes, tuple[int, int, int, int, int]]:
+    def snapshot_then_replace(path: Path) -> tuple[bytes, tuple[int, int, int]]:
         nonlocal snapshot_calls
         snapshot = original_snapshot(path)
         snapshot_calls += 1

@@ -408,14 +408,12 @@ def _process_is_alive(pid: int) -> bool:
     return True
 
 
-def _lock_snapshot(lock_path: Path) -> tuple[bytes, tuple[int, int, int, int, int]]:
+def _lock_snapshot(lock_path: Path) -> tuple[bytes, tuple[int, int, int]]:
     raw = lock_path.read_bytes()
     stat_result = lock_path.stat(follow_symlinks=False)
     identity = (
         int(getattr(stat_result, "st_dev", 0)),
         int(getattr(stat_result, "st_ino", 0)),
-        int(getattr(stat_result, "st_ctime_ns", 0)),
-        int(getattr(stat_result, "st_mtime_ns", 0)),
         int(getattr(stat_result, "st_size", 0)),
     )
     return raw, identity
