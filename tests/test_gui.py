@@ -453,6 +453,59 @@ def test_scrollable_focus_reveals_focused_descendant() -> None:
         app.destroy()
 
 
+def test_default_sash_waits_for_configure_when_geometry_is_invalid(monkeypatch) -> None:
+    app = _create_test_app()
+    try:
+        app._cancel_after_id("_sash_after_id")
+        app._sash_initialized = False
+        monkeypatch.setattr(app._main_paned, "winfo_height", lambda: 0)
+        app._set_default_sash()
+        assert app._sash_after_id is None
+        assert not app._sash_initialized
+
+        monkeypatch.undo()
+        app._schedule_default_sash()
+        assert app._sash_after_id is not None
+        app.update()
+        assert app._sash_initialized
+        assert app._sash_after_id is None
+    finally:
+        app.destroy()
+
+
+def test_default_sash_is_initialized_once_and_not_reset(monkeypatch) -> None:
+    app = _create_test_app()
+    try:
+        app.geometry("900x640")
+        app.update_idletasks()
+        app.update()
+        assert app._sash_initialized
+        calls = []
+        sashpos = app._main_paned.sashpos
+
+        def track_sashpos(index, position=None):
+            if position is not None:
+                calls.append((index, position))
+            return sashpos(index, position) if position is not None else sashpos(index)
+
+        monkeypatch.setattr(app._main_paned, "sashpos", track_sashpos)
+        app._schedule_default_sash()
+        app.update()
+        assert app._sash_after_id is None
+        assert calls == []
+    finally:
+        app.destroy()
+
+
+def test_default_sash_callback_is_cancelled_on_destroy() -> None:
+    app = _create_test_app()
+    try:
+        assert app._sash_after_id is not None
+    finally:
+        app.destroy()
+    assert app._sash_after_id is None
+
+
 @pytest.mark.parametrize("geometry", ["900x640", "1200x820"])
 def test_scrollable_focus_bindings_are_idempotent_and_cover_all_tabs(geometry: str) -> None:
     focusable_classes = {

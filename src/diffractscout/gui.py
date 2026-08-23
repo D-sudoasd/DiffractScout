@@ -259,6 +259,8 @@ if tk is not None:
             self._lab_views_forced_off = False
             self._poll_after_id: str | None = None
             self._wrap_after_id: str | None = None
+            self._sash_after_id: str | None = None
+            self._sash_initialized = False
 
             self._configure_style()
             self._create_variables()
@@ -476,14 +478,25 @@ if tk is not None:
             # Give the form most of the space only after Tk has assigned real
             # geometry. Calling sashpos against the initial 1-pixel pane can
             # make the activity pane overlap the form on short windows.
-            self.after_idle(self._set_default_sash)
+            paned.bind("<Configure>", self._schedule_default_sash, add="+")
+            self._schedule_default_sash()
+
+        def _schedule_default_sash(self, _event: object | None = None) -> None:
+            if self._sash_initialized or self._sash_after_id is not None:
+                return
+            try:
+                self._sash_after_id = self.after_idle(self._set_default_sash)
+            except tk.TclError:  # pragma: no cover - teardown race
+                self._sash_after_id = None
 
         def _set_default_sash(self) -> None:
+            self._sash_after_id = None
+            if self._sash_initialized:
+                return
             try:
                 self.update_idletasks()
                 height = int(self._main_paned.winfo_height())
                 if height <= 0:
-                    self.after(40, self._set_default_sash)
                     return
                 # Keep both panes usable at the minimum window size. The
                 # position is relative to the Panedwindow, not the root (the
@@ -492,11 +505,11 @@ if tk is not None:
                 form_min = 300
                 sash = max(form_min, min(height - activity_min, int(height * 0.72)))
                 if sash <= 0 or sash >= height:
-                    self.after(40, self._set_default_sash)
                     return
                 self._main_paned.sashpos(0, sash)
+                self._sash_initialized = True
             except (tk.TclError, ValueError):  # pragma: no cover - geometry timing
-                self.after(40, self._set_default_sash)
+                return
 
         def _make_scrollable(self, parent: Any, *, bg: str = CARD) -> tuple[Any, Any]:
             """Return (outer_frame, interior_frame) with vertical scrollbar + mouse wheel."""
@@ -1245,6 +1258,7 @@ if tk is not None:
         def _cancel_scheduled_callbacks(self) -> None:
             self._cancel_after_id("_poll_after_id")
             self._cancel_after_id("_wrap_after_id")
+            self._cancel_after_id("_sash_after_id")
 
         def _update_wraplengths(self) -> None:
             self._wrap_after_id = None
