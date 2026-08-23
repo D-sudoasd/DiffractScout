@@ -362,10 +362,10 @@ class MaterialsProjectProvider:
         tensor = _value(document, "elastic_tensor") if document is not None else None
         ieee = _matrix(_value(tensor, "ieee_format"))
         raw = _matrix(_value(tensor, "raw"))
-        # Materials Project documents the raw/POSCAR-format tensor as consistent
-        # with the downloadable conventional-standard CIF. The IEEE tensor can
-        # differ by a rotation and is retained for provenance, but is not used
-        # for hkl-resolved calculations without that rotation.
+        # The raw/POSCAR tensor is retained numerically, but this provider does
+        # not persist the upstream structure orientation needed to verify a
+        # transform into the emitted CIF Cartesian frame.  Keep the tensor for
+        # provenance and fail closed for hkl-resolved calculations.
         stiffness = raw if conventional_unit_cell else None
         if query_error:
             status = "elasticity_query_failed"
@@ -376,9 +376,13 @@ class MaterialsProjectProvider:
             coordinate_frame = ""
             error = "No elasticity document was returned for this material."
         elif stiffness is not None:
-            status = "ok"
+            status = "frame_transform_required"
             coordinate_frame = MP_CONVENTIONAL_CIF_FRAME
-            error = ""
+            error = (
+                "The Materials Project raw/POSCAR tensor orientation is not verified against "
+                "the emitted CIF Cartesian frame; an explicit verified transform is required "
+                "before hkl-resolved properties can be evaluated."
+            )
         elif ieee is not None:
             status = "frame_transform_required"
             coordinate_frame = MP_IEEE_CONVENTIONAL_FRAME
@@ -415,7 +419,7 @@ class MaterialsProjectProvider:
                 "nature_of_data": "DFT_calculated" if (raw is not None or ieee is not None) else "none",
                 "numerical_cij": raw is not None or ieee is not None,
                 "query_error": query_error,
-                "usable_for_hkl_modulus": stiffness is not None,
+                "usable_for_hkl_modulus": status == "ok" and stiffness is not None,
                 "not_experimental": True,
                 "coordinate_frame": coordinate_frame,
             },

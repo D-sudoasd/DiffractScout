@@ -97,6 +97,305 @@ def test_quick_export_keyword_overrides_apply_to_explicit_settings(
     assert result.analyses[0].metadata["step_deg"] == pytest.approx(0.05)
 
 
+def test_quick_export_radiation_keywords_infer_physical_mode(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    energy_result = quick_export(
+        [demo_inputs],
+        tmp_path / "energy-inferred",
+        energy_keV=20.0,
+        include_excel=False,
+    )
+    energy_analysis = energy_result.analyses[0]
+    energy_provenance = json.loads(
+        (energy_result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )
+    assert energy_provenance["analysis_settings"]["input_mode"] == "energy"
+    assert energy_analysis.energy_keV == pytest.approx(20.0)
+    assert energy_analysis.wavelength_A == pytest.approx(12.398419843320026 / 20.0)
+    assert energy_analysis.wavelength_source == "energy_keV"
+
+    wavelength_result = quick_export(
+        [demo_inputs],
+        tmp_path / "wavelength-inferred",
+        wavelength_A=1.2,
+        include_excel=False,
+    )
+    wavelength_analysis = wavelength_result.analyses[0]
+    wavelength_provenance = json.loads(
+        (wavelength_result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )
+    assert wavelength_provenance["analysis_settings"]["input_mode"] == "wavelength"
+    assert wavelength_analysis.wavelength_A == pytest.approx(1.2)
+    assert wavelength_analysis.energy_keV == pytest.approx(12.398419843320026 / 1.2)
+    assert wavelength_analysis.wavelength_source == "wavelength_A"
+
+
+@pytest.mark.parametrize(
+    ("case", "settings", "expected_wavelength", "expected_energy"),
+    [
+        (
+            "energy-clears-stale-wavelength",
+            AnalysisSettings(input_mode="energy", energy_keV=20.0, wavelength_A=1.2),
+            None,
+            pytest.approx(20.0),
+        ),
+        (
+            "wavelength-clears-stale-energy",
+            AnalysisSettings(input_mode="wavelength", wavelength_A=1.2, energy_keV=20.0),
+            pytest.approx(1.2),
+            None,
+        ),
+        (
+            "builtin-source-clears-stale-radiation",
+            AnalysisSettings(
+                input_mode="source",
+                source_preset="Cu Ka",
+                wavelength_A=1.2,
+                energy_keV=20.0,
+            ),
+            None,
+            None,
+        ),
+        (
+            "custom-source-keeps-wavelength",
+            AnalysisSettings(
+                input_mode="source",
+                source_preset="Custom",
+                wavelength_A=1.2,
+                energy_keV=20.0,
+            ),
+            pytest.approx(1.2),
+            None,
+        ),
+    ],
+)
+def test_quick_export_normalizes_direct_settings_before_validation(
+    demo_inputs: Path,
+    tmp_path: Path,
+    case: str,
+    settings: AnalysisSettings,
+    expected_wavelength: object,
+    expected_energy: object,
+) -> None:
+    """Inactive direct-settings radiation fields do not reach pipeline validation."""
+
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / case,
+        settings=settings,
+        include_excel=False,
+    )
+
+    persisted = json.loads(
+        (result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )["analysis_settings"]
+    assert persisted["input_mode"] == settings.input_mode
+    assert persisted["source_preset"] == settings.source_preset
+    assert persisted["wavelength_A"] == expected_wavelength
+    assert persisted["energy_keV"] == expected_energy
+
+
+def test_quick_export_settings_radiation_override_is_applied(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "settings-energy-override",
+        settings=AnalysisSettings(input_mode="energy", energy_keV=30.0),
+        energy_keV=20.0,
+        include_excel=False,
+    )
+    analysis = result.analyses[0]
+    assert analysis.energy_keV == pytest.approx(20.0)
+    assert analysis.wavelength_A == pytest.approx(12.398419843320026 / 20.0)
+
+
+def test_quick_export_radiation_kw_overrides_default_settings_mode(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "default-settings-energy",
+        settings=AnalysisSettings(step_deg=0.02),
+        energy_keV=20.0,
+        include_excel=False,
+    )
+    provenance = json.loads(
+        (result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )
+    assert provenance["analysis_settings"]["input_mode"] == "energy"
+    assert provenance["analysis_settings"]["wavelength_A"] is None
+    assert provenance["analysis_settings"]["energy_keV"] == pytest.approx(20.0)
+
+
+def test_quick_export_wavelength_kw_overrides_cross_baseline_mode(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "cross-baseline-wavelength",
+        settings=AnalysisSettings(input_mode="energy", energy_keV=83.0),
+        wavelength_A=1.2,
+        include_excel=False,
+    )
+    provenance = json.loads(
+        (result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )
+    assert provenance["analysis_settings"]["input_mode"] == "wavelength"
+    assert provenance["analysis_settings"]["wavelength_A"] == pytest.approx(1.2)
+    assert provenance["analysis_settings"]["energy_keV"] is None
+
+
+def test_quick_export_stale_custom_source_does_not_override_energy_baseline(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "stale-custom-baseline",
+        settings=AnalysisSettings(
+            input_mode="energy",
+            source_preset="Custom",
+            energy_keV=20.0,
+        ),
+        wavelength_A=1.2,
+        include_excel=False,
+    )
+    analysis = result.analyses[0]
+    assert analysis.wavelength_source == "wavelength_A"
+    assert analysis.wavelength_A == pytest.approx(1.2)
+    assert json.loads(
+        (result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )["analysis_settings"]["input_mode"] == "wavelength"
+
+
+def test_quick_export_operative_custom_baseline_keeps_source_mode(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "operative-custom-baseline",
+        settings=AnalysisSettings(
+            input_mode="source",
+            source_preset="Custom",
+            wavelength_A=1.0,
+        ),
+        wavelength_A=1.2,
+        include_excel=False,
+    )
+    analysis = result.analyses[0]
+    assert analysis.wavelength_source == "custom_source_wavelength"
+    assert analysis.wavelength_A == pytest.approx(1.2)
+
+
+def test_quick_export_explicit_custom_source_from_other_baseline(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "explicit-custom-source",
+        settings=AnalysisSettings(input_mode="energy", energy_keV=20.0),
+        source_preset="Custom",
+        wavelength_A=1.2,
+        include_excel=False,
+    )
+    analysis = result.analyses[0]
+    assert analysis.wavelength_source == "custom_source_wavelength"
+    assert analysis.wavelength_A == pytest.approx(1.2)
+
+
+def test_quick_export_radiation_conflicts_fail_before_output(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    both_output = tmp_path / "both"
+    with pytest.raises(ValueError, match="energy_keV.*wavelength_A"):
+        quick_export(
+            [demo_inputs],
+            both_output,
+            energy_keV=20.0,
+            wavelength_A=1.2,
+            include_excel=False,
+        )
+    assert not both_output.exists()
+
+    cross_output = tmp_path / "explicit-mode-conflict"
+    with pytest.raises(ValueError, match="input_mode.*wavelength_A"):
+        quick_export(
+            [demo_inputs],
+            cross_output,
+            settings=AnalysisSettings(input_mode="energy", energy_keV=20.0),
+            wavelength_A=1.2,
+            input_mode="energy",
+            include_excel=False,
+        )
+    assert not cross_output.exists()
+
+
+def test_quick_export_custom_to_builtin_source_clears_stale_fields(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "custom-to-cu",
+        settings=AnalysisSettings(
+            input_mode="source",
+            source_preset="Custom",
+            wavelength_A=1.2,
+        ),
+        source_preset="Cu Ka",
+        include_excel=False,
+    )
+    provenance = json.loads(
+        (result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )
+    merged = provenance["analysis_settings"]
+    assert merged["input_mode"] == "source"
+    assert merged["source_preset"] == "Cu Ka"
+    assert merged["wavelength_A"] is None
+    assert merged["energy_keV"] is None
+
+
+def test_quick_export_builtin_source_override_keeps_explicit_wavelength(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "custom-to-cu-with-wavelength",
+        settings=AnalysisSettings(
+            input_mode="source",
+            source_preset="Custom",
+            wavelength_A=1.0,
+        ),
+        source_preset="Cu Ka",
+        wavelength_A=1.2,
+        include_excel=False,
+    )
+    analysis = result.analyses[0]
+    provenance = json.loads(
+        (result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )
+    assert provenance["analysis_settings"]["input_mode"] == "wavelength"
+    assert provenance["analysis_settings"]["wavelength_A"] == pytest.approx(1.2)
+    assert provenance["analysis_settings"]["energy_keV"] is None
+    assert analysis.wavelength_source == "wavelength_A"
+    assert analysis.wavelength_A == pytest.approx(1.2)
+
+
+def test_quick_export_custom_source_wavelength_contract(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / "custom-source",
+        source_preset="Custom",
+        wavelength_A=1.2,
+        include_excel=False,
+    )
+    analysis = result.analyses[0]
+    assert analysis.wavelength_source == "custom_source_wavelength"
+    assert analysis.wavelength_A == pytest.approx(1.2)
+
+
 def test_quick_export_cli_entry(demo_inputs: Path, tmp_path: Path) -> None:
     excel = tmp_path / "cli_out.xlsx"
     code = quick_export_main([str(demo_inputs), "-o", str(excel)])

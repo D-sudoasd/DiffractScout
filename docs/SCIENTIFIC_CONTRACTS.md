@@ -41,7 +41,13 @@ Built-in effective single-wavelength presets are:
 | Mo Kα | 0.7093 |
 | Ag Kα | 0.5594 |
 
-Explicit energy and wavelength inputs must be finite and positive. The CLI treats these two inputs as mutually exclusive. A custom source requires an explicit wavelength.
+Explicit energy and wavelength inputs must be finite and positive. The active
+radiation mode is strict: `energy` accepts only `energy_keV`, `wavelength`
+accepts only `wavelength_A`, `source=Custom` accepts only `wavelength_A`, and
+built-in source presets accept neither numeric override. Inactive numeric
+fields are rejected during `validate_analysis_settings` so direct API analysis
+cannot persist an ambiguous radiation definition. A custom source therefore
+requires an explicit wavelength.
 
 The presets represent one effective wavelength. Kα1/Kα2 doublets, spectral bandwidth, harmonic contamination, and source polarization are not expanded in the current version.
 
@@ -70,6 +76,23 @@ The scan window must satisfy
 and the display-profile step and FWHM must be finite and positive. The pseudo-Voigt mixing fraction must lie in `[0, 1]`.
 
 Candidate generation uses a relative $d_{min}$ search margin of $10^{-10}$ plus `nextafter(d_min, 0)` to avoid floating-point exclusion of a reflection exactly at the upper $2\theta$ boundary. The requested angular interval is then enforced directly with a $10^{-9}$ degree comparison tolerance. The search margin improves completeness and does not intentionally widen the exported scan range.
+
+When a *d*-spacing filter is enabled, its inclusive Bragg-angle interval is
+intersected with the requested 2θ interval. Equality is a nonempty
+single-point intersection; only a lower bound greater than the upper bound is
+empty. A `d_max_A` below the physical limit `lambda/2` is an empty filter
+window, and no reciprocal candidates are evaluated for an empty intersection.
+For compatibility, phase metadata `two_theta_range_deg` records the configured
+analysis bounds (the requested bounds are retained for an empty effective
+window). `profile_sampled_two_theta_range_deg` records the first and last
+coordinates actually emitted by the finite-step profile grid. The explicit metadata fields
+`requested_two_theta_range_deg`, `effective_two_theta_range_deg` (or `null`),
+and `effective_window_empty` distinguish user intent from the applied filter.
+`geometric_d_min_A` is the Bragg lower spacing implied by the configured
+analysis upper angle used for reflection search; it is not the last sampled
+profile coordinate or the user filter `d_min_A`. In the Excel Summary, legacy
+`two_theta_range_deg` remains the requested range, while
+`analysis_two_theta_range_deg` carries the configured per-phase bounds.
 
 ## 4. X-ray structure factors and intensity channels
 
@@ -217,13 +240,29 @@ A numerical tensor is paired only when the relation to the CIF is unique. Pairin
 - the tensor coordinate frame is absent or incompatible;
 - a provider query failed.
 
-For Materials Project downloads, automatic directional coupling uses the raw/POSCAR-format tensor paired with the conventional-standard CIF and declares
+For Materials Project downloads, the raw/POSCAR-format tensor is retained with
+the conventional-standard CIF for numerical provenance, but automatic
+directional coupling is disabled. The provider does not persist enough of the
+upstream `ElasticityDoc.structure` orientation to verify a transform into the
+Cartesian basis emitted by Pymatgen CIF serialization. The raw/POSCAR frame is
+therefore not a supported directional frame and receives
+`frame_transform_required` with `usable_for_hkl_modulus=false`.
+
+The retained provenance label is
 
 ```text
 materials_project_conventional_cif_cartesian
 ```
 
-The IEEE-format tensor is retained for provenance because it may differ by a rotation. An IEEE-only record receives status `frame_transform_required`; all `hkl`-normal modulus fields remain empty until an explicit, verified transform into the CIF Cartesian frame is available. Primitive-cell downloads are rejected when automatic elasticity coupling is enabled.
+It identifies the raw/POSCAR basis; it does not assert CIF Cartesian
+equivalence. The IEEE-format tensor is likewise retained for provenance
+because it may differ by a rotation. Raw/POSCAR and IEEE records receive
+status `frame_transform_required`; all `hkl`-normal modulus fields remain
+empty until an explicit, verified transform into the CIF Cartesian frame is
+available. A generic JSON tensor with no `coordinate_frame` is also fail-closed
+with this status. Direct user matrix helpers remain explicit CIF Cartesian
+inputs. Primitive-cell downloads are rejected when automatic elasticity
+coupling is enabled.
 
 Materials Project tensors are labeled `DFT_calculated` and `not_experimental=true`. A missing record remains missing. DiffractScout does not convert literature search results into numerical tensors.
 
@@ -240,6 +279,14 @@ All outputs are first written to a staging directory. CSV and workbook files use
 The manifest verifier checks SHA-256, byte size, path safety, duplicate paths, symbolic links, root escapes, missing files, modified files, and files present on disk but absent from the manifest. A pre-existing bundle must itself pass verification before overwrite is allowed.
 
 Spreadsheet cells derived from external provider/CIF text are prefixed when they begin with spreadsheet formula-control characters (`=`, `+`, `-`, `@`, tab, carriage return, or newline). This prevents exported metadata from being interpreted as an active spreadsheet formula.
+
+The top-level `provenance.json` `output_flags` records the effective optional
+outputs: `include_excel`, `include_patterns`, `include_figures`, and
+`effective_export_lab_views`. `results.xlsx` is present only when Excel output
+is enabled; `pattern_profiles.csv` is present only when continuous patterns
+are enabled; figure files are present only when figure output is enabled and a
+phase is analyzed. Definitions for these artifacts are conditional on their
+being emitted and must not be read as guarantees when a flag is false.
 
 ## 11. Excluded analyses
 

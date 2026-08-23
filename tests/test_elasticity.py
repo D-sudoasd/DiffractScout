@@ -4,15 +4,45 @@ import shutil
 
 import numpy as np
 import pytest
+import gemmi
 
 from diffractscout.elasticity import (
+    CIF_CARTESIAN_FRAME,
     MP_IEEE_CONVENTIONAL_FRAME,
+    SUPPORTED_DIRECTIONAL_FRAMES,
     discover_elastic_tensor,
     elastic_tensor_from_payload,
+    reciprocal_plane_normal,
     validate_elastic_tensor,
     young_modulus_hkl_normal_GPa,
 )
 from diffractscout.structure import load_structure
+
+
+def test_reciprocal_plane_normal_uses_direct_monoclinic_cif_basis() -> None:
+    normal = reciprocal_plane_normal(gemmi.UnitCell(3, 4, 5, 90, 110, 90), (1, 0, 0))
+    assert normal is not None
+    assert normal == pytest.approx([0.93969262, 0.0, 0.34202014], abs=1e-8)
+
+
+def test_reciprocal_plane_normal_uses_direct_hexagonal_cif_basis() -> None:
+    cell = gemmi.UnitCell(3, 3, 5, 90, 90, 120)
+    first = reciprocal_plane_normal(cell, (1, 0, 0))
+    mixed = reciprocal_plane_normal(cell, (1, 1, 0))
+    assert first is not None and mixed is not None
+    assert first == pytest.approx([0.8660254, 0.5, 0.0], abs=1e-8)
+    assert mixed == pytest.approx([0.5, 0.8660254, 0.0], abs=1e-8)
+
+
+def test_anisotropic_modulus_uses_corrected_monoclinic_normal() -> None:
+    cell = gemmi.UnitCell(3, 4, 5, 90, 110, 90)
+    matrix = np.diag([200.0, 100.0, 50.0, 80.0, 80.0, 80.0])
+    tensor = validate_elastic_tensor(matrix)
+    modulus = young_modulus_hkl_normal_GPa(tensor, cell, (1, 0, 0))
+    assert modulus is not None
+    # Independent reference uses the rounded direct-basis normal documented
+    # by the monoclinic geometry, rather than reusing production geometry code.
+    assert modulus == pytest.approx(183.033125647, rel=1e-8)
 
 
 def test_isotropic_fixture_has_direction_independent_modulus(demo_inputs: Path) -> None:
@@ -46,6 +76,40 @@ def test_unrotated_ieee_tensor_does_not_emit_hkl_modulus(demo_inputs: Path) -> N
     tensor = validate_elastic_tensor(matrix, coordinate_frame=MP_IEEE_CONVENTIONAL_FRAME)
     assert tensor.status == "frame_transform_required"
     assert young_modulus_hkl_normal_GPa(tensor, structure.small_structure.cell, (1, 1, 1)) is None
+
+
+def test_materials_project_raw_frame_is_not_a_supported_directional_frame() -> None:
+    from diffractscout.elasticity import MP_CONVENTIONAL_CIF_FRAME
+
+    assert MP_CONVENTIONAL_CIF_FRAME not in SUPPORTED_DIRECTIONAL_FRAMES
+
+
+def test_generic_json_tensor_without_coordinate_frame_fails_closed_for_nonorthogonal_cell() -> None:
+    matrix = np.diag([240.0, 150.0, 90.0, 70.0, 60.0, 50.0])
+    tensor = elastic_tensor_from_payload(
+        {"status": "ok", "stiffness": matrix.tolist(), "unit": "GPa"}
+    )
+
+    assert tensor is not None
+    assert tensor.status == "frame_transform_required"
+    assert tensor.coordinate_frame == ""
+    assert young_modulus_hkl_normal_GPa(
+        tensor, gemmi.UnitCell(3.0, 4.0, 5.0, 90.0, 110.0, 90.0), (1, 0, 0)
+    ) is None
+
+
+def test_generic_json_tensor_with_explicit_cif_frame_remains_usable() -> None:
+    tensor = elastic_tensor_from_payload(
+        {
+            "status": "ok",
+            "stiffness": (np.eye(6) * 100.0).tolist(),
+            "unit": "GPa",
+            "coordinate_frame": CIF_CARTESIAN_FRAME,
+        }
+    )
+
+    assert tensor is not None
+    assert tensor.status == "valid"
 
 
 def test_index_frame_transform_required_preserves_numerical_tensor(
@@ -190,6 +254,7 @@ def test_generic_mpa_tensor_is_converted_to_gpa() -> None:
     tensor = elastic_tensor_from_payload(payload)
     assert tensor is not None
     assert tensor.stiffness_GPa == pytest.approx(np.eye(6) * 100.0)
+    assert tensor.status == "frame_transform_required"
     assert any("Converted elastic stiffness" in warning for warning in tensor.warnings)
 
 

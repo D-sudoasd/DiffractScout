@@ -64,7 +64,7 @@ figures = [
 paper = [
   "matplotlib>=3.7",
 ]
-# Optional Tk drag-and-drop helpers for future desktop UX (not required by core GUI).
+# Optional Tk drag-and-drop helpers for file/folder drop in the desktop GUI.
 "gui-dnd" = [
   "tkinterdnd2>=0.3.0",
 ]

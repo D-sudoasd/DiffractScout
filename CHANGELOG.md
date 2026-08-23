@@ -22,6 +22,31 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Fixed
 
+- Made GUI radiation transitions unit-safe with explicit Å/keV labels and
+  conversion/clearing rules; quick-export now infers and validates radiation
+  keyword modes before any output target is created.
+- Rejected inactive numeric radiation fields during analysis preflight, so
+  energy, wavelength, Custom-source, and built-in-source settings cannot be
+  persisted in contradictory combinations.
+- Corrected non-orthogonal hkl plane normals to use the direct CIF Cartesian
+  basis, exported finite q/g zeros at 2θ=0, and added requested/effective
+  radiation and angular-window provenance.
+- Made *d*-spacing/2θ intersections inclusive at equality and explicit when
+  empty, including the physically inaccessible `d_max_A < lambda/2` case;
+  retained configured analysis bounds while separately recording actual
+  profile-sample endpoints, requested/effective ranges, and geometric versus
+  filter `d_min` meanings.
+- Made bundle README artifact claims conditional, retained caller-owned
+  diagnostics for Excel omission warnings, enforced Excel/lab-view and
+  elasticity control dependencies, and preserved a valid prior Open result
+  action after a failed retry.
+- Recorded effective optional-output flags in provenance and made Excel,
+  continuous-pattern, figure, and lab-view definitions conditional on actual
+  emission.
+- Failed closed for Materials Project raw/POSCAR elasticity tensors and
+  generic JSON tensors without `coordinate_frame`; numeric tensors remain in
+  provenance, but hkl-normal modulus output requires an explicit verified
+  transform into the emitted CIF Cartesian frame.
 - Validated run-wide diffraction and discovery settings before copying local inputs, contacting providers, or starting GUI workers.
 - Snapshotted GUI run options on the Tk thread so background workers do not access mutable Tk state.
 - Required explicit overwrite authorization for existing quick-export workbooks and replaced authorized workbooks atomically.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import math
 import queue
 import re
 import shutil
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from . import __version__
-from .diffraction import validate_analysis_settings
+from .diffraction import ENERGY_WAVELENGTH_KEV_A, X_RAY_SOURCES_A, validate_analysis_settings
 from .elasticity_input import parse_cij_matrix_6x6, parse_cij_paste_text, parse_cubic_cij
 from .gui_i18n import DEFAULT_LANG, t
 from .models import AnalysisSettings, DiscoverySettings, ElasticTensor, PipelineResult
@@ -235,6 +236,10 @@ if tk is not None:
             self._run_buttons: list[ttk.Button] = []
             self._radiation_source_widgets: list[ttk.Combobox] = []
             self._radiation_value_widgets: list[ttk.Entry] = []
+            self._cij_widgets: list[Any] = []
+            self._lab_view_widgets: list[Any] = []
+            self._help_bindings: dict[str, tuple[Any, str]] = {}
+            self._radiation_value_labels: list[Any] = []
             self._i18n_targets: list[tuple[Any, str, str]] = []
             self._title_pairs: list[tuple[Any, Any, str, str]] = []
             self._labelframes: list[tuple[Any, str]] = []
@@ -245,8 +250,17 @@ if tk is not None:
             self._scroll_focus_bindings: dict[str, set[str]] = {}
             self._scroll_wheel_bindings: dict[str, set[str]] = {}
             self._syncing_shortcut = False
+            self._syncing_radiation = False
+            self._radiation_initialized = False
+            self._previous_radiation_mode = "source"
+            self._previous_source_preset = "Cu Ka"
+            self._previous_radiation_value = "1.5406"
+            self._lab_views_preference = True
+            self._lab_views_forced_off = False
             self._poll_after_id: str | None = None
             self._wrap_after_id: str | None = None
+            self._sash_after_id: str | None = None
+            self._sash_initialized = False
 
             self._configure_style()
             self._create_variables()
@@ -254,6 +268,7 @@ if tk is not None:
             self._build_status_bar()
             self._build_main_split()
             self._sync_radiation_controls()
+            self._sync_output_dependencies()
             self._refresh_cij_status()
             self._apply_language()
             self.bind("<Configure>", self._on_root_configure, add="+")
@@ -268,6 +283,57 @@ if tk is not None:
             if attr == "text":
                 widget.configure(text=self._t(key))
             return widget
+
+        def _add_hover_help(self, widget: Any, key: str) -> None:
+            """Attach concise help only to controls with consequential units/semantics."""
+
+            binding_id = f"{widget}|{key}"
+            if binding_id in self._help_bindings:
+                return
+            self._help_bindings[binding_id] = (widget, key)
+            widget.bind(
+                "<Enter>",
+                lambda event, target=widget, help_key=key: self._show_hover_help(
+                    target, help_key, event
+                ),
+                add="+",
+            )
+            widget.bind("<Leave>", lambda _event: self._hide_hover_help(), add="+")
+
+        def _show_hover_help(self, widget: Any, key: str, event: Any) -> None:
+            self._hide_hover_help()
+            try:
+                popup = tk.Toplevel(self)
+                popup.wm_overrideredirect(True)
+                popup.attributes("-topmost", True)
+                label = tk.Label(
+                    popup,
+                    text=self._t(key),
+                    justify="left",
+                    wraplength=420,
+                    bg="#FFFBEA",
+                    fg=TEXT,
+                    relief="solid",
+                    borderwidth=1,
+                    padx=8,
+                    pady=5,
+                )
+                label.pack()
+                x = int(getattr(event, "x_root", widget.winfo_rootx())) + 12
+                y = int(getattr(event, "y_root", widget.winfo_rooty() + widget.winfo_height())) + 12
+                popup.geometry(f"+{x}+{y}")
+                self._hover_help_popup = popup
+            except tk.TclError:
+                self._hover_help_popup = None
+
+        def _hide_hover_help(self) -> None:
+            popup = getattr(self, "_hover_help_popup", None)
+            self._hover_help_popup = None
+            if popup is not None:
+                try:
+                    popup.destroy()
+                except tk.TclError:
+                    pass
 
         def _configure_style(self) -> None:
             style = ttk.Style(self)
@@ -326,6 +392,9 @@ if tk is not None:
             self.input_mode.trace_add("write", lambda *_args: self._sync_radiation_controls())
             self.source_preset.trace_add("write", lambda *_args: self._sync_radiation_controls())
             self.energy_shortcut.trace_add("write", lambda *_args: self._on_energy_shortcut())
+            self.include_excel.trace_add("write", lambda *_args: self._sync_output_dependencies())
+            self.include_elasticity.trace_add("write", lambda *_args: self._sync_output_dependencies())
+            self.export_lab_views.trace_add("write", lambda *_args: self._sync_output_dependencies())
 
             self.cij_c11 = tk.StringVar(value="")
             self.cij_c12 = tk.StringVar(value="")
@@ -409,14 +478,25 @@ if tk is not None:
             # Give the form most of the space only after Tk has assigned real
             # geometry. Calling sashpos against the initial 1-pixel pane can
             # make the activity pane overlap the form on short windows.
-            self.after_idle(self._set_default_sash)
+            paned.bind("<Configure>", self._schedule_default_sash, add="+")
+            self._schedule_default_sash()
+
+        def _schedule_default_sash(self, _event: object | None = None) -> None:
+            if self._sash_initialized or self._sash_after_id is not None:
+                return
+            try:
+                self._sash_after_id = self.after_idle(self._set_default_sash)
+            except tk.TclError:  # pragma: no cover - teardown race
+                self._sash_after_id = None
 
         def _set_default_sash(self) -> None:
+            self._sash_after_id = None
+            if self._sash_initialized:
+                return
             try:
                 self.update_idletasks()
                 height = int(self._main_paned.winfo_height())
                 if height <= 0:
-                    self.after(40, self._set_default_sash)
                     return
                 # Keep both panes usable at the minimum window size. The
                 # position is relative to the Panedwindow, not the root (the
@@ -425,11 +505,11 @@ if tk is not None:
                 form_min = 300
                 sash = max(form_min, min(height - activity_min, int(height * 0.72)))
                 if sash <= 0 or sash >= height:
-                    self.after(40, self._set_default_sash)
                     return
                 self._main_paned.sashpos(0, sash)
+                self._sash_initialized = True
             except (tk.TclError, ValueError):  # pragma: no cover - geometry timing
-                self.after(40, self._set_default_sash)
+                return
 
         def _make_scrollable(self, parent: Any, *, bg: str = CARD) -> tuple[Any, Any]:
             """Return (outer_frame, interior_frame) with vertical scrollbar + mouse wheel."""
@@ -691,6 +771,8 @@ if tk is not None:
             )
             self.chk_lab_views.pack(anchor="w")
             self._register_text(self.chk_lab_views, "export_lab_views")
+            self._lab_view_widgets.append(self.chk_lab_views)
+            self._add_hover_help(self.chk_lab_views, "help_lab_views")
             self.chk_patterns = ttk.Checkbutton(
                 options, text=self._t("include_patterns"), variable=self.include_patterns
             )
@@ -767,7 +849,10 @@ if tk is not None:
             self.lbl_ehull = ttk.Label(form, text=self._t("e_hull_max"), style="Card.TLabel")
             self.lbl_ehull.grid(row=3, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_ehull, "e_hull_max")
-            ttk.Entry(form, textvariable=self.mp_e_hull).grid(row=3, column=1, sticky="ew", padx=(12, 0), pady=4)
+            self.mp_e_hull_entry = ttk.Entry(form, textvariable=self.mp_e_hull)
+            self.mp_e_hull_entry.grid(row=3, column=1, sticky="ew", padx=(12, 0), pady=4)
+            self._add_hover_help(self.lbl_ehull, "help_e_hull")
+            self._add_hover_help(self.mp_e_hull_entry, "help_e_hull")
             self.lbl_sub_order = ttk.Label(form, text=self._t("subsystem_order"), style="Card.TLabel")
             self.lbl_sub_order.grid(row=4, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_sub_order, "subsystem_order")
@@ -832,6 +917,8 @@ if tk is not None:
             )
             self.chk_lab_views_mp.pack(anchor="w")
             self._register_text(self.chk_lab_views_mp, "export_lab_views")
+            self._lab_view_widgets.append(self.chk_lab_views_mp)
+            self._add_hover_help(self.chk_lab_views_mp, "help_lab_views")
             self.chk_patterns_mp = ttk.Checkbutton(
                 options, text=self._t("include_patterns"), variable=self.include_patterns
             )
@@ -864,11 +951,19 @@ if tk is not None:
                 label = ttk.Label(box, text=self._t(key), style="Card.TLabel")
                 label.grid(row=row, column=0, sticky="w", pady=4)
                 self._register_text(label, key)
+                if key == "radiation_value":
+                    self._radiation_value_labels.append(label)
+                    self._add_hover_help(label, "help_radiation")
                 if values is None:
                     field: Any = ttk.Entry(box, textvariable=variable)
                 else:
                     field = ttk.Combobox(box, textvariable=variable, values=values, state="readonly", width=24)
                 field.grid(row=row, column=1, sticky="ew", padx=(12, 0), pady=4)
+                if key == "radiation_value":
+                    self._add_hover_help(field, "help_radiation")
+                elif key == "pattern_axis":
+                    self._add_hover_help(label, "help_pattern_axis")
+                    self._add_hover_help(field, "help_pattern_axis")
                 return field
 
             add_label_field(0, "energy_shortcut", self.energy_shortcut, values=_ENERGY_SHORTCUTS)
@@ -926,14 +1021,20 @@ if tk is not None:
                 lbl = ttk.Label(cubic, text=self._t(key), style="Card.TLabel")
                 lbl.grid(row=row, column=0, sticky="w", pady=2)
                 self._register_text(lbl, key)
-                ttk.Entry(cubic, textvariable=var, width=7).grid(
+                entry = ttk.Entry(cubic, textvariable=var, width=7)
+                entry.grid(
                     row=row, column=1, sticky="ew", padx=(8, 0), pady=2
                 )
+                self._cij_widgets.extend((lbl, entry))
+                self._add_hover_help(lbl, "help_cij")
+                self._add_hover_help(entry, "help_cij")
             btn_cubic = ttk.Button(
                 cubic, text=self._t("apply_cubic"), style="Secondary.TButton", command=self._apply_cubic_cij
             )
             btn_cubic.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
             self.btn_apply_cubic = btn_cubic
+            self._cij_widgets.append(btn_cubic)
+            self._add_hover_help(btn_cubic, "help_cij")
             self._register_text(btn_cubic, "apply_cubic")
 
             paste_lbl = ttk.Label(box, text=self._t("cij_paste_hint"), style="Hint.TLabel", wraplength=400)
@@ -956,6 +1057,8 @@ if tk is not None:
             xscroll = ttk.Scrollbar(paste_frame, orient="horizontal", command=self.cij_paste.xview)
             self.cij_paste.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
             self.cij_paste.grid(row=0, column=0, sticky="nsew")
+            self._cij_widgets.append(self.cij_paste)
+            self._add_hover_help(self.cij_paste, "help_cij")
             yscroll.grid(row=0, column=1, sticky="ns")
             xscroll.grid(row=1, column=0, sticky="ew")
             paste_frame.columnconfigure(0, weight=1)
@@ -968,11 +1071,15 @@ if tk is not None:
             )
             btn_matrix.pack(side="left")
             self._register_text(btn_matrix, "apply_matrix")
+            self._cij_widgets.append(btn_matrix)
+            self._add_hover_help(btn_matrix, "help_cij")
             btn_clear = ttk.Button(
                 actions, text=self._t("clear_cij"), style="Danger.TButton", command=self._clear_cij_override
             )
             btn_clear.pack(side="left", padx=(8, 0))
             self._register_text(btn_clear, "clear_cij")
+            self._cij_widgets.append(btn_clear)
+            self._add_hover_help(btn_clear, "help_cij")
             status = ttk.Label(box, textvariable=self.cij_status, style="Hint.TLabel", wraplength=400)
             status.pack(anchor="w", pady=(6, 0))
             self._wrap_labels.append((status, 400))
@@ -1121,6 +1228,8 @@ if tk is not None:
                 self.status_text.set(self._t("status_ready"))
             self._refresh_inputs()
             self._refresh_cij_status()
+            self._sync_radiation_controls()
+            self._sync_output_dependencies()
             self._schedule_wrap_update()
 
         def _on_root_configure(self, event: Any) -> None:
@@ -1149,6 +1258,7 @@ if tk is not None:
         def _cancel_scheduled_callbacks(self) -> None:
             self._cancel_after_id("_poll_after_id")
             self._cancel_after_id("_wrap_after_id")
+            self._cancel_after_id("_sash_after_id")
 
         def _update_wraplengths(self) -> None:
             self._wrap_after_id = None
@@ -1160,6 +1270,72 @@ if tk is not None:
                     widget.configure(wraplength=target)
                 except tk.TclError:
                     continue
+
+        @staticmethod
+        def _valid_radiation_value(value: object) -> float | None:
+            try:
+                parsed = float(str(value).strip())
+            except (TypeError, ValueError):
+                return None
+            return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+        @staticmethod
+        def _format_radiation_value(value: float) -> str:
+            return f"{value:.10g}"
+
+        def _transition_radiation_value(
+            self,
+            previous_mode: str,
+            previous_source: str,
+            current_mode: str,
+            current_source: str,
+            previous_value: str,
+        ) -> str:
+            """Carry radiation only through an explicit physical conversion."""
+
+            old_wavelength: float | None = None
+            old_energy: float | None = None
+            if previous_mode == "energy":
+                old_energy = self._valid_radiation_value(previous_value)
+                if old_energy is not None:
+                    old_wavelength = ENERGY_WAVELENGTH_KEV_A / old_energy
+            elif previous_mode == "wavelength":
+                old_wavelength = self._valid_radiation_value(previous_value)
+                if old_wavelength is not None:
+                    old_energy = ENERGY_WAVELENGTH_KEV_A / old_wavelength
+            elif previous_mode == "source":
+                preset = X_RAY_SOURCES_A.get(previous_source)
+                if preset is not None:
+                    old_wavelength = float(preset)
+                elif previous_source == "Custom":
+                    old_wavelength = self._valid_radiation_value(previous_value)
+                if old_wavelength is not None:
+                    old_energy = ENERGY_WAVELENGTH_KEV_A / old_wavelength
+
+            if current_mode == "source":
+                if current_source == "Custom":
+                    if previous_mode == "source" and previous_source != "Custom":
+                        return ""
+                    return (
+                        self._format_radiation_value(old_wavelength)
+                        if old_wavelength is not None
+                        else ""
+                    )
+                preset = X_RAY_SOURCES_A.get(current_source)
+                return self._format_radiation_value(float(preset)) if preset is not None else ""
+            if current_mode == "energy":
+                return (
+                    self._format_radiation_value(old_energy)
+                    if old_energy is not None
+                    else ""
+                )
+            if current_mode == "wavelength":
+                return (
+                    self._format_radiation_value(old_wavelength)
+                    if old_wavelength is not None
+                    else ""
+                )
+            return ""
 
         def _on_energy_shortcut(self) -> None:
             if self._syncing_shortcut:
@@ -1178,45 +1354,117 @@ if tk is not None:
                     self.input_mode.set("energy")
                     self.radiation_value.set("83")
                 elif shortcut == _SHORTCUT_CUSTOM:
-                    # Select a genuinely editable source instead of merely
-                    # changing the label. Otherwise _sync_radiation_controls
-                    # immediately snaps the shortcut back to Cu Ka.
+                    # Custom source is wavelength-only in the GUI.  Clear the
+                    # old shortcut value so a keV number cannot be consumed as Å.
                     self.input_mode.set("source")
                     self.source_preset.set("Custom")
-                # Custom keeps the current value editable for user input.
+                    self.radiation_value.set("")
             finally:
                 self._syncing_shortcut = False
             self._sync_radiation_controls()
 
         def _sync_radiation_controls(self) -> None:
-            mode = self.input_mode.get()
-            custom_source = mode == "source" and self.source_preset.get() == "Custom"
-            for widget in self._radiation_source_widgets:
-                widget.configure(state="readonly" if mode == "source" else "disabled")
-            for widget in self._radiation_value_widgets:
-                widget.configure(
-                    state="normal" if mode in {"energy", "wavelength"} or custom_source else "disabled"
-                )
-            defaults = {"energy": "83", "wavelength": "1.5406"}
-            if mode in defaults and not self.radiation_value.get().strip():
-                self.radiation_value.set(defaults[mode])
-            if not self._syncing_shortcut:
-                # Keep shortcut label coherent when mode is edited manually.
-                expected = None
-                if mode == "source" and self.source_preset.get() == "Cu Ka":
-                    expected = _SHORTCUT_CU
-                elif mode == "energy" and self.radiation_value.get().strip() == "30":
-                    expected = _SHORTCUT_30
-                elif mode == "energy" and self.radiation_value.get().strip() == "83":
-                    expected = _SHORTCUT_83
+            if getattr(self, "_syncing_radiation", False):
+                return
+            self._syncing_radiation = True
+            try:
+                mode = self.input_mode.get()
+                source = self.source_preset.get()
+                previous_mode = self._previous_radiation_mode
+                previous_source = self._previous_source_preset
+                if (
+                    self._radiation_initialized
+                    and not self._syncing_shortcut
+                    and (mode != previous_mode or source != previous_source)
+                ):
+                    self.radiation_value.set(
+                        self._transition_radiation_value(
+                            previous_mode,
+                            previous_source,
+                            mode,
+                            source,
+                            self.radiation_value.get(),
+                        )
+                    )
+                custom_source = mode == "source" and source == "Custom"
+                for widget in self._radiation_source_widgets:
+                    widget.configure(state="readonly" if mode == "source" else "disabled")
+                for widget in self._radiation_value_widgets:
+                    widget.configure(
+                        state="normal"
+                        if mode in {"energy", "wavelength"} or custom_source
+                        else "disabled"
+                    )
+                unit_key = "radiation_value_keV" if mode == "energy" else "radiation_value_A"
+                for label in self._radiation_value_labels:
+                    label.configure(text=self._t(unit_key))
+                if not self._syncing_shortcut:
+                    # Keep shortcut label coherent when mode is edited manually.
+                    if mode == "source" and source == "Cu Ka":
+                        expected = _SHORTCUT_CU
+                    elif mode == "energy" and self.radiation_value.get().strip() == "30":
+                        expected = _SHORTCUT_30
+                    elif mode == "energy" and self.radiation_value.get().strip() == "83":
+                        expected = _SHORTCUT_83
+                    else:
+                        expected = _SHORTCUT_CUSTOM
+                    if self.energy_shortcut.get() != expected:
+                        self._syncing_shortcut = True
+                        try:
+                            self.energy_shortcut.set(expected)
+                        finally:
+                            self._syncing_shortcut = False
+                self._previous_radiation_mode = mode
+                self._previous_source_preset = source
+                self._previous_radiation_value = self.radiation_value.get()
+                self._radiation_initialized = True
+            finally:
+                self._syncing_radiation = False
+
+        def _sync_output_dependencies(self) -> None:
+            if getattr(self, "_syncing_output_dependencies", False):
+                return
+            self._syncing_output_dependencies = True
+            try:
+                self._sync_output_dependencies_impl()
+            finally:
+                self._syncing_output_dependencies = False
+
+        def _sync_output_dependencies_impl(self) -> None:
+            """Keep controls truthful when optional outputs are disabled."""
+
+            if not hasattr(self, "include_excel"):
+                return
+            excel_enabled = bool(self.include_excel.get())
+            if excel_enabled:
+                if self._lab_views_forced_off:
+                    self.export_lab_views.set(self._lab_views_preference)
+                    self._lab_views_forced_off = False
                 else:
-                    expected = _SHORTCUT_CUSTOM
-                if self.energy_shortcut.get() != expected:
-                    self._syncing_shortcut = True
-                    try:
-                        self.energy_shortcut.set(expected)
-                    finally:
-                        self._syncing_shortcut = False
+                    self._lab_views_preference = bool(self.export_lab_views.get())
+            else:
+                if not self._lab_views_forced_off:
+                    self._lab_views_preference = bool(self.export_lab_views.get())
+                    self._lab_views_forced_off = True
+                if self.export_lab_views.get():
+                    self.export_lab_views.set(False)
+            lab_state = "normal" if excel_enabled else "disabled"
+            for widget in self._lab_view_widgets:
+                try:
+                    widget.configure(state=lab_state)
+                except tk.TclError:
+                    continue
+
+            elasticity_enabled = bool(self.include_elasticity.get())
+            elasticity_state = "normal" if elasticity_enabled else "disabled"
+            for widget in self._cij_widgets:
+                try:
+                    if widget is getattr(self, "cij_paste", None):
+                        widget.configure(state="normal" if elasticity_enabled else "disabled")
+                    else:
+                        widget.configure(state=elasticity_state)
+                except tk.TclError:
+                    continue
 
         def _toggle_key(self) -> None:
             self.mp_key_entry.configure(show="" if self.mp_show_key.get() else "•")
@@ -1376,7 +1624,7 @@ if tk is not None:
                     "profile_model": self.profile_model.get(),
                     "pattern_axis": self.pattern_axis.get(),
                     "include_figures": self.include_figures.get(),
-                    "export_lab_views": self.export_lab_views.get(),
+                    "export_lab_views": bool(self.include_excel.get() and self.export_lab_views.get()),
                     "include_patterns": self.include_patterns.get(),
                 }
             )
@@ -1575,7 +1823,7 @@ if tk is not None:
             self.running = True
             self.status_text.set(self._t("status_busy", label=label))
             self.progress.start(12)
-            self.open_button.configure(state="disabled")
+            DiffractScoutApp._update_open_button_state(self)
             for button in self._run_buttons:
                 button.configure(state="disabled")
             self._log(self._t("log_started", label=label), "info")
@@ -1593,6 +1841,21 @@ if tk is not None:
             self.progress.stop()
             for button in self._run_buttons:
                 button.configure(state="normal")
+            DiffractScoutApp._update_open_button_state(self)
+
+        def _update_open_button_state(self) -> None:
+            if getattr(self, "running", False):
+                self.open_button.configure(state="disabled")
+                return
+            target = getattr(self, "last_output", None)
+            usable = False
+            if target is not None:
+                path = Path(target)
+                usable = path.is_dir() and (
+                    (path / "manifest.json").is_file()
+                    or (path / "results.xlsx").is_file()
+                )
+            self.open_button.configure(state="normal" if usable else "disabled")
 
         def _log(self, text: str, level: str = "info") -> None:
             timestamp = datetime.now().strftime("%H:%M:%S")
@@ -1629,7 +1892,7 @@ if tk is not None:
                         phases=len(result.analyses),
                         diagnostics=len(result.diagnostics),
                     ))
-                    self.open_button.configure(state="normal")
+                    DiffractScoutApp._update_open_button_state(self)
                     self._log(self._t("log_completed", message=completion, path=result.output_dir), log_level)
                     self._log(self._t("log_manifest", path=result.manifest_path), "info")
                     for diagnostic in result.diagnostics:
@@ -1710,6 +1973,9 @@ if tk is not None:
             if self.last_output is None:
                 return
             target: Path = Path(self.last_output)
+            if not target.is_dir():
+                self._update_open_button_state()
+                return
             xlsx = target / "results.xlsx"
             try:
                 if xlsx.is_file():
@@ -1733,6 +1999,7 @@ if tk is not None:
 
         def destroy(self) -> None:
             self._cancel_scheduled_callbacks()
+            self._hide_hover_help()
             super().destroy()
 
 else:

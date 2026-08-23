@@ -137,10 +137,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb
           python -m pip install --upgrade pip
-          python -m pip install -e .
+          python -m pip install -e ".[test]"
       - name: Construct and close the Tk interface
         run: |
           xvfb-run -a python -c "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
+      - name: Run GUI interaction tests
+        run: xvfb-run -a pytest -q tests/test_gui.py
 
   package:
     name: Build and install wheel

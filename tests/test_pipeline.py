@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from openpyxl import load_workbook
 import pytest
 
+import diffractscout.exporters as exporters
 from diffractscout.models import AnalysisSettings
 from diffractscout.pipeline import (
     _TargetState,
@@ -59,6 +60,19 @@ def test_local_pipeline_is_self_contained_and_verifiable(demo_inputs: Path, tmp_
 
     workbook = load_workbook(output / "results.xlsx", read_only=True)
     assert {"Summary", "Phases", "Peaks", "Elasticity", "Candidates", "Downloads", "Patterns"}.issubset(workbook.sheetnames)
+
+
+def test_excel_omission_warning_is_retained_in_pipeline_result(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(exporters, "EXCEL_DATA_ROW_LIMIT", 2)
+    result = analyze_cifs([demo_inputs], tmp_path / "limited", include_excel=True)
+    warnings = [item for item in result.diagnostics if item.stage == "export"]
+    assert warnings
+    diagnostics_csv = (result.output_dir / "diagnostics.csv").read_text(encoding="utf-8-sig")
+    assert warnings[0].message in diagnostics_csv
+    workbook = load_workbook(result.output_dir / "results.xlsx", read_only=True, data_only=False)
+    assert warnings[0].message in str(workbook["Diagnostics"]["D2"].value)
 
 
 def test_output_overwrite_requires_known_manifest(demo_inputs: Path, tmp_path: Path) -> None:

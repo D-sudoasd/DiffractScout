@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import hashlib
+import json
+
 import pytest
 
 import diffractscout.gui as gui_module
@@ -11,6 +14,8 @@ from diffractscout.gui import (
 )
 from diffractscout.gui_i18n import REQUIRED_KEYS, STRINGS, assert_language_parity, t
 from diffractscout.models import AnalysisSettings
+from diffractscout.diffraction import ENERGY_WAVELENGTH_KEV_A, resolve_wavelength
+from diffractscout.validation import verify_bundle
 
 
 def test_analysis_form_builds_energy_settings() -> None:
@@ -87,6 +92,125 @@ def test_analysis_form_ignores_stale_non_numeric_source_radiation() -> None:
     assert settings.source_preset == "Cu Ka"
     assert settings.wavelength_A is None
     assert settings.energy_keV is None
+
+
+def test_gui_radiation_transitions_keep_units_and_resolved_physics() -> None:
+    app = _create_test_app()
+    try:
+        app.input_mode.set("energy")
+        app.update_idletasks()
+        energy_value = float(app.radiation_value.get())
+        energy_settings = app._form_analysis_settings()
+        wavelength, energy, _source = resolve_wavelength(energy_settings)
+        assert energy_settings.input_mode == "energy"
+        assert energy == pytest.approx(ENERGY_WAVELENGTH_KEV_A / 1.5406)
+        assert wavelength == pytest.approx(1.5406)
+        assert "keV" in app._radiation_value_labels[0].cget("text")
+        assert energy_value == pytest.approx(ENERGY_WAVELENGTH_KEV_A / 1.5406)
+
+        app.radiation_value.set("20")
+        app.input_mode.set("wavelength")
+        app.update_idletasks()
+        assert float(app.radiation_value.get()) == pytest.approx(ENERGY_WAVELENGTH_KEV_A / 20.0)
+        assert "Å" in app._radiation_value_labels[0].cget("text")
+
+        app.energy_shortcut.set("83 keV")
+        app.update_idletasks()
+        assert app.input_mode.get() == "energy"
+        assert app.radiation_value.get() == "83"
+        assert "keV" in app._radiation_value_labels[0].cget("text")
+
+        app.energy_shortcut.set("Custom")
+        app.update_idletasks()
+        assert app.input_mode.get() == "source"
+        assert app.source_preset.get() == "Custom"
+        assert app.radiation_value.get() == ""
+        assert "Å" in app._radiation_value_labels[0].cget("text")
+        with pytest.raises(ValueError, match="finite positive wavelength_A"):
+            app._form_analysis_settings()
+    finally:
+        app.destroy()
+
+
+def test_gui_output_dependencies_preserve_lab_and_cij_state() -> None:
+    app = _create_test_app()
+    try:
+        app.export_lab_views.set(True)
+        app.include_excel.set(False)
+        app.update_idletasks()
+        assert not app.export_lab_views.get()
+        assert str(app.chk_lab_views.cget("state")) == "disabled"
+        assert str(app.chk_lab_views_mp.cget("state")) == "disabled"
+        assert app._form_analysis_settings().export_lab_views is False
+
+        app.include_excel.set(True)
+        app.update_idletasks()
+        assert app.export_lab_views.get()
+        assert str(app.chk_lab_views.cget("state")) == "normal"
+        assert str(app.chk_lab_views_mp.cget("state")) == "normal"
+
+        marker = object()
+        app.elastic_overrides["sample"] = marker
+        app.include_elasticity.set(False)
+        app.update_idletasks()
+        assert all(str(widget.cget("state")) == "disabled" for widget in app._cij_widgets)
+        assert app.elastic_overrides["sample"] is marker
+        app.include_elasticity.set(True)
+        app.update_idletasks()
+        assert all(str(widget.cget("state")) == "normal" for widget in app._cij_widgets)
+        assert app.elastic_overrides["sample"] is marker
+    finally:
+        app.destroy()
+
+
+def test_gui_open_result_survives_failed_retry_only_when_bundle_exists(tmp_path) -> None:
+    class Widget:
+        def __init__(self):
+            self.states = []
+
+        def configure(self, **kwargs):
+            self.states.append(kwargs)
+
+    class Progress:
+        def stop(self):
+            return None
+
+    good = tmp_path / "good"
+    good.mkdir()
+    payload = good / "payload.txt"
+    payload.write_text("valid committed bundle target\n", encoding="utf-8")
+    (good / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "diffractscout_bundle_manifest_v1",
+                "files": [
+                    {
+                        "path": "payload.txt",
+                        "size_bytes": payload.stat().st_size,
+                        "sha256": hashlib.sha256(payload.read_bytes()).hexdigest(),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert verify_bundle(good)["ok"]
+    controller = type("Controller", (), {})()
+    controller.last_output = good
+    controller.running = True
+    controller.open_button = Widget()
+    controller.progress = Progress()
+    controller._run_buttons = []
+    gui_module.DiffractScoutApp._update_open_button_state(controller)
+    assert controller.open_button.states[-1]["state"] == "disabled"
+
+    controller.running = False
+    gui_module.DiffractScoutApp._finish_task(controller)
+    assert controller.open_button.states[-1]["state"] == "normal"
+
+    (good / "manifest.json").unlink()
+    gui_module.DiffractScoutApp._finish_task(controller)
+    assert controller.open_button.states[-1]["state"] == "disabled"
 
 
 def test_analysis_form_rejects_unknown_profile_model() -> None:
@@ -248,6 +372,13 @@ def test_i18n_required_keys_zh_en_parity() -> None:
     assert "CSV/Excel" in t("en", "pattern_axis")
     assert "2θ" in t("zh", "include_figures")
     assert "2theta" in t("en", "include_figures")
+    assert t("zh", "radiation_value_A") == "辐射值 (Å)"
+    assert t("en", "radiation_value_A") == "Radiation value (Å)"
+    assert t("zh", "radiation_value_keV") == "辐射值 (keV)"
+    assert t("en", "radiation_value_keV") == "Radiation value (keV)"
+    assert "eV/atom" in t("zh", "help_e_hull") and "0.05" in t("en", "help_e_hull")
+    assert "GPa" in t("zh", "help_cij") and "GPa" in t("en", "help_cij")
+    assert "q=2π/d" in t("zh", "help_pattern_axis") and "g=1/d" in t("en", "help_pattern_axis")
 
 
 def _validation_controller(lang: str):
@@ -320,6 +451,59 @@ def test_scrollable_focus_reveals_focused_descendant() -> None:
         assert entry_bottom <= canvas_bottom
     finally:
         app.destroy()
+
+
+def test_default_sash_waits_for_configure_when_geometry_is_invalid(monkeypatch) -> None:
+    app = _create_test_app()
+    try:
+        app._cancel_after_id("_sash_after_id")
+        app._sash_initialized = False
+        monkeypatch.setattr(app._main_paned, "winfo_height", lambda: 0)
+        app._set_default_sash()
+        assert app._sash_after_id is None
+        assert not app._sash_initialized
+
+        monkeypatch.undo()
+        app._schedule_default_sash()
+        assert app._sash_after_id is not None
+        app.update()
+        assert app._sash_initialized
+        assert app._sash_after_id is None
+    finally:
+        app.destroy()
+
+
+def test_default_sash_is_initialized_once_and_not_reset(monkeypatch) -> None:
+    app = _create_test_app()
+    try:
+        app.geometry("900x640")
+        app.update_idletasks()
+        app.update()
+        assert app._sash_initialized
+        calls = []
+        sashpos = app._main_paned.sashpos
+
+        def track_sashpos(index, position=None):
+            if position is not None:
+                calls.append((index, position))
+            return sashpos(index, position) if position is not None else sashpos(index)
+
+        monkeypatch.setattr(app._main_paned, "sashpos", track_sashpos)
+        app._schedule_default_sash()
+        app.update()
+        assert app._sash_after_id is None
+        assert calls == []
+    finally:
+        app.destroy()
+
+
+def test_default_sash_callback_is_cancelled_on_destroy() -> None:
+    app = _create_test_app()
+    try:
+        assert app._sash_after_id is not None
+    finally:
+        app.destroy()
+    assert app._sash_after_id is None
 
 
 @pytest.mark.parametrize("geometry", ["900x640", "1200x820"])

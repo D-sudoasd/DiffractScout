@@ -38,7 +38,8 @@ The suite covers:
 - analytic monoatomic-FCC structure factor $|F_{111}|^2=(4f_{\mathrm{Al}})^2$ after Gemmi's crystallographic-occupancy conversion;
 - Bragg geometry and $q=2\pi/d$;
 - LP and no-LP intensity definitions, phase-internal normalization, and profile normalization;
-- rejection of unknown source presets, nonphysical scan/profile inputs, conflicting CLI energy/wavelength inputs, excessive profile grids, and excessive reciprocal-candidate estimates.
+- rejection of unknown source presets, inactive/contradictory radiation fields, nonphysical scan/profile inputs, excessive profile grids, and excessive reciprocal-candidate estimates;
+- inclusive *d*-filter/2θ intersections, explicit empty-window metadata, the `d_max_A < lambda/2` physical guard (including sub-tolerance boundary cases), and separation of requested, effective, configured-bound, sampled-endpoint, geometric, and filter spacing meanings.
 
 ### Elasticity
 
@@ -46,7 +47,7 @@ The suite covers:
 - cached compliance inversion for repeated directional evaluation;
 - direction-independent $E=110$ GPa for an explicitly synthetic isotropic cubic tensor;
 - exact sidecar pairing, declared-CIF conflicts, ambiguous matches, invalid matrices, and coordinate-frame boundaries;
-- Materials Project raw/conventional-CIF coupling and IEEE-only `frame_transform_required` behavior.
+- Materials Project raw/POSCAR and IEEE tensors retaining numeric provenance while failing closed with `frame_transform_required`, plus generic JSON tensors missing `coordinate_frame`.
 
 ### Orchestration and output
 
@@ -59,6 +60,7 @@ The suite covers:
 - formula-injection escaping in CSV and XLSX;
 - workbook creation including the `Diagnostics` sheet;
 - download and elastic-query error export.
+- conditional output flags and artifact claims for Excel, continuous patterns, figures, and effective lab views.
 
 ### Bundle integrity
 

@@ -39,7 +39,7 @@ diffractscout-gui
   <img src="docs/assets/gui-materials-project.png" width="49%" alt="DiffractScout Materials Project pipeline interface">
 </p>
 
-The desktop interface exposes the scientific controls used by the Python API: radiation definition, angular window, profile spacing, pseudo-Voigt parameters, elastic-tensor pairing, candidate limits, reciprocal-space resource guards, overwrite authorization, progress, structured diagnostics, and result-folder access. The API key remains in memory and is not written to project files. See [docs/GUI.md](docs/GUI.md).
+The desktop interface exposes the scientific controls used by the Python API: radiation definition, angular window, *d*-spacing filters, profile model and spacing, pseudo-Voigt parameters, pattern axis, optional continuous patterns and figures, elastic-tensor pairing, candidate limits, reciprocal-space resource guards, overwrite authorization, progress, structured diagnostics, Excel/lab-view dependencies, and result access. The API key remains in memory and is not written to project files. See [docs/GUI.md](docs/GUI.md).
 
 On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export.
 
@@ -49,13 +49,21 @@ DiffractScout reimplements the CIF2Peaks desktop workflow inside a provenance-fi
 
 | Capability | Where |
 |---|---|
-| Laboratory Excel views (Chinese beginner peak table + usage guide sheets) | `export_lab_views` / CLI `--no-lab-views` to disable |
+| Laboratory Excel views (Chinese beginner peak table + usage guide sheets, when Excel and `export_lab_views` are enabled) | `export_lab_views` / CLI `--no-lab-views` to disable |
 | Optional *d*-spacing window (intersects the 2θ search) | CLI/API `--d-min` / `--d-max` |
-| Bilingual lab-facing tables with English canonical CSV/XLSX | Excel `推荐峰表` / `使用说明` plus English `Peaks` |
-| One-shot quick export (Cu Kα lab defaults, optional `.xlsx` shortcut) | `diffractscout-quick-export`, `diffractscout quick-export`, Windows drag-drop bat |
+| Bilingual lab-facing tables with English canonical CSV/XLSX | Conditional Excel sheets `推荐峰表` / `使用说明` plus English `Peaks` |
+| One-shot quick export (Cu Kα lab defaults, optional `.xlsx` shortcut) | `diffractscout-quick-export`, `diffractscout quick-export`, Windows drag-and-drop bat |
 | Optional 2θ figure generation | CLI `--figures`; SVG/PNG bundle figures work in the base install, while `.[figures]` enables the matplotlib rendering path and paper-figure tooling |
 
 Column-name mapping and intensity-channel aliases: [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md). Engine semantics vs CIF2Peaks/pymatgen: [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md).
+
+When a *d*-spacing filter is used, the inclusive Bragg intersection is stored
+separately from the requested angular window. `provenance.json` and phase
+metadata distinguish `requested_two_theta_range_deg`,
+`effective_two_theta_range_deg` (or `null` when empty), the compatibility
+`two_theta_range_deg` configured analysis bounds, the actual
+`profile_sampled_two_theta_range_deg` endpoints, `effective_window_empty`, and
+`geometric_d_min_A` versus the filter `d_min_A`.
 
 ## Installation
 
@@ -78,7 +86,7 @@ export MP_API_KEY="your-key"     # PowerShell: $env:MP_API_KEY = "your-key"
 
 ```bash
 python -m pip install -e ".[figures]"   # optional matplotlib rendering path / paper figures
-python -m pip install -e ".[gui-dnd]"   # optional Tk drag-and-drop helper (future UX)
+python -m pip install -e ".[gui-dnd]"   # optional Tk drag-and-drop helper
 python -m pip install -e ".[mp]"        # Materials Project
 ```
 
@@ -165,7 +173,7 @@ diffractscout run "Ti-Al-V" -o outputs/ti_al_v \
   --max-total 50
 ```
 
-The Materials Project path requests conventional-standard cells by default. Automatic `hkl`-normal elasticity uses the raw/POSCAR-format tensor paired with that cell setting. An IEEE-only tensor is retained with status `frame_transform_required`; directional modulus fields remain empty until a verified coordinate transformation is supplied. Primitive-cell acquisition therefore requires `--no-elasticity`.
+The Materials Project path requests conventional-standard cells by default. Raw/POSCAR-format and IEEE-format tensors are retained numerically for provenance, but both receive `frame_transform_required` because this provider does not persist enough upstream structure orientation to verify a transform into the emitted CIF Cartesian frame. Directional modulus fields remain empty until an explicit verified transformation is supplied. Primitive-cell acquisition therefore requires `--no-elasticity`.
 
 Candidate counts above `--confirm-above` require `--yes`. The GUI applies an explicit maximum-candidate authorization for every download run.
 
@@ -180,11 +188,11 @@ A successful run is first written to a sibling staging directory, verified, and 
 | `download_index.csv` | Structure download and elasticity-query outcomes, errors, hashes |
 | `phase_summary.csv` | CIF hash, selected block, unit cell, space group, occupancy, warnings |
 | `peak_reference.csv` | Indexed theoretical reflections and optional `hkl`-normal modulus |
-| `pattern_profiles.csv` | Normalized pseudo-Voigt display profiles |
+| `pattern_profiles.csv` | Conditional continuous profiles using the selected `profile_model` (only when `include_patterns` is enabled) |
 | `elasticity.csv` | Numerical tensors, coordinate frames, source records, warnings |
 | `diagnostics.csv` | Structured discovery, download, elasticity, and analysis diagnostics |
-| `results.xlsx` | Human-readable workbook containing the same tables |
-| `provenance.json` | Settings, definitions, provider metadata, software versions, boundaries |
+| `results.xlsx` | Conditional human-readable workbook when Excel output is enabled |
+| `provenance.json` | Settings, effective output flags, definitions, provider metadata, software versions, boundaries |
 | `manifest.json` | SHA-256 and byte-size inventory checked by `diffractscout verify` |
 
 The verifier rejects missing files, modified files, malformed entries, duplicate or unsafe paths, symbolic links, and files that are present but absent from the manifest.
