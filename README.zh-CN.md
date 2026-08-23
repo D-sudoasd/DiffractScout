@@ -30,7 +30,7 @@ diffractscout-gui
   <img src="docs/assets/gui-materials-project.png" width="49%" alt="DiffractScout Materials Project 流程界面">
 </p>
 
-界面提供：CIF 文件与文件夹批量选择、递归扫描、光源/能量/波长、`2θ` 范围、步长、FWHM、伪 Voigt 混合参数、弹性配对、候选相数量上限、倒易空间资源限制、覆盖授权、运行状态、结构化日志和结果目录入口。API 密钥只保存在当前进程内存中，不写入项目文件。详见 [docs/GUI.md](docs/GUI.md)。
+界面提供：CIF 文件与文件夹批量选择、递归扫描、光源/能量/波长、`2θ` 范围、`d` 过滤、线型模型、步长、FWHM、伪 Voigt 混合参数、CSV/Excel 谱线坐标、连续谱线与图件、弹性配对、候选相数量上限、倒易空间资源限制、覆盖授权、Excel/实验室视图依赖、运行状态、结构化日志和结果入口。API 密钥只保存在当前进程内存中，不写入项目文件。详见 [docs/GUI.md](docs/GUI.md)。
 
 Windows 下可在可编辑安装后双击 `启动DiffractScout.bat` 启动界面；或将 CIF 拖到 `quick_export_diffractscout.bat` 进行一次实验室默认导出。
 
@@ -68,7 +68,7 @@ python -m pip install -e ".[mp]"
 
 ```bash
 python -m pip install -e ".[figures]"   # 可选 matplotlib 渲染路径 / 论文图
-python -m pip install -e ".[gui-dnd]"   # 可选 Tk 拖放辅助（后续 UX）
+python -m pip install -e ".[gui-dnd]"   # 可选 Tk 拖放辅助
 python -m pip install -e ".[mp]"        # Materials Project
 ```
 
@@ -141,7 +141,8 @@ diffractscout run "Ti-Al-V" -o D:\results\ti_al_v `
 - `peak_reference.csv`：`hkl`、`d`、`2θ`、`q`、`g`、多重性、结构因子、LP/无 LP 通道及可选方向模量；
 - `candidate_index.csv`、`download_index.csv`：候选相、下载和弹性查询状态；
 - `diagnostics.csv`：检索、下载、弹性和结构分析中的结构化警告与错误；
-- `results.xlsx`：对应的人类可读工作簿；
+- `pattern_profiles.csv`：启用连续谱线时按所选线型模型导出的谱线；
+- `results.xlsx`：启用 Excel 时生成的人类可读工作簿；实验室视图仅在 Excel 与 `export_lab_views` 同时启用时出现；
 - `provenance.json`：计算设置、定义、来源与软件版本；
 - `manifest.json`：文件 SHA-256 与字节数清单。
 

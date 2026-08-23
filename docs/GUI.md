@@ -63,8 +63,11 @@ The API key remains in process memory. DiffractScout does not save it in configu
 | `energy` | Radiation value | Explicit photon energy in keV |
 
 Energy and wavelength inputs must be finite and positive. The CLI also makes explicit energy and wavelength options mutually exclusive.
-When the source preset is `Custom`, enter one explicit wavelength or energy; a
-built-in source ignores stale text left in the disabled radiation-value field.
+When the source preset is `Custom`, the GUI value is wavelength in Å only. The
+active field label always shows Å or keV, and a mode change carries a valid
+previous value only through an explicit physical conversion; invalid values are
+cleared for explicit re-entry. A built-in source ignores stale text left in the
+disabled radiation-value field.
 
 ## Scientific controls
 
@@ -78,9 +81,12 @@ built-in source ignores stale text left in the disabled radiation-value field.
 
 The discrete indexed reflection table remains the primary scientific result. Profile parameters do not represent an inferred instrument function.
 
-## Parity and lab-oriented options (CLI / API)
+## Parity and lab-oriented options
 
-Several CIF2Peaks-parity settings are available on the shared analysis model. The desktop form currently exposes radiation, angular window, profile spacing, pseudo-Voigt η, resource guards, elasticity pairing, and Excel. The following are configured via CLI or Python `AnalysisSettings` (defaults apply when the GUI omits a control):
+The shared desktop form exposes radiation, angular window, *d*-spacing filters,
+profile model, profile spacing, pseudo-Voigt η, resource guards, pattern axis,
+elasticity pairing, continuous patterns, figures, Excel, and lab views. The same
+settings are available through the CLI and Python `AnalysisSettings`:
 
 | Control | Default in GUI path | CLI / settings |
 |---|---|---|
@@ -93,9 +99,10 @@ Several CIF2Peaks-parity settings are available on the shared analysis model. Th
 
 Laboratory views add bilingual convenience sheets to `results.xlsx` without changing the English canonical CSV columns. See [SCHEMA_ALIASES.md](SCHEMA_ALIASES.md) and [ENGINE_PARITY.md](ENGINE_PARITY.md).
 
-The desktop label intentionally says “CSV/Excel pattern coordinate.” It must
-not be interpreted as a request to change figure axes. The figure exporters in
-v0.4.0 use the simulated `two_theta_grid` and label the x axis as 2θ.
+The desktop label intentionally says “CSV/Excel pattern coordinate.” For the
+reciprocal choices, `q=2π/d` and `g=1/d` in Å⁻¹. These choices affect only
+continuous CSV/Excel profiles; figures remain on the simulated `two_theta_grid`
+and are labeled as 2θ. Lab views are available only when Excel output is on.
 
 ## Quick export (no full form)
 
@@ -114,6 +121,19 @@ On Windows, drag CIF files or folders onto `quick_export_diffractscout.bat`. The
 
 An existing workbook is never replaced implicitly. Choose a different path or enable the explicit overwrite option; an authorized replacement is written through a temporary file so a failed copy does not expose a partial workbook.
 
+For the Python `quick_export` helper, supplying exactly one `energy_keV` or
+`wavelength_A` keyword infers the matching input mode. Supplying both, or
+combining one with a conflicting explicit `input_mode`, raises before the
+output target is created. With `settings=AnalysisSettings(...)`, a radiation
+keyword overrides the baseline radiation mode; only an explicitly supplied
+conflicting `input_mode` keyword raises. The explicit
+`source_preset="Custom"` + `wavelength_A` source-mode contract remains. The resulting
+Summary keeps `two_theta_range_deg` as the requested range, adds the explicit
+alias `requested_two_theta_range_deg`, and adds
+`effective_two_theta_range_deg`, `effective_wavelength_A`,
+`effective_energy_keV`, `effective_radiation_source`, and
+`source_preset_applied`.
+
 ## Activity log and completion states
 
 The Activity panel reports timestamps and separates informational, warning, and error diagnostics. A completed bundle can contain diagnostic errors for individual phases that failed while other phases succeeded. Completion messages therefore distinguish:
@@ -122,7 +142,11 @@ The Activity panel reports timestamps and separates informational, warning, and 
 - completion with one or more error diagnostics;
 - completion with no analyzable phases, where a diagnostic-only bundle is still available.
 
-The `Open result folder` action is enabled after a result bundle has been written. `Copy` places the current Activity log on the clipboard; `Clear` affects only the displayed log.
+The `Open result` action is enabled after a valid result bundle has been
+written. It previews `results.xlsx` when that workbook exists; otherwise it
+opens the result directory. A later failed retry preserves this action only
+while the previous bundle still exists. `Copy` places the current Activity log
+on the clipboard; `Clear` affects only the displayed log.
 
 ## Threading and window closure
 

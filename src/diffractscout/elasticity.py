@@ -146,8 +146,18 @@ def reciprocal_plane_normal(cell: gemmi.UnitCell, hkl: Iterable[int]) -> np.ndar
     h, k, l = (int(value) for value in hkl)
     if h == k == l == 0:
         return None
-    vector = cell.reciprocal().orthogonalize(gemmi.Fractional(h, k, l))
-    direction = np.asarray([vector.x, vector.y, vector.z], dtype=float)
+    # Construct the reciprocal normal in the same direct Cartesian frame as
+    # the CIF lattice.  Gemmi's reciprocal ``orthogonalize`` helper uses a
+    # canonical reciprocal orientation, which is not the direct CIF Cartesian
+    # basis for non-orthogonal cells.  The common 1/V scale is irrelevant
+    # after normalization, so only the cross-product directions are needed.
+    a_vec = cell.orthogonalize(gemmi.Fractional(1, 0, 0))
+    b_vec = cell.orthogonalize(gemmi.Fractional(0, 1, 0))
+    c_vec = cell.orthogonalize(gemmi.Fractional(0, 0, 1))
+    a = np.asarray([a_vec.x, a_vec.y, a_vec.z], dtype=float)
+    b = np.asarray([b_vec.x, b_vec.y, b_vec.z], dtype=float)
+    c = np.asarray([c_vec.x, c_vec.y, c_vec.z], dtype=float)
+    direction = h * np.cross(b, c) + k * np.cross(c, a) + l * np.cross(a, b)
     norm = float(np.linalg.norm(direction))
     if not np.isfinite(norm) or norm <= 0:
         return None

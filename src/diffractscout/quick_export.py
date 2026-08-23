@@ -23,6 +23,20 @@ from .utils import to_jsonable
 _SETTINGS_KEYS = frozenset(AnalysisSettings.__dataclass_fields__)
 
 
+def _normalize_radiation_settings(settings: AnalysisSettings) -> AnalysisSettings:
+    """Clear radiation fields that the selected mode does not consume."""
+
+    if settings.input_mode == "energy":
+        return replace(settings, wavelength_A=None)
+    if settings.input_mode == "wavelength":
+        return replace(settings, energy_keV=None)
+    if settings.input_mode == "source":
+        if settings.source_preset == "Custom":
+            return replace(settings, energy_keV=None)
+        return replace(settings, wavelength_A=None, energy_keV=None)
+    return settings
+
+
 def _validate_excel_target(path: Path, *, overwrite: bool) -> None:
     """Protect a user-selected workbook before the bundle run starts."""
 
@@ -74,6 +88,42 @@ def _copy_excel_atomic(source: Path, target: Path, *, overwrite: bool) -> None:
 def _default_settings(**overrides: object) -> AnalysisSettings:
     """Cu Kα, 5–120°, lab views on; other fields match AnalysisSettings defaults."""
 
+    unknown = sorted(str(key) for key in overrides if key not in _SETTINGS_KEYS)
+    if unknown:
+        raise TypeError(
+            "Unexpected keyword arguments for quick_export: " + ", ".join(unknown)
+        )
+
+    energy = overrides.get("energy_keV")
+    wavelength = overrides.get("wavelength_A")
+    has_energy = energy is not None
+    has_wavelength = wavelength is not None
+    if has_energy and has_wavelength:
+        raise ValueError(
+            "quick_export radiation overrides conflict: energy_keV and wavelength_A "
+            "cannot be supplied together."
+        )
+
+    source_preset = str(overrides.get("source_preset", "Cu Ka") or "Cu Ka")
+    explicit_mode = overrides.get("input_mode")
+    if explicit_mode is not None:
+        explicit_mode = str(explicit_mode).strip().lower()
+    if has_energy:
+        inferred_mode = "energy"
+    elif has_wavelength:
+        # Python quick-export preserves the public source + Custom wavelength
+        # contract when the caller explicitly chooses that source.  For all
+        # other cases a wavelength keyword is the wavelength input mode.
+        inferred_mode = "source" if source_preset == "Custom" and explicit_mode in {None, "source"} else "wavelength"
+    else:
+        inferred_mode = None
+    if inferred_mode is not None and explicit_mode is not None and explicit_mode != inferred_mode:
+        raise ValueError(
+            "quick_export radiation override conflicts with explicit input_mode: "
+            f"input_mode={explicit_mode!r} cannot be used with "
+            f"{('energy_keV' if has_energy else 'wavelength_A')}."
+        )
+
     base: dict[str, object] = {
         "input_mode": "source",
         "source_preset": "Cu Ka",
@@ -82,14 +132,90 @@ def _default_settings(**overrides: object) -> AnalysisSettings:
         "export_lab_views": True,
     }
     for key, value in overrides.items():
-        if key in _SETTINGS_KEYS:
-            base[key] = value
+        base[key] = value
+    if inferred_mode is not None:
+        base["input_mode"] = inferred_mode
+        if inferred_mode == "energy":
+            base["wavelength_A"] = None
+        elif inferred_mode == "wavelength":
+            base["energy_keV"] = None
+        else:
+            base["energy_keV"] = None
+    return _normalize_radiation_settings(AnalysisSettings(**base))  # type: ignore[arg-type]
+
+
+def _merge_settings_overrides(
+    settings: AnalysisSettings,
+    overrides: Mapping[str, object],
+) -> AnalysisSettings:
+    """Merge quick-export keywords while keeping radiation provenance coherent.
+
+    An explicit radiation keyword cannot be ignored merely because a supplied
+    settings object uses another mode.  The exception is the documented
+    ``source_preset='Custom'`` + ``wavelength_A`` source-mode contract.
+    """
+
     unknown = sorted(str(key) for key in overrides if key not in _SETTINGS_KEYS)
     if unknown:
         raise TypeError(
             "Unexpected keyword arguments for quick_export: " + ", ".join(unknown)
         )
-    return AnalysisSettings(**base)  # type: ignore[arg-type]
+
+    energy = overrides.get("energy_keV")
+    wavelength = overrides.get("wavelength_A")
+    has_energy = energy is not None
+    has_wavelength = wavelength is not None
+    if has_energy and has_wavelength:
+        raise ValueError(
+            "quick_export radiation overrides conflict: energy_keV and wavelength_A "
+            "cannot be supplied together."
+        )
+
+    explicit_mode = overrides.get("input_mode")
+    if explicit_mode is not None:
+        explicit_mode = str(explicit_mode).strip().lower()
+    effective_source = str(
+        overrides.get("source_preset", settings.source_preset) or settings.source_preset
+    )
+    baseline_custom_source = (
+        settings.input_mode == "source"
+        and settings.source_preset == "Custom"
+        and effective_source == "Custom"
+    )
+    explicit_custom_source = (
+        "source_preset" in overrides
+        and str(overrides.get("source_preset") or "") == "Custom"
+    )
+    if has_energy:
+        inferred_mode = "energy"
+        if explicit_mode is not None and explicit_mode != inferred_mode:
+            raise ValueError(
+                "quick_export radiation override conflicts with explicit input_mode: "
+                f"input_mode={explicit_mode!r} cannot be used with energy_keV."
+            )
+        merged = dict(overrides)
+        merged["input_mode"] = inferred_mode
+        merged["wavelength_A"] = None
+        return _normalize_radiation_settings(replace(settings, **merged))
+    if has_wavelength:
+        custom_source_selected = baseline_custom_source or explicit_custom_source
+        if explicit_mode == "wavelength":
+            inferred_mode = "wavelength"
+        elif explicit_mode == "source":
+            inferred_mode = "source" if custom_source_selected else "wavelength"
+        else:
+            inferred_mode = "source" if custom_source_selected else "wavelength"
+        if explicit_mode is not None and explicit_mode != inferred_mode:
+            raise ValueError(
+                "quick_export radiation override conflicts with explicit input_mode: "
+                f"input_mode={explicit_mode!r} cannot be used with wavelength_A."
+            )
+        merged = dict(overrides)
+        merged["input_mode"] = inferred_mode
+        merged["energy_keV"] = None
+        return _normalize_radiation_settings(replace(settings, **merged))
+
+    return _normalize_radiation_settings(replace(settings, **overrides))
 
 
 def quick_export(
@@ -118,13 +244,7 @@ def quick_export(
     if settings is None:
         settings = _default_settings(**kwargs)
     elif kwargs:
-        leftover = {key: kwargs[key] for key in kwargs if key not in _SETTINGS_KEYS}
-        if leftover:
-            raise TypeError(
-                "Unexpected keyword arguments for quick_export: "
-                + ", ".join(sorted(map(str, leftover)))
-            )
-        settings = replace(settings, **kwargs)
+        settings = _merge_settings_overrides(settings, kwargs)
 
     if elastic_overrides is not None and not isinstance(elastic_overrides, Mapping):
         raise TypeError("elastic_overrides must be a mapping of name -> ElasticTensor.")

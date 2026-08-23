@@ -39,7 +39,7 @@ diffractscout-gui
   <img src="docs/assets/gui-materials-project.png" width="49%" alt="DiffractScout Materials Project pipeline interface">
 </p>
 
-The desktop interface exposes the scientific controls used by the Python API: radiation definition, angular window, profile spacing, pseudo-Voigt parameters, elastic-tensor pairing, candidate limits, reciprocal-space resource guards, overwrite authorization, progress, structured diagnostics, and result-folder access. The API key remains in memory and is not written to project files. See [docs/GUI.md](docs/GUI.md).
+The desktop interface exposes the scientific controls used by the Python API: radiation definition, angular window, *d*-spacing filters, profile model and spacing, pseudo-Voigt parameters, pattern axis, optional continuous patterns and figures, elastic-tensor pairing, candidate limits, reciprocal-space resource guards, overwrite authorization, progress, structured diagnostics, Excel/lab-view dependencies, and result access. The API key remains in memory and is not written to project files. See [docs/GUI.md](docs/GUI.md).
 
 On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export.
 
@@ -49,10 +49,10 @@ DiffractScout reimplements the CIF2Peaks desktop workflow inside a provenance-fi
 
 | Capability | Where |
 |---|---|
-| Laboratory Excel views (Chinese beginner peak table + usage guide sheets) | `export_lab_views` / CLI `--no-lab-views` to disable |
+| Laboratory Excel views (Chinese beginner peak table + usage guide sheets, when Excel and `export_lab_views` are enabled) | `export_lab_views` / CLI `--no-lab-views` to disable |
 | Optional *d*-spacing window (intersects the 2θ search) | CLI/API `--d-min` / `--d-max` |
-| Bilingual lab-facing tables with English canonical CSV/XLSX | Excel `推荐峰表` / `使用说明` plus English `Peaks` |
-| One-shot quick export (Cu Kα lab defaults, optional `.xlsx` shortcut) | `diffractscout-quick-export`, `diffractscout quick-export`, Windows drag-drop bat |
+| Bilingual lab-facing tables with English canonical CSV/XLSX | Conditional Excel sheets `推荐峰表` / `使用说明` plus English `Peaks` |
+| One-shot quick export (Cu Kα lab defaults, optional `.xlsx` shortcut) | `diffractscout-quick-export`, `diffractscout quick-export`, Windows drag-and-drop bat |
 | Optional 2θ figure generation | CLI `--figures`; SVG/PNG bundle figures work in the base install, while `.[figures]` enables the matplotlib rendering path and paper-figure tooling |
 
 Column-name mapping and intensity-channel aliases: [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md). Engine semantics vs CIF2Peaks/pymatgen: [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md).
@@ -78,7 +78,7 @@ export MP_API_KEY="your-key"     # PowerShell: $env:MP_API_KEY = "your-key"
 
 ```bash
 python -m pip install -e ".[figures]"   # optional matplotlib rendering path / paper figures
-python -m pip install -e ".[gui-dnd]"   # optional Tk drag-and-drop helper (future UX)
+python -m pip install -e ".[gui-dnd]"   # optional Tk drag-and-drop helper
 python -m pip install -e ".[mp]"        # Materials Project
 ```
 
@@ -180,10 +180,10 @@ A successful run is first written to a sibling staging directory, verified, and 
 | `download_index.csv` | Structure download and elasticity-query outcomes, errors, hashes |
 | `phase_summary.csv` | CIF hash, selected block, unit cell, space group, occupancy, warnings |
 | `peak_reference.csv` | Indexed theoretical reflections and optional `hkl`-normal modulus |
-| `pattern_profiles.csv` | Normalized pseudo-Voigt display profiles |
+| `pattern_profiles.csv` | Conditional continuous profiles using the selected `profile_model` |
 | `elasticity.csv` | Numerical tensors, coordinate frames, source records, warnings |
 | `diagnostics.csv` | Structured discovery, download, elasticity, and analysis diagnostics |
-| `results.xlsx` | Human-readable workbook containing the same tables |
+| `results.xlsx` | Conditional human-readable workbook when Excel output is enabled |
 | `provenance.json` | Settings, definitions, provider metadata, software versions, boundaries |
 | `manifest.json` | SHA-256 and byte-size inventory checked by `diffractscout verify` |
 

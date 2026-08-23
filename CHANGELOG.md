@@ -22,6 +22,16 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Fixed
 
+- Made GUI radiation transitions unit-safe with explicit Å/keV labels and
+  conversion/clearing rules; quick-export now infers and validates radiation
+  keyword modes before any output target is created.
+- Corrected non-orthogonal hkl plane normals to use the direct CIF Cartesian
+  basis, exported finite q/g zeros at 2θ=0, and added requested/effective
+  radiation and angular-window provenance.
+- Made bundle README artifact claims conditional, retained caller-owned
+  diagnostics for Excel omission warnings, enforced Excel/lab-view and
+  elasticity control dependencies, and preserved a valid prior Open result
+  action after a failed retry.
 - Validated run-wide diffraction and discovery settings before copying local inputs, contacting providers, or starting GUI workers.
 - Snapshotted GUI run options on the Tk thread so background workers do not access mutable Tk state.
 - Required explicit overwrite authorization for existing quick-export workbooks and replaced authorized workbooks atomically.

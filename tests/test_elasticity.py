@@ -4,15 +4,43 @@ import shutil
 
 import numpy as np
 import pytest
+import gemmi
 
 from diffractscout.elasticity import (
     MP_IEEE_CONVENTIONAL_FRAME,
     discover_elastic_tensor,
     elastic_tensor_from_payload,
+    reciprocal_plane_normal,
     validate_elastic_tensor,
     young_modulus_hkl_normal_GPa,
 )
 from diffractscout.structure import load_structure
+
+
+def test_reciprocal_plane_normal_uses_direct_monoclinic_cif_basis() -> None:
+    normal = reciprocal_plane_normal(gemmi.UnitCell(3, 4, 5, 90, 110, 90), (1, 0, 0))
+    assert normal is not None
+    assert normal == pytest.approx([0.93969262, 0.0, 0.34202014], abs=1e-8)
+
+
+def test_reciprocal_plane_normal_uses_direct_hexagonal_cif_basis() -> None:
+    cell = gemmi.UnitCell(3, 3, 5, 90, 90, 120)
+    first = reciprocal_plane_normal(cell, (1, 0, 0))
+    mixed = reciprocal_plane_normal(cell, (1, 1, 0))
+    assert first is not None and mixed is not None
+    assert first == pytest.approx([0.8660254, 0.5, 0.0], abs=1e-8)
+    assert mixed == pytest.approx([0.5, 0.8660254, 0.0], abs=1e-8)
+
+
+def test_anisotropic_modulus_uses_corrected_monoclinic_normal() -> None:
+    cell = gemmi.UnitCell(3, 4, 5, 90, 110, 90)
+    matrix = np.diag([200.0, 100.0, 50.0, 80.0, 80.0, 80.0])
+    tensor = validate_elastic_tensor(matrix)
+    modulus = young_modulus_hkl_normal_GPa(tensor, cell, (1, 0, 0))
+    assert modulus is not None
+    # Independent reference uses the rounded direct-basis normal documented
+    # by the monoclinic geometry, rather than reusing production geometry code.
+    assert modulus == pytest.approx(183.033125647, rel=1e-8)
 
 
 def test_isotropic_fixture_has_direction_independent_modulus(demo_inputs: Path) -> None:

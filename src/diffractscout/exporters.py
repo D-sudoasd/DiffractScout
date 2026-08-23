@@ -527,22 +527,33 @@ def _pattern_axis_coordinates(
 
     theta_rad = math.radians(float(two_theta_deg) / 2.0)
     sin_theta = math.sin(theta_rad)
-    if not math.isfinite(sin_theta) or sin_theta <= 0 or not math.isfinite(wavelength_A) or wavelength_A <= 0:
+    wavelength_valid = math.isfinite(wavelength_A) and wavelength_A > 0
+    if not math.isfinite(sin_theta) or sin_theta < 0 or not wavelength_valid:
         d_A = None
+        q_invA = None
+        g_invA = None
+    elif sin_theta == 0.0:
+        # d is singular at 2theta=0, but reciprocal coordinates are finite
+        # physical zeros and must remain numeric in CSV/Excel profiles.
+        d_A = None
+        q_invA = 0.0
+        g_invA = 0.0
     else:
         d_A = float(wavelength_A) / (2.0 * sin_theta)
         if not math.isfinite(d_A) or d_A <= 0:
             d_A = None
-    if d_A is None:
-        q_invA = None
-        g_invA = None
-    else:
-        q_invA = float(2.0 * math.pi / d_A)
-        g_invA = float(1.0 / d_A)
-        if not math.isfinite(q_invA):
+        if d_A is None:
             q_invA = None
-        if not math.isfinite(g_invA):
             g_invA = None
+        else:
+            # Direct sin(theta) expressions avoid deriving a finite reciprocal
+            # coordinate through the intentionally blank d=inf endpoint.
+            q_invA = float(4.0 * math.pi * sin_theta / float(wavelength_A))
+            g_invA = float(2.0 * sin_theta / float(wavelength_A))
+            if not math.isfinite(q_invA):
+                q_invA = None
+            if not math.isfinite(g_invA):
+                g_invA = None
     mode = str(x_axis_mode or "two_theta")
     if mode == "d_spacing":
         x_value = d_A
@@ -735,6 +746,19 @@ def _summary_rows(
     settings: AnalysisSettings,
     diagnostics: list[DiagnosticRecord],
 ) -> list[dict[str, Any]]:
+    first_analysis = analyses[0] if analyses else None
+    first_metadata = first_analysis.metadata if first_analysis is not None else {}
+    requested_range = [settings.two_theta_min_deg, settings.two_theta_max_deg]
+    effective_range = first_metadata.get("two_theta_range_deg", requested_range)
+    if not isinstance(effective_range, (list, tuple)) or len(effective_range) != 2:
+        effective_range = requested_range
+    effective_source = (
+        first_analysis.wavelength_source if first_analysis is not None else None
+    )
+    effective_wavelength = (
+        first_analysis.wavelength_A if first_analysis is not None else None
+    )
+    effective_energy = first_analysis.energy_keV if first_analysis is not None else None
     return [
         {"key": "generated_at_utc", "value": utc_now_iso()},
         {"key": "phase_count", "value": len(analyses)},
@@ -744,7 +768,20 @@ def _summary_rows(
         {"key": "error_count", "value": sum(item.level == "error" for item in diagnostics)},
         {"key": "input_mode", "value": settings.input_mode},
         {"key": "source_preset", "value": settings.source_preset},
-        {"key": "two_theta_range_deg", "value": [settings.two_theta_min_deg, settings.two_theta_max_deg]},
+        {"key": "two_theta_range_deg", "value": requested_range},
+        {"key": "requested_two_theta_range_deg", "value": requested_range},
+        {"key": "effective_two_theta_range_deg", "value": list(effective_range)},
+        {"key": "effective_wavelength_A", "value": effective_wavelength},
+        {"key": "effective_energy_keV", "value": effective_energy},
+        {"key": "effective_radiation_source", "value": effective_source},
+        {
+            "key": "source_preset_applied",
+            "value": (
+                settings.source_preset
+                if first_analysis is not None and settings.input_mode == "source"
+                else None
+            ),
+        },
         {"key": "profile_model", "value": settings.profile_model},
         {"key": "d_min_A", "value": settings.d_min_A},
         {"key": "d_max_A", "value": settings.d_max_A},
@@ -769,8 +806,12 @@ def _bundle_readme(
     analyses: list[PhaseAnalysis],
     discovery: DiscoveryResult | None,
     diagnostics: list[DiagnosticRecord],
+    settings: AnalysisSettings | None = None,
+    *,
+    include_excel: bool = True,
 ) -> str:
-    lines = [
+    settings = settings or AnalysisSettings()
+    contents = [
         "# DiffractScout result bundle",
         "",
         "This directory is a self-contained, provenance-oriented output from DiffractScout.",
@@ -779,29 +820,53 @@ def _bundle_readme(
         "",
         "- `phase_summary.csv`: structure identity, unit cell, validation warnings, and source metadata.",
         "- `peak_reference.csv`: indexed theoretical powder reflections and optional hkl-normal Young's modulus.",
-        "- `pattern_profiles.csv`: normalized pseudo-Voigt display profiles; not an instrument model.",
-        "- `elasticity.csv`: paired 6x6 tensors and explicit provenance.",
-        "- `candidate_index.csv`: source-database search results when discovery was used.",
-        "- `download_index.csv`: source download and elasticity-query outcomes with hashes.",
-        "- `diagnostics.csv`: structured warnings and failures, including phases that could not be analyzed.",
-        "- `results.xlsx`: human-readable workbook containing the same tables.",
-        "- `provenance.json`: settings, definitions, source metadata, and scientific boundaries.",
-        "- `manifest.json`: SHA-256 inventory used by `diffractscout verify`.",
-        "",
-        "## Scientific boundary",
-        "",
-        SCIENTIFIC_BOUNDARY,
-        "",
-        "Materials Project Cij is labeled as DFT-derived. Automatic hkl coupling uses the raw/POSCAR tensor paired with the conventional-standard CIF; IEEE-only records require an explicit frame transform. Missing tensors remain missing.",
-        "",
-        f"Analyzed phases: {len(analyses)}.",
-        f"Diagnostics: {len(diagnostics)} ({sum(item.level == 'error' for item in diagnostics)} errors).",
     ]
+    if settings.include_patterns:
+        contents.append(
+            f"- `pattern_profiles.csv`: normalized {settings.profile_model} display profiles; not an instrument model."
+        )
+    else:
+        contents.append(
+            f"- Selected profile model: `{settings.profile_model}` (continuous pattern export is disabled)."
+        )
+    contents.extend(
+        [
+            "- `elasticity.csv`: paired 6x6 tensors and explicit provenance.",
+            "- `candidate_index.csv`: source-database search results when discovery was used.",
+            "- `download_index.csv`: source download and elasticity-query outcomes with hashes.",
+            "- `diagnostics.csv`: structured warnings and failures, including phases that could not be analyzed.",
+        ]
+    )
+    if include_excel:
+        contents.append("- `results.xlsx`: human-readable workbook containing the same tables.")
+    contents.extend(
+        [
+            "- `provenance.json`: settings, definitions, source metadata, and scientific boundaries.",
+            "- `manifest.json`: SHA-256 inventory used by `diffractscout verify`.",
+            "",
+            "## Scientific boundary",
+            "",
+            SCIENTIFIC_BOUNDARY,
+            "",
+            "Materials Project Cij is labeled as DFT-derived. Automatic hkl coupling uses the raw/POSCAR tensor paired with the conventional-standard CIF; IEEE-only records require an explicit frame transform. Missing tensors remain missing.",
+            "",
+            f"Analyzed phases: {len(analyses)}.",
+            f"Diagnostics: {len(diagnostics)} ({sum(item.level == 'error' for item in diagnostics)} errors).",
+        ]
+    )
+    if include_excel:
+        if settings.export_lab_views:
+            contents.append(
+                "Excel lab views are enabled: `results.xlsx` includes `使用说明`, `推荐峰表`, "
+                "and eligible per-phase convenience sheets."
+            )
+    if settings.include_figures and analyses:
+        contents.append("2theta figure files are emitted under `figures/`.")
     if discovery is not None:
-        lines.append(
+        contents.append(
             f"Discovered candidates: {len(discovery.candidates)} across {len(discovery.subsystems)} queried subsystems."
         )
-    return "\n".join(lines) + "\n"
+    return "\n".join(contents) + "\n"
 
 
 def export_result_bundle(
@@ -816,8 +881,10 @@ def export_result_bundle(
 ) -> Path:
     output = Path(output_dir).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
-    downloads = downloads or []
-    diagnostics = diagnostics or []
+    if downloads is None:
+        downloads = []
+    if diagnostics is None:
+        diagnostics = []
 
     candidates = candidate_rows(discovery)
     download_table = download_rows(downloads)
@@ -873,7 +940,16 @@ def export_result_bundle(
         DIAGNOSTIC_HEADERS,
         bundle_root=output,
     )
-    _write_text_atomic(output / "README.md", _bundle_readme(analyses, discovery, diagnostics))
+    _write_text_atomic(
+        output / "README.md",
+        _bundle_readme(
+            analyses,
+            discovery,
+            diagnostics,
+            settings,
+            include_excel=include_excel,
+        ),
+    )
 
     provenance = {
         "schema": "diffractscout_provenance_v1",
