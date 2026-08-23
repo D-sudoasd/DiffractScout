@@ -207,10 +207,10 @@ def test_elasticity_sidecar_prefers_raw_tensor_for_conventional_cif(tmp_path: Pa
     )
     payload = json.loads(path.read_text(encoding="utf-8"))
 
-    assert payload["status"] == "ok"
+    assert payload["status"] == "frame_transform_required"
     assert payload["stiffness_GPa"] == raw
     assert payload["diffractscout"]["coordinate_frame"] == MP_CONVENTIONAL_CIF_FRAME
-    assert payload["provenance"]["usable_for_hkl_modulus"] is True
+    assert payload["provenance"]["usable_for_hkl_modulus"] is False
     assert payload["elastic_tensor"]["ieee_format"] == ieee
 
 

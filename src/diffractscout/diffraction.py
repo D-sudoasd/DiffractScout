@@ -141,34 +141,62 @@ def two_theta_for_d(d_spacing_A: float, wavelength_A: float) -> float | None:
     return float(np.rad2deg(2.0 * np.arcsin(argument)))
 
 
+def _effective_two_theta_window(
+    settings: AnalysisSettings,
+    wavelength_A: float,
+) -> tuple[float, float] | None:
+    """Return the geometric intersection of the requested and *d* windows.
+
+    The returned bounds are inclusive.  A one-point intersection is therefore
+    meaningful and is retained; only ``lower > upper`` is empty.  A ``d_max``
+    below the physical Bragg limit ``lambda / 2`` is always empty, even though
+    it has no finite Bragg angle to use as an angular bound.
+    """
+
+    requested_min = float(settings.two_theta_min_deg)
+    requested_max = float(settings.two_theta_max_deg)
+    if settings.d_min_A is None and settings.d_max_A is None:
+        return requested_min, requested_max
+
+    physical_d_min = float(wavelength_A) / 2.0
+    if settings.d_max_A is not None and float(settings.d_max_A) < physical_d_min:
+        return None
+
+    lower = requested_min
+    upper = requested_max
+    if settings.d_max_A is not None:
+        d_max_angle = two_theta_for_d(float(settings.d_max_A), wavelength_A)
+        if d_max_angle is None:
+            return None
+        lower = max(lower, d_max_angle)
+    if settings.d_min_A is not None:
+        d_min_angle = two_theta_for_d(float(settings.d_min_A), wavelength_A)
+        if d_min_angle is not None:
+            upper = min(upper, d_min_angle)
+    if lower > upper:
+        return None
+    return lower, upper
+
+
 def apply_d_range_to_settings(settings: AnalysisSettings) -> AnalysisSettings:
     """Narrow the 2θ window by intersection with Bragg angles from d bounds.
 
     Larger d maps to smaller 2θ. When ``d_min_A`` / ``d_max_A`` are set, the
-    search window becomes the intersection of the user 2θ range with the Bragg
-    interval implied by those d limits. Reflection-level d filtering is still
-    applied after geometry so peaks outside the d window are dropped even if
-    the angular intersection cannot fully express a one-sided bound.
+    search window becomes the inclusive intersection of the user 2θ range with
+    the Bragg interval implied by those d limits. Reflection-level d filtering
+    is still applied after geometry. An empty intersection deliberately keeps
+    the requested profile grid so callers can export an explicit empty-window
+    result with separate effective-range metadata.
     """
 
     if settings.d_min_A is None and settings.d_max_A is None:
         return settings
     wavelength, _, _ = resolve_wavelength(settings)
-    tmin = float(settings.two_theta_min_deg)
-    tmax = float(settings.two_theta_max_deg)
-    if settings.d_max_A is not None:
-        # d_max → lower 2θ bound
-        tt = two_theta_for_d(float(settings.d_max_A), wavelength)
-        if tt is not None:
-            tmin = max(tmin, tt)
-    if settings.d_min_A is not None:
-        # d_min → upper 2θ bound
-        tt = two_theta_for_d(float(settings.d_min_A), wavelength)
-        if tt is not None:
-            tmax = min(tmax, tt)
-    if not (0.0 <= tmin < tmax <= 180.0):
+    window = _effective_two_theta_window(settings, wavelength)
+    if window is None:
         # Empty intersection: keep original angles; d filters will drop peaks.
         return settings
+    tmin, tmax = window
     return replace(settings, two_theta_min_deg=tmin, two_theta_max_deg=tmax)
 
 
@@ -227,6 +255,28 @@ def validate_analysis_settings(settings: AnalysisSettings) -> None:
         value = getattr(settings, name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ValueError(f"{name} must be a positive integer.")
+    if settings.input_mode == "energy" and settings.wavelength_A is not None:
+        raise ValueError(
+            "wavelength_A is inactive when input_mode='energy'; clear it or use "
+            "input_mode='wavelength'."
+        )
+    if settings.input_mode == "wavelength" and settings.energy_keV is not None:
+        raise ValueError(
+            "energy_keV is inactive when input_mode='wavelength'; clear it or use "
+            "input_mode='energy'."
+        )
+    if settings.input_mode == "source":
+        if settings.source_preset == "Custom" and settings.energy_keV is not None:
+            raise ValueError(
+                "energy_keV is inactive for the Custom source; provide wavelength_A instead."
+            )
+        if settings.source_preset != "Custom" and (
+            settings.wavelength_A is not None or settings.energy_keV is not None
+        ):
+            raise ValueError(
+                "Numeric radiation fields are inactive for a built-in source preset; "
+                "clear wavelength_A and energy_keV."
+            )
     # Validate the mode-specific radiation value as part of the same preflight.
     resolve_wavelength(settings)
     if settings.include_figures:
@@ -402,7 +452,8 @@ def _elastic_annotation(
     note_parts = [*tensor.warnings]
     if tensor.coordinate_frame == "materials_project_conventional_cif_cartesian":
         note_parts.append(
-            "Cij uses the Materials Project conventional-CIF Cartesian frame documented for the raw tensor."
+            "Cij uses the Materials Project raw/POSCAR tensor frame; no verified transform to "
+            "the emitted CIF Cartesian frame is available."
         )
     elif tensor.coordinate_frame != "crystal_cartesian_from_cif_lattice":
         note_parts.append(f"Coordinate-frame declaration: {tensor.coordinate_frame}.")
@@ -419,6 +470,14 @@ def simulate_powder_pattern(
 ) -> PhaseAnalysis:
     validate_analysis_settings(settings)
     wavelength, energy, wavelength_source = resolve_wavelength(settings)
+    requested_two_theta_range = [
+        float(settings.two_theta_min_deg),
+        float(settings.two_theta_max_deg),
+    ]
+    effective_window = _effective_two_theta_window(settings, wavelength)
+    effective_window_empty = (
+        settings.d_min_A is not None or settings.d_max_A is not None
+    ) and effective_window is None
     # Narrow 2θ by Bragg intersection with optional d bounds, then filter by d.
     settings = apply_d_range_to_settings(settings)
     point_count = _profile_point_count(settings)
@@ -438,25 +497,33 @@ def simulate_powder_pattern(
     # d_min but filter reflections; if user d_min is smaller, Bragg already limits.
     cell = structure.small_structure.cell
     cell_volume = float(cell.volume)
-    reflection_estimate = _reflection_search_estimate(cell, float(d_min_search))
-    if reflection_estimate > settings.max_reflection_estimate:
-        raise ValueError(
-            f"Reciprocal search is estimated at {reflection_estimate:,} points, exceeding "
-            f"max_reflection_estimate={settings.max_reflection_estimate:,}. Reduce 2theta_max, "
-            "use a longer wavelength, or raise the explicit safety limit after reviewing memory use."
+    if effective_window_empty:
+        # The geometric intersection is authoritative. Do not let the
+        # reflection-level comparison tolerances admit a boundary reflection
+        # into a window already classified as empty (notably just below
+        # d=lambda/2, where 2theta=180 degrees makes the LP factor singular).
+        reflection_estimate = 0
+        miller_array = []
+    else:
+        reflection_estimate = _reflection_search_estimate(cell, float(d_min_search))
+        if reflection_estimate > settings.max_reflection_estimate:
+            raise ValueError(
+                f"Reciprocal search is estimated at {reflection_estimate:,} points, exceeding "
+                f"max_reflection_estimate={settings.max_reflection_estimate:,}. Reduce 2theta_max, "
+                "use a longer wavelength, or raise the explicit safety limit after reviewing memory use."
+            )
+        miller_array = gemmi.make_miller_array(
+            cell,
+            structure.space_group_object,
+            float(d_min_search),
+            0.0,
+            True,
         )
-    miller_array = gemmi.make_miller_array(
-        cell,
-        structure.space_group_object,
-        float(d_min_search),
-        0.0,
-        True,
-    )
-    if len(miller_array) > settings.max_reflection_estimate:
-        raise ValueError(
-            f"Gemmi generated {len(miller_array):,} reciprocal candidates, exceeding "
-            f"max_reflection_estimate={settings.max_reflection_estimate:,}."
-        )
+        if len(miller_array) > settings.max_reflection_estimate:
+            raise ValueError(
+                f"Gemmi generated {len(miller_array):,} reciprocal candidates, exceeding "
+                f"max_reflection_estimate={settings.max_reflection_estimate:,}."
+            )
     calculator = gemmi.StructureFactorCalculatorX(structure.small_structure.cell)
     four_index = uses_miller_bravais(structure.space_group_object)
     reflections: list[ReflectionRecord] = []
@@ -623,6 +690,9 @@ def simulate_powder_pattern(
     # user-requested upper bound when the span is not an integer number of
     # steps.
     grid = grid[grid <= settings.two_theta_max_deg]
+    sampled_two_theta_range = (
+        [float(grid[0]), float(grid[-1])] if grid.size else None
+    )
     profile_work = len(reflections) * int(grid.size)
     if profile_work > MAX_PROFILE_WORK:
         raise ValueError(
@@ -644,7 +714,13 @@ def simulate_powder_pattern(
         profile = profile / float(np.max(profile)) * 100.0
 
     warnings = list(structure.warnings)
-    if not reflections:
+    if effective_window_empty:
+        warnings.append(
+            "Requested 2theta and d-spacing filter do not overlap; "
+            "the emitted profile grid is retained for compatibility and the "
+            "effective window is empty."
+        )
+    elif not reflections:
         warnings.append("No theoretical reflections fall inside the selected 2theta window.")
     if settings.step_deg > 0.05:
         warnings.append("The profile grid is coarse; use step_deg <= 0.02 for peak-position plots.")
@@ -660,6 +736,12 @@ def simulate_powder_pattern(
         "energy_keV": energy,
         "wavelength_source": wavelength_source,
         "two_theta_range_deg": [settings.two_theta_min_deg, settings.two_theta_max_deg],
+        "profile_sampled_two_theta_range_deg": sampled_two_theta_range,
+        "requested_two_theta_range_deg": requested_two_theta_range,
+        "effective_two_theta_range_deg": (
+            list(effective_window) if effective_window is not None else None
+        ),
+        "effective_window_empty": effective_window_empty,
         "step_deg": settings.step_deg,
         "fwhm_deg": settings.fwhm_deg,
         "profile_model": settings.profile_model,
@@ -667,7 +749,10 @@ def simulate_powder_pattern(
         "pattern_axis": settings.pattern_axis,
         "profile_point_count": int(grid.size),
         "max_profile_points": settings.max_profile_points,
-        # Geometric Bragg d-min from the (possibly narrowed) 2θ max — existing contract.
+        # Geometric Bragg d-min from the configured analysis upper bound. This
+        # governs the reflection search and is distinct from both the last
+        # sampled profile coordinate and the optional filter d_min_A below.
+        "geometric_d_min_A": float(d_min),
         "d_min_A": float(d_min),
         "d_min_search_A": float(d_min_search),
         "d_min_search_relative_margin": DMIN_SEARCH_RELATIVE_MARGIN,

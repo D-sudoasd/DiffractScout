@@ -62,12 +62,19 @@ keyword, raises before the output directory is created. Radiation keywords
 override the prior mode in a supplied `settings=AnalysisSettings(...)` object;
 the intentional `source_preset="Custom"` plus `wavelength_A` source-mode
 contract remains available. Irrelevant wavelength/energy fields are cleared
-after every merge.
+after selecting or merging settings, immediately before `analyze_cifs` validates
+them: energy mode clears `wavelength_A`, wavelength mode clears `energy_keV`,
+and source mode follows its preset semantics (built-in sources clear both;
+`Custom` keeps its wavelength and clears `energy_keV`). Contradictory explicit
+radiation overrides still raise; normalization does not loosen conflict
+validation.
 The existing `.xlsx` shortcut remains atomic and does not replace an existing
 workbook unless `overwrite=True` is explicit.
 
 Bundle Summary retains `two_theta_range_deg` as the requested settings range,
-adds the explicit alias `requested_two_theta_range_deg`, and adds
+adds the explicit alias `requested_two_theta_range_deg`, and separately records
+the configured per-phase bounds as `analysis_two_theta_range_deg` and actual
+sample endpoints as `profile_sampled_two_theta_range_deg`. It also adds
 `effective_two_theta_range_deg`, `effective_wavelength_A`,
 `effective_energy_keV`, `effective_radiation_source`, and
 `source_preset_applied`. These fields describe the post-filter analysis when a

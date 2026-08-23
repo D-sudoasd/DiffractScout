@@ -127,9 +127,15 @@ combining one with a conflicting explicit `input_mode`, raises before the
 output target is created. With `settings=AnalysisSettings(...)`, a radiation
 keyword overrides the baseline radiation mode; only an explicitly supplied
 conflicting `input_mode` keyword raises. The explicit
-`source_preset="Custom"` + `wavelength_A` source-mode contract remains. The resulting
-Summary keeps `two_theta_range_deg` as the requested range, adds the explicit
-alias `requested_two_theta_range_deg`, and adds
+`source_preset="Custom"` + `wavelength_A` source-mode contract remains. The
+helper also normalizes inactive direct-settings radiation fields immediately
+before pipeline validation: energy mode clears wavelength, wavelength mode
+clears energy, built-in source mode clears both, and `Custom` keeps wavelength
+while clearing energy. Contradictory explicit radiation overrides still raise.
+The resulting Summary keeps `two_theta_range_deg` as the requested range, adds the explicit
+alias `requested_two_theta_range_deg`, records configured per-phase bounds in
+`analysis_two_theta_range_deg` and actual sample endpoints in
+`profile_sampled_two_theta_range_deg`, and adds
 `effective_two_theta_range_deg`, `effective_wavelength_A`,
 `effective_energy_keV`, `effective_radiation_source`, and
 `source_preset_applied`.
@@ -152,13 +158,18 @@ on the clipboard; `Clear` affects only the displayed log.
 
 One pipeline task can run at a time. Run buttons are disabled while a worker thread is active, preventing duplicate downloads or simultaneous writes to the same target. All run options are validated and snapshotted on the GUI thread before the worker starts, so later interface edits cannot change an in-flight run and the worker never reads Tk state. Closing the window during a task is blocked with an informational message; there is no force-close or cancel action, so wait for the worker to publish its safe completion before closing. The scientific output transaction remains responsible for preserving an existing valid bundle when a run fails.
 
-## Headless smoke test
+## Headless GUI validation
 
-CI starts and destroys the application under Xvfb on Linux:
+CI installs the test extra and runs both an application construction smoke and
+the full GUI interaction test module under Xvfb on Linux:
 
 ```bash
 xvfb-run -a python -c \
   "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
+xvfb-run -a pytest -q tests/test_gui.py
 ```
 
-This check validates import, widget construction, layout initialization, and clean shutdown. Numerical workflows are tested separately through the headless API and CLI.
+The smoke validates import, widget construction, layout initialization, and
+clean shutdown; `tests/test_gui.py` exercises GUI settings, transitions,
+layout, and worker interaction. Numerical workflows are tested separately
+through the headless API and CLI.

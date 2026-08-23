@@ -245,6 +245,7 @@ def quick_export(
         settings = _default_settings(**kwargs)
     elif kwargs:
         settings = _merge_settings_overrides(settings, kwargs)
+    settings = _normalize_radiation_settings(settings)
 
     if elastic_overrides is not None and not isinstance(elastic_overrides, Mapping):
         raise TypeError("elastic_overrides must be a mapping of name -> ElasticTensor.")

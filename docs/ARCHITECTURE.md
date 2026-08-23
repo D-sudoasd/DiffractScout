@@ -88,7 +88,7 @@ These limits are configurable in the API, CLI, and GUI and are recorded in analy
 
 Automatic sidecar pairing requires an explicit, unique relation to the CIF filename or material identifier. A sidecar that declares a different paired CIF is rejected. Multiple plausible sidecars are reported as ambiguous. Malformed matrices remain explicit invalid records; missing tensors remain absent.
 
-For Materials Project acquisition, the adapter requests conventional-standard cells by default. Automatic directional coupling uses the raw/POSCAR-format tensor paired with that cell and declares `materials_project_conventional_cif_cartesian`. IEEE-format values remain in the sidecar for provenance. An IEEE-only record receives `frame_transform_required`, and directional values remain empty. Primitive-cell download is rejected while automatic elasticity coupling is enabled.
+For Materials Project acquisition, the adapter requests conventional-standard cells by default. The raw/POSCAR-format tensor is retained numerically and paired with the downloaded CIF for provenance, but the adapter does not persist enough of the upstream `ElasticityDoc.structure` orientation to verify a transform into the Cartesian basis emitted by Pymatgen CIF serialization. Raw/POSCAR and IEEE-format values therefore receive `frame_transform_required`, `usable_for_hkl_modulus=false`, and no directional values are emitted. Primitive-cell download is rejected while automatic elasticity coupling is enabled.
 
 ## Transactional result writing
 

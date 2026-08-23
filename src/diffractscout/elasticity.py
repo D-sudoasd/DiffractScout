@@ -15,11 +15,14 @@ from .models import ElasticTensor
 from .utils import write_json
 
 MP_IEEE_CONVENTIONAL_FRAME = "materials_project_ieee_conventional"
+# This label is retained for provenance compatibility.  It identifies the
+# Materials Project raw/POSCAR tensor basis; it is deliberately not a
+# supported directional frame because the provider does not persist a
+# verified transform from the upstream structure orientation to the emitted
+# CIF Cartesian basis.
 MP_CONVENTIONAL_CIF_FRAME = "materials_project_conventional_cif_cartesian"
 CIF_CARTESIAN_FRAME = "crystal_cartesian_from_cif_lattice"
-SUPPORTED_DIRECTIONAL_FRAMES = frozenset(
-    {CIF_CARTESIAN_FRAME, MP_CONVENTIONAL_CIF_FRAME}
-)
+SUPPORTED_DIRECTIONAL_FRAMES = frozenset({CIF_CARTESIAN_FRAME})
 
 _STIFFNESS_TO_GPA = {
     "pa": 1e-9,
@@ -359,8 +362,6 @@ def elastic_tensor_from_payload(payload: dict[str, Any], *, path: Path | None = 
             coordinate_frame = MP_IEEE_CONVENTIONAL_FRAME
         elif provider.lower() == "materials project" and "raw" in basis:
             coordinate_frame = MP_CONVENTIONAL_CIF_FRAME
-        else:
-            coordinate_frame = CIF_CARTESIAN_FRAME
 
     tensor = validate_elastic_tensor(
         matrix,
@@ -372,6 +373,13 @@ def elastic_tensor_from_payload(payload: dict[str, Any], *, path: Path | None = 
         coordinate_frame=coordinate_frame,
         raw_payload_path=path,
     )
+    if not coordinate_frame:
+        tensor.warnings = [
+            "No coordinate_frame was declared for this JSON tensor; an explicit verified "
+            "transform to the CIF Cartesian frame is required before hkl-resolved properties "
+            "can be evaluated.",
+            *tensor.warnings,
+        ]
     if warnings:
         tensor.warnings = [*warnings, *tensor.warnings]
         if tensor.status == "valid":

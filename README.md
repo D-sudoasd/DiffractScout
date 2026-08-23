@@ -57,6 +57,14 @@ DiffractScout reimplements the CIF2Peaks desktop workflow inside a provenance-fi
 
 Column-name mapping and intensity-channel aliases: [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md). Engine semantics vs CIF2Peaks/pymatgen: [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md).
 
+When a *d*-spacing filter is used, the inclusive Bragg intersection is stored
+separately from the requested angular window. `provenance.json` and phase
+metadata distinguish `requested_two_theta_range_deg`,
+`effective_two_theta_range_deg` (or `null` when empty), the compatibility
+`two_theta_range_deg` configured analysis bounds, the actual
+`profile_sampled_two_theta_range_deg` endpoints, `effective_window_empty`, and
+`geometric_d_min_A` versus the filter `d_min_A`.
+
 ## Installation
 
 ### Local CIF analysis
@@ -165,7 +173,7 @@ diffractscout run "Ti-Al-V" -o outputs/ti_al_v \
   --max-total 50
 ```
 
-The Materials Project path requests conventional-standard cells by default. Automatic `hkl`-normal elasticity uses the raw/POSCAR-format tensor paired with that cell setting. An IEEE-only tensor is retained with status `frame_transform_required`; directional modulus fields remain empty until a verified coordinate transformation is supplied. Primitive-cell acquisition therefore requires `--no-elasticity`.
+The Materials Project path requests conventional-standard cells by default. Raw/POSCAR-format and IEEE-format tensors are retained numerically for provenance, but both receive `frame_transform_required` because this provider does not persist enough upstream structure orientation to verify a transform into the emitted CIF Cartesian frame. Directional modulus fields remain empty until an explicit verified transformation is supplied. Primitive-cell acquisition therefore requires `--no-elasticity`.
 
 Candidate counts above `--confirm-above` require `--yes`. The GUI applies an explicit maximum-candidate authorization for every download run.
 
@@ -180,11 +188,11 @@ A successful run is first written to a sibling staging directory, verified, and 
 | `download_index.csv` | Structure download and elasticity-query outcomes, errors, hashes |
 | `phase_summary.csv` | CIF hash, selected block, unit cell, space group, occupancy, warnings |
 | `peak_reference.csv` | Indexed theoretical reflections and optional `hkl`-normal modulus |
-| `pattern_profiles.csv` | Conditional continuous profiles using the selected `profile_model` |
+| `pattern_profiles.csv` | Conditional continuous profiles using the selected `profile_model` (only when `include_patterns` is enabled) |
 | `elasticity.csv` | Numerical tensors, coordinate frames, source records, warnings |
 | `diagnostics.csv` | Structured discovery, download, elasticity, and analysis diagnostics |
 | `results.xlsx` | Conditional human-readable workbook when Excel output is enabled |
-| `provenance.json` | Settings, definitions, provider metadata, software versions, boundaries |
+| `provenance.json` | Settings, effective output flags, definitions, provider metadata, software versions, boundaries |
 | `manifest.json` | SHA-256 and byte-size inventory checked by `diffractscout verify` |
 
 The verifier rejects missing files, modified files, malformed entries, duplicate or unsafe paths, symbolic links, and files that are present but absent from the manifest.

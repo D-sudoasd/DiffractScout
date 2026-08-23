@@ -48,6 +48,14 @@ DiffractScout 在可追溯结果包中重实现了 CIF2Peaks 的主要桌面工�
 
 列名与强度通道别名见 [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md)；与 CIF2Peaks/pymatgen 引擎差异见 [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md)。
 
+启用 *d* 间距过滤时，程序会单独记录包含端点的 Bragg 求交结果。
+`provenance.json` 和物相元数据区分用户请求的
+`requested_two_theta_range_deg`、过滤后的
+`effective_two_theta_range_deg`（无交集时为 `null`）、为兼容保留的
+`two_theta_range_deg` 分析边界、实际采样端点
+`profile_sampled_two_theta_range_deg`、`effective_window_empty`，以及几何
+`geometric_d_min_A` 与过滤字段 `d_min_A`。
+
 ## 安装
 
 本地 CIF 分析：
@@ -123,7 +131,7 @@ diffractscout run "Ti-Al-V" -o D:\results\ti_al_v `
   --max-subsystem-order 3 --max-subsystems 4096 --max-total 50
 ```
 
-默认下载常规标准晶胞。自动方向弹性计算采用与该晶胞设置配对的 raw/POSCAR 格式张量。仅有 IEEE 格式张量时，状态标记为 `frame_transform_required`，方向模量保持空值，直至提供经过验证的坐标变换。原胞下载需要同时使用 `--no-elasticity`。软件会在访问数据库前估算化学子体系查询数量，超过 `--max-subsystems`（默认 4096）时停止，避免高元体系产生组合式查询膨胀。
+默认下载常规标准晶胞。raw/POSCAR 和 IEEE 格式张量会保留数值及来源，但由于当前 provider 没有持久化足够的上游结构取向，无法验证其到导出 CIF Cartesian 坐标系的变换，因此两者均标记为 `frame_transform_required`，不输出方向模量，直至用户提供经过验证的坐标变换。原胞下载需要同时使用 `--no-elasticity`。软件会在访问数据库前估算化学子体系查询数量，超过 `--max-subsystems`（默认 4096）时停止，避免高元体系产生组合式查询膨胀。
 
 ## 结果包与写入安全
 
@@ -141,9 +149,9 @@ diffractscout run "Ti-Al-V" -o D:\results\ti_al_v `
 - `peak_reference.csv`：`hkl`、`d`、`2θ`、`q`、`g`、多重性、结构因子、LP/无 LP 通道及可选方向模量；
 - `candidate_index.csv`、`download_index.csv`：候选相、下载和弹性查询状态；
 - `diagnostics.csv`：检索、下载、弹性和结构分析中的结构化警告与错误；
-- `pattern_profiles.csv`：启用连续谱线时按所选线型模型导出的谱线；
+- `pattern_profiles.csv`：仅在启用连续谱线时按所选线型模型导出的谱线；
 - `results.xlsx`：启用 Excel 时生成的人类可读工作簿；实验室视图仅在 Excel 与 `export_lab_views` 同时启用时出现；
-- `provenance.json`：计算设置、定义、来源与软件版本；
+- `provenance.json`：计算设置、有效输出标志、定义、来源与软件版本；
 - `manifest.json`：文件 SHA-256 与字节数清单。
 
 `diffractscout verify` 会拒绝文件缺失、内容修改、重复/不安全路径、符号链接以及未列入清单的新增文件。

@@ -745,13 +745,35 @@ def _summary_rows(
     discovery: DiscoveryResult | None,
     settings: AnalysisSettings,
     diagnostics: list[DiagnosticRecord],
+    *,
+    include_excel: bool = True,
 ) -> list[dict[str, Any]]:
     first_analysis = analyses[0] if analyses else None
     first_metadata = first_analysis.metadata if first_analysis is not None else {}
     requested_range = [settings.two_theta_min_deg, settings.two_theta_max_deg]
-    effective_range = first_metadata.get("two_theta_range_deg", requested_range)
-    if not isinstance(effective_range, (list, tuple)) or len(effective_range) != 2:
+    grid_range = first_metadata.get("two_theta_range_deg", requested_range)
+    if not isinstance(grid_range, (list, tuple)) or len(grid_range) != 2:
+        grid_range = requested_range
+    sampled_range = first_metadata.get("profile_sampled_two_theta_range_deg")
+    if sampled_range is not None and (
+        not isinstance(sampled_range, (list, tuple)) or len(sampled_range) != 2
+    ):
+        sampled_range = None
+    effective_range = first_metadata.get("effective_two_theta_range_deg")
+    if first_analysis is None and effective_range is None:
+        # No phase was analyzed, so there is no wavelength-specific filter
+        # intersection to report; retain the historical summary fallback.
         effective_range = requested_range
+    if effective_range is not None and (
+        not isinstance(effective_range, (list, tuple)) or len(effective_range) != 2
+    ):
+        effective_range = None
+    effective_window_empty = bool(first_metadata.get("effective_window_empty", False))
+    geometric_d_min = first_metadata.get(
+        "geometric_d_min_A", first_metadata.get("d_min_A")
+    )
+    effective_export_lab_views = bool(include_excel and settings.export_lab_views)
+    effective_include_figures = bool(settings.include_figures and analyses)
     effective_source = (
         first_analysis.wavelength_source if first_analysis is not None else None
     )
@@ -768,9 +790,18 @@ def _summary_rows(
         {"key": "error_count", "value": sum(item.level == "error" for item in diagnostics)},
         {"key": "input_mode", "value": settings.input_mode},
         {"key": "source_preset", "value": settings.source_preset},
+        # Preserve the established Summary meaning for downstream readers.
         {"key": "two_theta_range_deg", "value": requested_range},
         {"key": "requested_two_theta_range_deg", "value": requested_range},
-        {"key": "effective_two_theta_range_deg", "value": list(effective_range)},
+        {"key": "analysis_two_theta_range_deg", "value": list(grid_range)},
+        {
+            "key": "profile_sampled_two_theta_range_deg",
+            "value": list(sampled_range) if sampled_range is not None else None,
+        },
+        {"key": "effective_two_theta_range_deg", "value": (
+            list(effective_range) if effective_range is not None else None
+        )},
+        {"key": "effective_window_empty", "value": effective_window_empty},
         {"key": "effective_wavelength_A", "value": effective_wavelength},
         {"key": "effective_energy_keV", "value": effective_energy},
         {"key": "effective_radiation_source", "value": effective_source},
@@ -783,10 +814,24 @@ def _summary_rows(
             ),
         },
         {"key": "profile_model", "value": settings.profile_model},
+        {"key": "geometric_d_min_A", "value": geometric_d_min},
         {"key": "d_min_A", "value": settings.d_min_A},
         {"key": "d_max_A", "value": settings.d_max_A},
+        {
+            "key": "filter_d_min_A",
+            "value": first_metadata.get("filter_d_min_A", settings.d_min_A),
+        },
+        {
+            "key": "filter_d_max_A",
+            "value": first_metadata.get("filter_d_max_A", settings.d_max_A),
+        },
         {"key": "pattern_axis", "value": settings.pattern_axis},
-        {"key": "export_lab_views", "value": settings.export_lab_views},
+        {"key": "include_excel", "value": bool(include_excel)},
+        {"key": "include_patterns", "value": bool(settings.include_patterns)},
+        {"key": "include_figures", "value": bool(settings.include_figures)},
+        {"key": "effective_include_figures", "value": effective_include_figures},
+        {"key": "export_lab_views", "value": bool(settings.export_lab_views)},
+        {"key": "effective_export_lab_views", "value": effective_export_lab_views},
         {
             "key": "peak_longtable_note",
             "value": (
@@ -811,6 +856,8 @@ def _bundle_readme(
     include_excel: bool = True,
 ) -> str:
     settings = settings or AnalysisSettings()
+    effective_export_lab_views = bool(include_excel and settings.export_lab_views)
+    effective_include_figures = bool(settings.include_figures and analyses)
     contents = [
         "# DiffractScout result bundle",
         "",
@@ -848,19 +895,19 @@ def _bundle_readme(
             "",
             SCIENTIFIC_BOUNDARY,
             "",
-            "Materials Project Cij is labeled as DFT-derived. Automatic hkl coupling uses the raw/POSCAR tensor paired with the conventional-standard CIF; IEEE-only records require an explicit frame transform. Missing tensors remain missing.",
+            "Materials Project Cij is labeled as DFT-derived. Raw/POSCAR and IEEE tensor records are retained with `frame_transform_required` until an explicit verified transform to the emitted CIF Cartesian frame is available. Missing tensors remain missing.",
             "",
             f"Analyzed phases: {len(analyses)}.",
             f"Diagnostics: {len(diagnostics)} ({sum(item.level == 'error' for item in diagnostics)} errors).",
         ]
     )
     if include_excel:
-        if settings.export_lab_views:
+        if effective_export_lab_views:
             contents.append(
                 "Excel lab views are enabled: `results.xlsx` includes `使用说明`, `推荐峰表`, "
                 "and eligible per-phase convenience sheets."
             )
-    if settings.include_figures and analyses:
+    if effective_include_figures:
         contents.append("2theta figure files are emitted under `figures/`.")
     if discovery is not None:
         contents.append(
@@ -915,7 +962,13 @@ def export_result_bundle(
                     )
                 )
     diagnostic_table = diagnostic_rows(diagnostics)
-    summary = _summary_rows(analyses, discovery, settings, diagnostics)
+    summary = _summary_rows(
+        analyses,
+        discovery,
+        settings,
+        diagnostics,
+        include_excel=include_excel,
+    )
 
     _write_csv(output / "phase_summary.csv", phases, PHASE_HEADERS, bundle_root=output)
     _write_csv(output / "peak_reference.csv", peaks, PEAK_HEADERS, bundle_root=output)
@@ -951,10 +1004,19 @@ def export_result_bundle(
         ),
     )
 
+    effective_include_figures = bool(settings.include_figures and analyses)
+    effective_export_lab_views = bool(include_excel and settings.export_lab_views)
     provenance = {
         "schema": "diffractscout_provenance_v1",
         "generated_at_utc": utc_now_iso(),
         "analysis_settings": asdict(settings),
+        "output_flags": {
+            "include_excel": bool(include_excel),
+            "include_patterns": bool(settings.include_patterns),
+            "include_figures": effective_include_figures,
+            "export_lab_views": effective_export_lab_views,
+            "effective_export_lab_views": effective_export_lab_views,
+        },
         "discovery": (
             _portable_json_value(discovery, output) if discovery is not None else None
         ),
@@ -990,15 +1052,32 @@ def export_result_bundle(
             ),
             "elastic_modulus": "E(n) = 1 / (q(n)^T S q(n)) under engineering-shear Voigt convention",
             "lab_views_schema": (
-                "When export_lab_views is true, results.xlsx opens on 推荐峰表 after 使用说明: "
+                "When effective_export_lab_views is true, the emitted results.xlsx opens on 推荐峰表 after 使用说明: "
                 "analysis-first Chinese long table (BEGINNER_PEAK_HEADERS_ZH) with freeze+autofilter, "
                 "optional per-phase peak sheets (≤20 phases). Peaks/CSV remain the English machine schema "
                 "with the same peak_rows values; R_hkl names are volume-normalized J aliases, not residuals."
             ),
             "analysis_peak_columns": list(ANALYSIS_PEAK_COLUMNS),
             "pattern_axis_columns": (
-                "pattern_profiles.csv always includes two_theta_deg, d_A, q_invA, g_invA, "
+                "When pattern_profiles.csv is emitted (include_patterns is true), it includes "
+                "two_theta_deg, d_A, q_invA, g_invA, "
                 "x_axis_mode (settings.pattern_axis), x (selected axis value), and relative_intensity"
+            ),
+            "two_theta_ranges": (
+                "In phase metadata, two_theta_range_deg is the configured analysis bound; "
+                "profile_sampled_two_theta_range_deg records the first and last emitted profile "
+                "coordinates. In the Excel Summary, legacy two_theta_range_deg and "
+                "requested_two_theta_range_deg are the user request, while "
+                "analysis_two_theta_range_deg records the configured per-phase bounds. "
+                "effective_two_theta_range_deg is the inclusive intersection with the d-spacing "
+                "filter, or null when that intersection is empty. geometric_d_min_A is the Bragg "
+                "lower d bound from the configured analysis upper angle and is distinct from "
+                "filter d_min_A."
+            ),
+            "conditional_outputs": (
+                "results.xlsx is emitted when include_excel is true; pattern_profiles.csv is "
+                "emitted when include_patterns is true; figures/ is emitted when include_figures "
+                "is true and at least one phase is analyzed."
             ),
         },
         "scientific_boundary": SCIENTIFIC_BOUNDARY,

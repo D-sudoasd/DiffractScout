@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 
 import diffractscout.diffraction as diffraction
-from diffractscout.diffraction import simulate_powder_pattern, two_theta_for_d
+from diffractscout.diffraction import (
+    apply_d_range_to_settings,
+    simulate_powder_pattern,
+    two_theta_for_d,
+)
 from diffractscout.elasticity import MP_IEEE_CONVENTIONAL_FRAME, discover_elastic_tensor, validate_elastic_tensor
 from diffractscout.models import AnalysisSettings
 from diffractscout.structure import load_structure
@@ -78,6 +82,153 @@ def test_energy_input_rejects_nonfinite_derived_wavelength() -> None:
         diffraction.resolve_wavelength(
             AnalysisSettings(input_mode="energy", energy_keV=1e-323)
         )
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        AnalysisSettings(input_mode="energy", energy_keV=20.0, wavelength_A=1.0),
+        AnalysisSettings(input_mode="wavelength", wavelength_A=1.0, energy_keV=20.0),
+        AnalysisSettings(source_preset="Custom", wavelength_A=1.0, energy_keV=20.0),
+        AnalysisSettings(source_preset="Cu Ka", wavelength_A=1.0),
+        AnalysisSettings(source_preset="Cu Ka", energy_keV=20.0),
+    ],
+)
+def test_analysis_settings_reject_inactive_radiation_fields(
+    settings: AnalysisSettings,
+) -> None:
+    with pytest.raises(ValueError, match="inactive"):
+        diffraction.validate_analysis_settings(settings)
+
+
+def test_analysis_settings_accept_documented_radiation_modes() -> None:
+    for settings in (
+        AnalysisSettings(source_preset="Cu Ka"),
+        AnalysisSettings(input_mode="wavelength", wavelength_A=1.0),
+        AnalysisSettings(input_mode="energy", energy_keV=20.0),
+        AnalysisSettings(source_preset="Custom", wavelength_A=1.0),
+    ):
+        diffraction.validate_analysis_settings(settings)
+
+
+def test_empty_d_and_two_theta_intersection_is_explicit_and_keeps_grid(
+    demo_inputs: Path,
+) -> None:
+    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    result = simulate_powder_pattern(
+        structure,
+        AnalysisSettings(
+            two_theta_min_deg=5.0,
+            two_theta_max_deg=20.0,
+            d_max_A=1.0,
+            step_deg=1.0,
+            include_elasticity=False,
+        ),
+    )
+
+    assert result.metadata["two_theta_range_deg"] == [5.0, 20.0]
+    assert result.metadata["profile_sampled_two_theta_range_deg"] == [5.0, 20.0]
+    assert result.metadata["requested_two_theta_range_deg"] == [5.0, 20.0]
+    assert result.metadata["effective_two_theta_range_deg"] is None
+    assert result.metadata["effective_window_empty"] is True
+    assert not result.reflections
+    assert any(
+        "requested 2theta and d-spacing filter do not overlap" in warning.lower()
+        for warning in result.warnings
+    )
+    assert not any(
+        "no theoretical reflections" in warning.lower() for warning in result.warnings
+    )
+
+
+def test_equal_d_and_two_theta_boundary_is_a_nonempty_single_point() -> None:
+    wavelength = 1.5406
+    d_at_20 = wavelength / (2.0 * np.sin(np.deg2rad(20.0 / 2.0)))
+    settings = AnalysisSettings(
+        two_theta_min_deg=5.0,
+        two_theta_max_deg=20.0,
+        d_max_A=d_at_20,
+    )
+
+    narrowed = apply_d_range_to_settings(settings)
+
+    assert narrowed.two_theta_min_deg == pytest.approx(20.0, abs=1e-12)
+    assert narrowed.two_theta_max_deg == 20.0
+
+
+def test_physically_impossible_d_max_is_an_empty_intersection(
+    demo_inputs: Path,
+) -> None:
+    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    result = simulate_powder_pattern(
+        structure,
+        AnalysisSettings(
+            two_theta_min_deg=5.0,
+            two_theta_max_deg=20.0,
+            d_max_A=0.7,
+            step_deg=1.0,
+            include_elasticity=False,
+        ),
+    )
+
+    assert result.metadata["effective_window_empty"] is True
+    assert result.metadata["effective_two_theta_range_deg"] is None
+    assert result.metadata["two_theta_range_deg"] == [5.0, 20.0]
+    assert result.metadata["reflection_search_estimate"] == 0
+    assert result.metadata["miller_candidates_generated"] == 0
+
+
+def test_just_below_lambda_over_two_cannot_reenter_through_filter_tolerance(
+    demo_inputs: Path,
+) -> None:
+    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    backscatter_d = float(structure.small_structure.cell.calculate_d((2, 0, 0)))
+    wavelength = 2.0 * backscatter_d
+
+    result = simulate_powder_pattern(
+        structure,
+        AnalysisSettings(
+            input_mode="wavelength",
+            wavelength_A=wavelength,
+            two_theta_min_deg=170.0,
+            two_theta_max_deg=180.0,
+            d_max_A=backscatter_d - 5e-13,
+            step_deg=1.0,
+            include_elasticity=False,
+        ),
+    )
+
+    assert result.metadata["effective_window_empty"] is True
+    assert result.metadata["effective_two_theta_range_deg"] is None
+    assert result.metadata["reflection_search_estimate"] == 0
+    assert result.metadata["miller_candidates_generated"] == 0
+    assert not result.reflections
+
+
+def test_profile_metadata_distinguishes_configured_and_sampled_endpoints(
+    demo_inputs: Path,
+) -> None:
+    structure = load_structure(demo_inputs / "synthetic_fcc_al.cif")
+    result = simulate_powder_pattern(
+        structure,
+        AnalysisSettings(
+            two_theta_min_deg=5.0,
+            two_theta_max_deg=5.05,
+            step_deg=0.03,
+            include_elasticity=False,
+        ),
+    )
+
+    assert result.metadata["two_theta_range_deg"] == [5.0, 5.05]
+    assert result.metadata["profile_sampled_two_theta_range_deg"] == pytest.approx(
+        [5.0, 5.03]
+    )
+    expected_geometric_d_min = result.wavelength_A / (
+        2.0 * np.sin(np.deg2rad(5.05 / 2.0))
+    )
+    assert result.metadata["geometric_d_min_A"] == pytest.approx(
+        expected_geometric_d_min
+    )
 
 
 def test_reflection_search_estimate_bounds_highly_skewed_cell() -> None:

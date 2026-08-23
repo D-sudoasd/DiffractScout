@@ -68,7 +68,7 @@ def test_summary_rows_distinguish_requested_and_effective_settings() -> None:
         d_min_A=0.8,
         d_max_A=4.0,
     )
-    summary = _summary_rows([], None, settings, [])
+    summary = _summary_rows([], None, settings, [], include_excel=False)
     values = {row["key"]: row["value"] for row in summary}
     assert values["two_theta_range_deg"] == [5.0, 120.0]
     assert values["requested_two_theta_range_deg"] == [5.0, 120.0]
@@ -76,6 +76,9 @@ def test_summary_rows_distinguish_requested_and_effective_settings() -> None:
     assert values["effective_wavelength_A"] is None
     assert values["effective_energy_keV"] is None
     assert values["source_preset_applied"] is None
+    assert values["export_lab_views"] is True
+    assert values["effective_export_lab_views"] is False
+    assert values["include_excel"] is False
 
 
 def test_summary_rows_read_back_effective_d_filtered_energy_analysis(
@@ -108,6 +111,12 @@ def test_summary_rows_read_back_effective_d_filtered_energy_analysis(
     metadata = result.analyses[0].metadata
     assert json.loads(values["two_theta_range_deg"]) == [5.0, 120.0]
     assert json.loads(values["requested_two_theta_range_deg"]) == [5.0, 120.0]
+    assert json.loads(values["analysis_two_theta_range_deg"]) == pytest.approx(
+        metadata["two_theta_range_deg"]
+    )
+    assert json.loads(
+        values["profile_sampled_two_theta_range_deg"]
+    ) == pytest.approx(metadata["profile_sampled_two_theta_range_deg"])
     assert json.loads(values["effective_two_theta_range_deg"]) == pytest.approx(
         metadata["two_theta_range_deg"]
     )
@@ -115,6 +124,36 @@ def test_summary_rows_read_back_effective_d_filtered_energy_analysis(
     assert values["effective_energy_keV"] == pytest.approx(20.0)
     assert values["effective_radiation_source"] == "energy_keV"
     assert values["source_preset_applied"] in {None, ""}
+
+
+def test_provenance_records_effective_conditional_output_flags(tmp_path: Path) -> None:
+    inputs = write_demo_inputs(tmp_path / "inputs")
+    settings = AnalysisSettings(
+        include_patterns=False,
+        include_figures=False,
+        export_lab_views=True,
+    )
+    result = analyze_cifs(
+        [inputs],
+        tmp_path / "no-optional-outputs",
+        settings=settings,
+        include_excel=False,
+    )
+    payload = json.loads((result.output_dir / "provenance.json").read_text(encoding="utf-8"))
+    flags = payload["output_flags"]
+
+    assert flags == {
+        "include_excel": False,
+        "include_patterns": False,
+        "include_figures": False,
+        "export_lab_views": False,
+        "effective_export_lab_views": False,
+    }
+    assert not (result.output_dir / "results.xlsx").exists()
+    assert not (result.output_dir / "pattern_profiles.csv").exists()
+    assert "results.xlsx" not in (result.output_dir / "README.md").read_text(encoding="utf-8")
+    assert "pattern_profiles.csv" not in (result.output_dir / "README.md").read_text(encoding="utf-8")
+    assert "always" not in payload["definitions"]["pattern_axis_columns"].lower()
 
 
 def test_bundle_readme_is_conditional_and_names_profile_model() -> None:

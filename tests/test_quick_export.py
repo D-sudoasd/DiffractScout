@@ -131,6 +131,71 @@ def test_quick_export_radiation_keywords_infer_physical_mode(
     assert wavelength_analysis.wavelength_source == "wavelength_A"
 
 
+@pytest.mark.parametrize(
+    ("case", "settings", "expected_wavelength", "expected_energy"),
+    [
+        (
+            "energy-clears-stale-wavelength",
+            AnalysisSettings(input_mode="energy", energy_keV=20.0, wavelength_A=1.2),
+            None,
+            pytest.approx(20.0),
+        ),
+        (
+            "wavelength-clears-stale-energy",
+            AnalysisSettings(input_mode="wavelength", wavelength_A=1.2, energy_keV=20.0),
+            pytest.approx(1.2),
+            None,
+        ),
+        (
+            "builtin-source-clears-stale-radiation",
+            AnalysisSettings(
+                input_mode="source",
+                source_preset="Cu Ka",
+                wavelength_A=1.2,
+                energy_keV=20.0,
+            ),
+            None,
+            None,
+        ),
+        (
+            "custom-source-keeps-wavelength",
+            AnalysisSettings(
+                input_mode="source",
+                source_preset="Custom",
+                wavelength_A=1.2,
+                energy_keV=20.0,
+            ),
+            pytest.approx(1.2),
+            None,
+        ),
+    ],
+)
+def test_quick_export_normalizes_direct_settings_before_validation(
+    demo_inputs: Path,
+    tmp_path: Path,
+    case: str,
+    settings: AnalysisSettings,
+    expected_wavelength: object,
+    expected_energy: object,
+) -> None:
+    """Inactive direct-settings radiation fields do not reach pipeline validation."""
+
+    result = quick_export(
+        [demo_inputs],
+        tmp_path / case,
+        settings=settings,
+        include_excel=False,
+    )
+
+    persisted = json.loads(
+        (result.output_dir / "provenance.json").read_text(encoding="utf-8")
+    )["analysis_settings"]
+    assert persisted["input_mode"] == settings.input_mode
+    assert persisted["source_preset"] == settings.source_preset
+    assert persisted["wavelength_A"] == expected_wavelength
+    assert persisted["energy_keV"] == expected_energy
+
+
 def test_quick_export_settings_radiation_override_is_applied(
     demo_inputs: Path, tmp_path: Path
 ) -> None:
