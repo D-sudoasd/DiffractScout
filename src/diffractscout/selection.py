@@ -47,6 +47,11 @@ def search_candidates(
     settings: DiscoverySettings,
 ) -> DiscoveryResult:
     validate_discovery_settings(settings)
+    effective_settings = settings
+    effective_e_hull = settings.e_hull_max_eV_atom
+    if settings.mode == "near_stable" and effective_e_hull is None:
+        effective_e_hull = 0.05
+        effective_settings = replace(settings, e_hull_max_eV_atom=effective_e_hull)
     warnings: list[str] = []
     subsystem_counts: dict[str, int] = {}
 
@@ -113,19 +118,13 @@ def search_candidates(
                 max_order=settings.max_subsystem_order,
             )
 
-        e_hull_max = settings.e_hull_max_eV_atom
-        if settings.mode == "near_stable" and e_hull_max is None:
-            e_hull_max = 0.05
-        if settings.mode == "possible_phases" and settings.e_hull_max_eV_atom is None:
-            e_hull_max = None
-
         by_id: dict[str, CandidateRecord] = {}
         for subsystem in subsystems:
             try:
                 found = provider.search_subsystem(
                     subsystem,
                     max_results=settings.max_per_subsystem,
-                    e_hull_max_eV_atom=e_hull_max,
+                    e_hull_max_eV_atom=effective_e_hull,
                     exclude_deprecated=settings.exclude_deprecated,
                 )
             except Exception as exc:
@@ -169,7 +168,7 @@ def search_candidates(
 
     return DiscoveryResult(
         parsed=parsed,
-        settings=settings,
+        settings=effective_settings,
         candidates=candidates,
         subsystems=subsystems,
         subsystem_counts=subsystem_counts,

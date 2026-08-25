@@ -17,7 +17,6 @@ from pathlib import PureWindowsPath
 import shutil
 import tempfile
 from typing import Any, Iterable
-from uuid import uuid4
 
 import gemmi
 import numpy as np
@@ -25,6 +24,7 @@ import numpy as np
 from .diffraction import simulate_powder_pattern
 from .elasticity import validate_elastic_tensor, young_modulus_hkl_normal_GPa
 from .models import AnalysisSettings, ReflectionRecord
+from .pipeline import _TargetState, _capture_target_state, _commit_staging_output
 from .structure import load_structure
 from .utils import package_versions, runtime_environment, sha256_file, utc_now_iso, write_json
 
@@ -417,7 +417,7 @@ def _build_manifest(root: Path, *, all_passed: bool) -> Path:
     entries = []
     for path in sorted(root.rglob("*")):
         _reject_reparse_components(path, label="benchmark staging artifact")
-        if not path.is_file() or path.name == "benchmark_manifest.json":
+        if not path.is_file() or path == root / "benchmark_manifest.json":
             continue
         relative = path.relative_to(root).as_posix()
         entries.append(
@@ -512,7 +512,7 @@ def verify_benchmark_bundle(root: str | Path) -> dict[str, Any]:
     try:
         paths = directory.rglob("*")
         for path in paths:
-            if path.name == "benchmark_manifest.json":
+            if path == directory / "benchmark_manifest.json":
                 continue
             try:
                 _reject_reparse_components(path, label="benchmark bundle artifact")
@@ -554,20 +554,25 @@ def _prepare_target(output_dir: str | Path, *, overwrite: bool) -> Path:
     return target
 
 
-def _commit_directory(target: Path, staging: Path) -> None:
-    backup: Path | None = None
-    try:
-        if target.exists():
-            backup = target.with_name(f".{target.name}.backup-{uuid4().hex}")
-            target.replace(backup)
-        staging.replace(target)
-    except Exception:
-        if not target.exists() and backup is not None and backup.exists():
-            backup.replace(target)
-        raise
-    else:
-        if backup is not None:
-            shutil.rmtree(backup, ignore_errors=True)
+def _commit_directory(
+    target: Path,
+    staging: Path,
+    *,
+    expected_state: _TargetState | None = None,
+) -> None:
+    """Publish a benchmark bundle through the guarded directory transaction."""
+
+    if expected_state is None:
+        expected_state = _capture_target_state(
+            target,
+            manifest_name="benchmark_manifest.json",
+        )
+    _commit_staging_output(
+        target,
+        staging,
+        expected_state=expected_state,
+        manifest_name="benchmark_manifest.json",
+    )
 
 
 def run_reference_benchmarks(
@@ -578,6 +583,10 @@ def run_reference_benchmarks(
     """Run all packaged analytic benchmarks and atomically write a result bundle."""
 
     target = _prepare_target(output_dir, overwrite=overwrite)
+    expected_target_state = _capture_target_state(
+        target,
+        manifest_name="benchmark_manifest.json",
+    )
     staging = Path(
         tempfile.mkdtemp(prefix=f".{target.name}.benchmark-", dir=str(target.parent))
     ).resolve()
@@ -627,8 +636,11 @@ def run_reference_benchmarks(
                 "Analytic benchmark bundle failed integrity verification: "
                 + "; ".join(verification["errors"])
             )
-        _prepare_target(output_dir, overwrite=overwrite)
-        _commit_directory(target, staging)
+        _commit_directory(
+            target,
+            staging,
+            expected_state=expected_target_state,
+        )
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise

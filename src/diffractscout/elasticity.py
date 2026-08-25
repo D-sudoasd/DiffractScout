@@ -11,6 +11,7 @@ from typing import Any, Iterable
 import gemmi
 import numpy as np
 
+from .hkl import plane_hkl_for_normal
 from .models import ElasticTensor
 from .utils import write_json
 
@@ -146,7 +147,7 @@ def validate_elastic_tensor(
 
 
 def reciprocal_plane_normal(cell: gemmi.UnitCell, hkl: Iterable[int]) -> np.ndarray | None:
-    h, k, l = (int(value) for value in hkl)
+    h, k, l = plane_hkl_for_normal(hkl)
     if h == k == l == 0:
         return None
     # Construct the reciprocal normal in the same direct Cartesian frame as
@@ -599,6 +600,54 @@ def normalize_elasticity_sidecar(
     return status, error
 
 
+_ELASTICITY_INDEX_NAMES = (
+    "elasticity_index.csv",
+    "diffractscout_elasticity.csv",
+    "elasticity.csv",
+)
+
+
+def _index_pairing_aliases(row: dict[str, str]) -> set[str]:
+    return {
+        str(row.get(key) or "").strip().lower()
+        for key in ("cif_name", "cif_filename", "paired_cif")
+        if str(row.get(key) or "").strip()
+    }
+
+
+def _index_match_count(index_path: Path, cif_path: Path) -> int | None:
+    """Count pairing rows without interpreting their tensor/status payload."""
+
+    if not index_path.is_file():
+        return None
+    try:
+        with index_path.open(newline="", encoding="utf-8-sig") as handle:
+            rows = list(csv.DictReader(handle))
+    except OSError:
+        return -1
+    target_name = cif_path.name.lower()
+    return sum(target_name in _index_pairing_aliases(row) for row in rows)
+
+
+def _index_alias_conflict(row: dict[str, str]) -> str:
+    for keys, label in (
+        (("source_provider", "provider"), "provider"),
+        (("source_record_id", "material_id"), "record ID"),
+        (("source_url", "mp_material_url"), "source URL"),
+    ):
+        values = {
+            str(row.get(key) or "").strip()
+            for key in keys
+            if str(row.get(key) or "").strip()
+        }
+        if len(values) > 1:
+            return (
+                f"Elasticity index row has conflicting canonical/legacy {label} "
+                f"fields {sorted(values)!r}."
+            )
+    return ""
+
+
 def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
     if not index_path.is_file():
         return None
@@ -607,15 +656,19 @@ def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
             rows = list(csv.DictReader(handle))
     except OSError as exc:
         return _invalid_tensor(f"Could not read elasticity index {index_path.name}: {exc}", path=index_path)
-    matches = [
-        row
-        for row in rows
-        if cif_path.name.lower()
-        in {
-            str(row.get("cif_filename") or "").strip().lower(),
-            str(row.get("paired_cif") or "").strip().lower(),
-        }
-    ]
+    target_name = cif_path.name.lower()
+    matches: list[dict[str, str]] = []
+    for row in rows:
+        aliases = _index_pairing_aliases(row)
+        if target_name not in aliases:
+            continue
+        if len(aliases) > 1:
+            return _invalid_tensor(
+                f"Elasticity index {index_path.name} has conflicting CIF pairing fields "
+                f"for {cif_path.name}; refusing ambiguous row.",
+                path=index_path,
+            )
+        matches.append(row)
     if len(matches) > 1:
         return _invalid_tensor(
             f"Elasticity index {index_path.name} contains {len(matches)} rows for {cif_path.name}; "
@@ -625,6 +678,9 @@ def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
     if not matches:
         return None
     row = matches[0]
+    alias_conflict = _index_alias_conflict(row)
+    if alias_conflict:
+        return _invalid_tensor(alias_conflict, path=index_path)
     status = str(row.get("status") or "").strip().lower()
     numerical = str(row.get("numerical_cij") or "").strip().lower()
     if status in _ELASTICITY_FAILURE_STATUSES:
@@ -660,9 +716,11 @@ def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
         )
     tensor = validate_elastic_tensor(
         matrix,
-        source_provider=str(row.get("provider") or "Materials Project"),
-        source_record_id=str(row.get("material_id") or ""),
-        source_url=str(row.get("mp_material_url") or row.get("source_url") or ""),
+        source_provider=str(
+            row.get("source_provider") or row.get("provider") or "Materials Project"
+        ),
+        source_record_id=str(row.get("source_record_id") or row.get("material_id") or ""),
+        source_url=str(row.get("source_url") or row.get("mp_material_url") or ""),
         methodology_url=str(row.get("methodology_url") or ""),
         nature_of_data=str(row.get("nature_of_data") or ""),
         coordinate_frame=str(row.get("coordinate_frame") or MP_IEEE_CONVENTIONAL_FRAME),
@@ -726,8 +784,24 @@ def discover_elastic_tensor(cif_path: str | Path) -> ElasticTensor | None:
             path=candidate,
         )
 
-    for name in ("elasticity_index.csv", "diffractscout_elasticity.csv"):
-        tensor = _load_from_index(path.parent / name, path)
-        if tensor is not None:
-            return tensor
+    index_matches: list[tuple[Path, int]] = []
+    for name in _ELASTICITY_INDEX_NAMES:
+        index_path = path.parent / name
+        match_count = _index_match_count(index_path, path)
+        if match_count == -1:
+            return _load_from_index(index_path, path)
+        if match_count:
+            index_matches.append((index_path, match_count))
+    if len(index_matches) > 1 or any(count > 1 for _path, count in index_matches):
+        details = ", ".join(
+            f"{index_path.name} ({count} matching row{'s' if count != 1 else ''})"
+            for index_path, count in index_matches
+        )
+        return _invalid_tensor(
+            f"Elasticity index pairing for {path.name} is ambiguous across supported "
+            f"files: {details}.",
+            path=index_matches[0][0] if index_matches else None,
+        )
+    if index_matches:
+        return _load_from_index(index_matches[0][0], path)
     return None

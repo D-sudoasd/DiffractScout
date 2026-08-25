@@ -25,11 +25,20 @@ ALLOY_ALIASES: dict[str, tuple[str, ...]] = {
 
 MP_ID_RE = re.compile(r"\bmp-\d+\b", re.IGNORECASE)
 CHEMSYS_RE = re.compile(r"\b([A-Z][a-z]?(?:-[A-Z][a-z]?)+)\b")
-FORMULA_TOKEN_RE = re.compile(r"(?:[A-Z][a-z]?(?:\d+(?:\.\d+)?)?){2,}")
+# Formula candidates may contain grouping punctuation and a multiplier after a
+# closing group, for example ``(Fe,Ni)3Al``.  The full-token boundaries keep
+# ordinary prose from being treated as a formula while retaining the legacy
+# compact alloy-formula path after hyphens are removed.
+FORMULA_CANDIDATE_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:"
+    r"[A-Z][a-z]?(?:\d+(?:\.\d+)?)?|"
+    r"\d+(?:\.\d+)?|[()[\],]"
+    r")+(?![A-Za-z0-9])"
+)
 ELEMENT_RE = re.compile(r"([A-Z][a-z]?)")
 PERCENT_PAIR_RE = re.compile(
-    r"(?:([A-Z][a-z]?)\s*[:=]?\s*(\d+(?:\.\d+)?)|"
-    r"(\d+(?:\.\d+)?)\s*([A-Z][a-z]?))\s*(?:wt%|at%|mass%|%)?",
+    r"(?<![A-Za-z0-9])(?:([A-Za-z]{1,2})\s*[:=]?\s*(\d+(?:\.\d+)?)|"
+    r"(\d+(?:\.\d+)?)\s*([A-Za-z]{1,2}))\s*(?:wt%|at%|mass%|%)?",
     re.IGNORECASE,
 )
 _INPUT_TRANSLATION = str.maketrans(
@@ -95,6 +104,81 @@ def _append_unique(store: list[str], values: Iterable[str]) -> None:
             store.append(normalized)
 
 
+def _alias_has_input_boundaries(text: str, alias: str) -> bool:
+    """Return whether a compact alias is standalone in the original input.
+
+    Alloy aliases such as ``Ti-6Al-4V`` need punctuation-insensitive matching,
+    but the characters immediately outside the match must still be checked in
+    the original input.  This prevents a compact alias from being found inside
+    a larger grade or prose token while allowing separators inside a valid
+    alias.
+    """
+
+    compact_chars: list[str] = []
+    original_positions: list[int] = []
+    for index, char in enumerate(text):
+        if char.isascii() and char.isalnum():
+            compact_chars.append(char.lower())
+            original_positions.append(index)
+    compact = "".join(compact_chars)
+    alias_start = 0
+    while True:
+        match_start = compact.find(alias, alias_start)
+        if match_start < 0:
+            return False
+        match_end = match_start + len(alias) - 1
+        original_start = original_positions[match_start]
+        original_end = original_positions[match_end]
+        before = text[original_start - 1] if original_start else ""
+        after = text[original_end + 1] if original_end + 1 < len(text) else ""
+        if not (
+            before.isascii()
+            and before.isalnum()
+            or after.isascii()
+            and after.isalnum()
+        ):
+            return True
+        alias_start = match_start + 1
+
+
+def _reject_embedded_alias_tokens(text: str) -> None:
+    """Reject an ASCII grade/prose token that embeds a known alloy alias.
+
+    A compact alias may cross punctuation such as the hyphens in ``Ti-6Al-4V``;
+    a single larger alphanumeric token such as ``Ti640`` is different and is
+    not a valid formula or grade.  Failing closed here prevents later generic
+    formula/percentage fallbacks from creating an unrelated chemical system.
+    """
+
+    for token in re.findall(r"[A-Za-z0-9]+", text):
+        lowered = token.lower()
+        for alias in ALLOY_ALIASES:
+            if lowered != alias and alias in lowered:
+                raise ValueError(
+                    f"Composition token {token!r} contains non-standalone alias "
+                    f"{alias!r}; refusing ambiguous composition input."
+                )
+
+
+def _has_explicit_percent_unit(match: re.Match[str]) -> bool:
+    return bool(re.search(r"(?:wt%|at%|mass%|%)\s*$", match.group(0), re.IGNORECASE))
+
+
+def _percent_pair_is_unambiguous(
+    text: str,
+    match: re.Match[str],
+) -> bool:
+    """Keep unitless percentage pairs out of compact formula tokens."""
+
+    if _has_explicit_percent_unit(match):
+        return True
+    if match.group(1) is not None:
+        between = text[match.end(1) : match.start(2)]
+        return any(char.isspace() for char in between) or ":" in between or "=" in between
+    # Numeric-first pairs such as ``50Al`` are retained for compatibility.
+    return True
+
+
 def parse_composition_text(text: str) -> ParsedComposition:
     raw = (text or "").strip()
     if not raw:
@@ -107,10 +191,10 @@ def parse_composition_text(text: str) -> ParsedComposition:
     material_ids = [item.lower() for item in MP_ID_RE.findall(normalized_raw)]
     material_ids = list(dict.fromkeys(material_ids))
 
-    normalized_text = normalized_raw.lower()
-    compact = re.sub(r"[^a-z0-9]+", "", normalized_text)
+    _reject_embedded_alias_tokens(normalized_raw)
+
     for alias, alias_elements in ALLOY_ALIASES.items():
-        if alias in compact:
+        if _alias_has_input_boundaries(normalized_raw, alias):
             _append_unique(elements, alias_elements)
             labels.append(alias)
             notes.append(f"alias_element_set_only:{alias}")
@@ -131,17 +215,48 @@ def parse_composition_text(text: str) -> ParsedComposition:
             _append_unique(elements, [item for item in normalized if item])
             labels.append(match.group(1).replace("-", ""))
 
-    for match in PERCENT_PAIR_RE.finditer(normalized_raw):
+    percent_matches = [
+        match
+        for match in PERCENT_PAIR_RE.finditer(normalized_raw)
+        if _percent_pair_is_unambiguous(normalized_raw, match)
+    ]
+    explicit_percent_spans = [
+        (match.start(), match.end())
+        for match in percent_matches
+        if _has_explicit_percent_unit(match)
+    ]
+    formula_contexts = [
+        (match.start(), match.end())
+        for match in FORMULA_CANDIDATE_RE.finditer(normalized_raw)
+        if len(formula_elements(match.group(0))) >= 2
+    ]
+    for match in percent_matches:
+        if any(
+            start <= match.start() and match.end() <= end
+            for start, end in formula_contexts
+        ):
+            continue
         symbol = match.group(1) or match.group(4) or ""
         normalized = normalize_element(symbol)
         if normalized:
             _append_unique(elements, [normalized])
 
-    # Formula/grade tokens such as Ti6Al4V. Require at least two recognized elements.
-    for match in FORMULA_TOKEN_RE.finditer(normalized_raw.replace("-", "")):
+    # Formula/grade tokens such as Ti6Al4V. Multi-element tokens are accepted;
+    # a single-element token must include an explicit stoichiometric number
+    # (for example C60 or O2). Alias candidates are skipped so all-uppercase
+    # aliases such as IN718 cannot be reinterpreted as unrelated elements.
+    for match in FORMULA_CANDIDATE_RE.finditer(normalized_raw.replace("-", "")):
         token = match.group(0)
+        if any(
+            match.start() < end and match.end() > start
+            for start, end in explicit_percent_spans
+        ):
+            continue
+        if re.sub(r"[^A-Za-z0-9]+", "", token).lower() in ALLOY_ALIASES:
+            continue
         parsed = formula_elements(token)
-        if len(parsed) >= 2:
+        is_single_element_formula = len(parsed) == 1 and bool(re.search(r"\d", token))
+        if len(parsed) >= 2 or is_single_element_formula:
             _append_unique(elements, parsed)
             labels.append(token)
 

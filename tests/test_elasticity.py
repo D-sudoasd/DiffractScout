@@ -34,6 +34,32 @@ def test_reciprocal_plane_normal_uses_direct_hexagonal_cif_basis() -> None:
     assert mixed == pytest.approx([0.5, 0.8660254, 0.0], abs=1e-8)
 
 
+def test_four_index_plane_normal_matches_equivalent_hkl() -> None:
+    cell = gemmi.UnitCell(3, 3, 5, 90, 90, 120)
+    three = reciprocal_plane_normal(cell, (1, 0, 0))
+    four = reciprocal_plane_normal(cell, (1, 0, -1, 0))
+    assert three is not None and four is not None
+    assert four == pytest.approx(three, abs=1e-12)
+
+
+def test_four_index_plane_modulus_matches_equivalent_hkl() -> None:
+    tensor = validate_elastic_tensor(np.diag([200.0, 100.0, 50.0, 80.0, 80.0, 80.0]))
+    cell = gemmi.UnitCell(3, 3, 5, 90, 90, 120)
+    assert young_modulus_hkl_normal_GPa(tensor, cell, (1, 0, 0)) == pytest.approx(
+        young_modulus_hkl_normal_GPa(tensor, cell, (1, 0, -1, 0)), rel=1e-12
+    )
+
+
+def test_invalid_four_index_plane_is_rejected() -> None:
+    tensor = validate_elastic_tensor(np.eye(6) * 100.0)
+    with pytest.raises(ValueError, match=r"i = -\(h \+ k\)"):
+        reciprocal_plane_normal(gemmi.UnitCell(3, 3, 5, 90, 90, 120), (1, 0, 0, 0))
+    with pytest.raises(ValueError, match=r"i = -\(h \+ k\)"):
+        young_modulus_hkl_normal_GPa(
+            tensor, gemmi.UnitCell(3, 3, 5, 90, 90, 120), (1, 0, 0, 0)
+        )
+
+
 def test_anisotropic_modulus_uses_corrected_monoclinic_normal() -> None:
     cell = gemmi.UnitCell(3, 4, 5, 90, 110, 90)
     matrix = np.diag([200.0, 100.0, 50.0, 80.0, 80.0, 80.0])
@@ -153,6 +179,200 @@ def test_index_frame_transform_required_preserves_numerical_tensor(
     assert young_modulus_hkl_normal_GPa(
         tensor, structure.small_structure.cell, (1, 1, 1)
     ) is None
+
+
+def test_canonical_elasticity_index_fields_round_trip(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    cif = tmp_path / "mp-456_Al.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    index = tmp_path / "elasticity.csv"
+    fields = [
+        "phase_name",
+        "cif_name",
+        "cif_filename",
+        "paired_cif",
+        "status",
+        "unit",
+        "source_provider",
+        "provider",
+        "source_record_id",
+        "material_id",
+        "source_url",
+        "mp_material_url",
+        "methodology_url",
+        "nature_of_data",
+        "coordinate_frame",
+        *[f"C{i}{j}_GPa" for i in range(1, 7) for j in range(1, 7)],
+    ]
+    row = {
+        "phase_name": "Al",
+        "cif_name": cif.name,
+        "cif_filename": cif.name,
+        "paired_cif": cif.name,
+        "status": "valid",
+        "unit": "GPa",
+        "source_provider": "canonical-provider",
+        "provider": "canonical-provider",
+        "source_record_id": "mp-456",
+        "material_id": "mp-456",
+        "source_url": "https://example.invalid/canonical",
+        "mp_material_url": "https://example.invalid/canonical",
+        "methodology_url": "https://example.invalid/method",
+        "nature_of_data": "DFT_calculated",
+        "coordinate_frame": CIF_CARTESIAN_FRAME,
+        **{f"C{i}{j}_GPa": "100" if i == j else "0" for i in range(1, 7) for j in range(1, 7)},
+    }
+    with index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(row)
+
+    tensor = discover_elastic_tensor(cif)
+
+    assert tensor is not None
+    assert tensor.status == "valid_with_warnings"
+    assert tensor.source_provider == "canonical-provider"
+    assert tensor.source_record_id == "mp-456"
+    assert tensor.source_url == "https://example.invalid/canonical"
+    assert tensor.stiffness_GPa == pytest.approx(np.eye(6) * 100.0)
+    assert tensor.raw_payload_path == index
+
+
+def test_index_row_matching_multiple_aliases_is_counted_once(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    cif = tmp_path / "alias.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    index = tmp_path / "elasticity_index.csv"
+    fields = [
+        "cif_name",
+        "cif_filename",
+        "paired_cif",
+        "status",
+        "numerical_cij",
+        "source_provider",
+        "source_record_id",
+        "coordinate_frame",
+        *[f"C{i}{j}_GPa" for i in range(1, 7) for j in range(1, 7)],
+    ]
+    row = {
+        "cif_name": cif.name,
+        "cif_filename": cif.name,
+        "paired_cif": cif.name,
+        "status": "valid",
+        "numerical_cij": "true",
+        "source_provider": "canonical-provider",
+        "source_record_id": "record-1",
+        "coordinate_frame": CIF_CARTESIAN_FRAME,
+        **{f"C{i}{j}_GPa": "100" if i == j else "0" for i in range(1, 7) for j in range(1, 7)},
+    }
+    with index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(row)
+
+    tensor = discover_elastic_tensor(cif)
+    assert tensor is not None
+    assert tensor.status == "valid"
+
+
+def test_conflicting_canonical_and_legacy_index_pairing_fails_closed(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    cif = tmp_path / "conflict.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    index = tmp_path / "elasticity_index.csv"
+    fields = ["cif_name", "cif_filename", "status"]
+    with index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "cif_name": cif.name,
+                "cif_filename": "different.cif",
+                "status": "invalid",
+            }
+        )
+
+    tensor = discover_elastic_tensor(cif)
+    assert tensor is not None
+    assert tensor.status == "invalid"
+    assert any("conflicting" in warning.lower() for warning in tensor.warnings)
+
+
+def test_conflicting_canonical_and_legacy_index_provenance_fails_closed(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    cif = tmp_path / "metadata-conflict.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    index = tmp_path / "elasticity_index.csv"
+    fields = [
+        "cif_name",
+        "status",
+        "source_provider",
+        "provider",
+        "source_record_id",
+        "material_id",
+        "coordinate_frame",
+        *[f"C{i}{j}_GPa" for i in range(1, 7) for j in range(1, 7)],
+    ]
+    row = {
+        "cif_name": cif.name,
+        "status": "valid",
+        "source_provider": "canonical",
+        "provider": "legacy",
+        "source_record_id": "new-id",
+        "material_id": "old-id",
+        "coordinate_frame": CIF_CARTESIAN_FRAME,
+        **{f"C{i}{j}_GPa": "100" if i == j else "0" for i in range(1, 7) for j in range(1, 7)},
+    }
+    with index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(row)
+
+    tensor = discover_elastic_tensor(cif)
+    assert tensor is not None
+    assert tensor.status == "invalid"
+    assert any("canonical/legacy" in warning for warning in tensor.warnings)
+
+
+def test_matching_rows_across_supported_index_files_are_ambiguous(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    cif = tmp_path / "multi-index.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    fields = [
+        "cif_name",
+        "status",
+        "source_provider",
+        "source_record_id",
+        "coordinate_frame",
+        *[f"C{i}{j}_GPa" for i in range(1, 7) for j in range(1, 7)],
+    ]
+    for filename, diagonal in (("elasticity_index.csv", "100"), ("elasticity.csv", "120")):
+        row = {
+            "cif_name": cif.name,
+            "status": "valid",
+            "source_provider": "fixture",
+            "source_record_id": filename,
+            "coordinate_frame": CIF_CARTESIAN_FRAME,
+            **{
+                f"C{i}{j}_GPa": diagonal if i == j else "0"
+                for i in range(1, 7)
+                for j in range(1, 7)
+            },
+        }
+        with (tmp_path / filename).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerow(row)
+
+    tensor = discover_elastic_tensor(cif)
+    assert tensor is not None
+    assert tensor.status == "invalid"
+    assert any("ambiguous" in warning.lower() for warning in tensor.warnings)
 
 
 @pytest.mark.parametrize("status", ["invalid", "elasticity_query_failed"])

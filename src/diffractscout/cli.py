@@ -359,7 +359,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             gui_main()
             return 0
-    except (ValueError, FileNotFoundError, FileExistsError, PermissionError, RuntimeError) as exc:
+    except (
+        ValueError,
+        FileNotFoundError,
+        FileExistsError,
+        PermissionError,
+        RuntimeError,
+        OSError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     parser.error(f"Unknown command: {args.command}")

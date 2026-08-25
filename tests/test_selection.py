@@ -1,9 +1,11 @@
+import json
 from pathlib import Path
 
 import pytest
 
 from diffractscout.composition import parse_composition_text
-from diffractscout.models import CandidateRecord, DiscoverySettings
+from diffractscout.exporters import export_result_bundle
+from diffractscout.models import AnalysisSettings, CandidateRecord, DiscoverySettings
 from diffractscout.selection import _sort_key, search_candidates
 
 
@@ -132,3 +134,46 @@ def test_nonfinite_energy_is_ranked_as_infinite() -> None:
             )
         )
         assert key[0] == float("inf")
+
+
+class ThresholdProvider(FakeProvider):
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def search_subsystem(self, chemsys: str, **kwargs: object) -> list[CandidateRecord]:
+        self.calls.append(dict(kwargs))
+        return super().search_subsystem(chemsys, **kwargs)
+
+
+def test_near_stable_default_threshold_is_persisted_and_exported(tmp_path: Path) -> None:
+    provider = ThresholdProvider()
+    result = search_candidates(
+        provider,
+        parse_composition_text("Ti-Al"),
+        DiscoverySettings(mode="near_stable"),
+    )
+
+    assert provider.calls
+    assert all(call["e_hull_max_eV_atom"] == 0.05 for call in provider.calls)
+    assert result.settings.e_hull_max_eV_atom == 0.05
+
+    output = tmp_path / "bundle"
+    export_result_bundle(
+        output,
+        analyses=[],
+        settings=AnalysisSettings(),
+        discovery=result,
+        include_excel=False,
+    )
+    provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["discovery"]["settings"]["e_hull_max_eV_atom"] == 0.05
+
+
+def test_explicit_near_stable_threshold_is_preserved() -> None:
+    provider = ThresholdProvider()
+    settings = DiscoverySettings(mode="near_stable", e_hull_max_eV_atom=0.17)
+    result = search_candidates(provider, parse_composition_text("Ti-Al"), settings)
+
+    assert provider.calls
+    assert all(call["e_hull_max_eV_atom"] == 0.17 for call in provider.calls)
+    assert result.settings.e_hull_max_eV_atom == 0.17

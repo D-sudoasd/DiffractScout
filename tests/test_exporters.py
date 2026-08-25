@@ -1,6 +1,8 @@
 import csv
 import json
 from pathlib import Path
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -245,6 +247,85 @@ def test_write_text_atomic_returns_published_path_when_cleanup_fails(
 
     assert exporters._write_text_atomic(path, "new") == path
     assert path.read_text(encoding="utf-8") == "new"
+
+
+def test_csv_export_uses_unique_same_directory_temps_for_concurrent_calls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "concurrent.csv"
+    original_replace = Path.replace
+    barrier = threading.Barrier(2)
+    replace_lock = threading.Lock()
+    temporary_names: list[str] = []
+    names_lock = threading.Lock()
+
+    def synchronize_replacements(self: Path, target: Path) -> Path:
+        if self.parent == tmp_path and self.name.startswith(".concurrent.csv."):
+            with names_lock:
+                temporary_names.append(self.name)
+            barrier.wait(timeout=10)
+            with replace_lock:
+                return original_replace(self, target)
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", synchronize_replacements)
+
+    def write(index: int) -> Path:
+        return _write_csv(path, [{"value": index}], ["value"])
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(write, (1, 2)))
+
+    assert results == [path, path]
+    assert len(temporary_names) == 2
+    assert len(set(temporary_names)) == 2
+    assert not list(tmp_path.glob("*.tmp"))
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_xlsx_export_uses_unique_same_directory_temps_for_concurrent_calls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "concurrent.xlsx"
+    original_replace = Path.replace
+    barrier = threading.Barrier(2)
+    replace_lock = threading.Lock()
+    temporary_names: list[str] = []
+    names_lock = threading.Lock()
+
+    def synchronize_replacements(self: Path, target: Path) -> Path:
+        if self.parent == tmp_path and self.name.startswith(".concurrent.xlsx."):
+            with names_lock:
+                temporary_names.append(self.name)
+            barrier.wait(timeout=10)
+            with replace_lock:
+                return original_replace(self, target)
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", synchronize_replacements)
+
+    def write(index: int) -> Path:
+        return write_excel_workbook(
+            path,
+            summary=[{"key": "writer", "value": index}],
+            phases=[],
+            peaks=[],
+            elasticity=[],
+            candidates=[],
+            downloads=[],
+            diagnostics=[],
+            patterns=[],
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(write, (1, 2)))
+
+    assert results == [path, path]
+    assert len(temporary_names) == 2
+    assert len(set(temporary_names)) == 2
+    assert load_workbook(path, read_only=True).sheetnames
+    assert not list(tmp_path.glob("*.tmp"))
+    assert not list(tmp_path.glob(".*.tmp"))
 
 
 def test_excel_uses_an_omission_note_above_row_limit(

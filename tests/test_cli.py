@@ -95,6 +95,22 @@ def test_cli_rejects_conflicting_radiation_inputs(tmp_path: Path) -> None:
     assert not output.exists()
 
 
+def test_cli_maps_oserror_to_error_exit_2(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    import diffractscout.cli as cli
+
+    def fail(*_args: object, **_kwargs: object) -> object:
+        raise OSError("invalid Windows output path")
+
+    monkeypatch.setattr(cli, "analyze_cifs", fail)
+    code = main(["analyze", str(tmp_path), "-o", str(tmp_path / "out")])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.err.startswith("ERROR:")
+    assert "Traceback" not in captured.err
+
+
 def test_partial_batch_has_distinct_exit_code() -> None:
     class Result:
         analyses = [object()]

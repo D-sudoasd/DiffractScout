@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import errno
 import shutil
 
 import pytest
@@ -25,6 +26,8 @@ def test_quick_export_xlsx_writes_excel_and_bundle(demo_inputs: Path, tmp_path: 
     assert verify_bundle(bundle)["ok"]
     workbook = load_workbook(excel, read_only=True)
     assert "Peaks" in workbook.sheetnames
+    assert not list(tmp_path.glob(".report.xlsx.diffractscout-lock"))
+    assert not list(tmp_path.glob(".report.xlsx.*.tmp"))
 
 
 def test_quick_export_does_not_replace_existing_excel_without_authorization(
@@ -61,6 +64,120 @@ def test_atomic_excel_copy_preserves_target_created_during_export(
 
     assert target.read_bytes() == b"external-file"
     assert not list(tmp_path.glob(".result.xlsx.*.tmp"))
+
+
+def test_atomic_excel_copy_falls_back_to_exclusive_create_without_hardlink(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source.xlsx"
+    target = tmp_path / "result.xlsx"
+    source.write_bytes(b"completed-workbook")
+
+    def no_hardlink(*_args: object, **_kwargs: object) -> None:
+        raise OSError(errno.EOPNOTSUPP, "hardlinks unavailable")
+
+    monkeypatch.setattr("diffractscout.quick_export.os.link", no_hardlink)
+    _copy_excel_atomic(source, target, overwrite=False)
+
+    assert target.read_bytes() == source.read_bytes()
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_atomic_excel_fallback_removes_owned_partial_target_on_copy_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source.xlsx"
+    target = tmp_path / "partial.xlsx"
+    source.write_bytes(b"completed-workbook")
+
+    monkeypatch.setattr(
+        "diffractscout.quick_export.os.link",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError(errno.EOPNOTSUPP, "hardlinks unavailable")
+        ),
+    )
+
+    def partial_then_fail(_source: object, destination: object) -> None:
+        destination.write(b"partial")  # type: ignore[union-attr]
+        raise OSError("fallback copy failure")
+
+    monkeypatch.setattr("diffractscout.quick_export.shutil.copyfileobj", partial_then_fail)
+    with pytest.raises(OSError, match="fallback copy failure"):
+        _copy_excel_atomic(source, target, overwrite=False)
+    assert not target.exists()
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_atomic_excel_fallback_rejects_short_write_and_cleans_target(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source.xlsx"
+    target = tmp_path / "short.xlsx"
+    source.write_bytes(b"completed-workbook")
+
+    monkeypatch.setattr(
+        "diffractscout.quick_export.os.link",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError(errno.EOPNOTSUPP, "hardlinks unavailable")
+        ),
+    )
+
+    def short_write(_source: object, destination: object) -> None:
+        destination.write(b"partial")  # type: ignore[union-attr]
+
+    monkeypatch.setattr("diffractscout.quick_export.shutil.copyfileobj", short_write)
+    with pytest.raises(OSError, match="integrity verification"):
+        _copy_excel_atomic(source, target, overwrite=False)
+    assert not target.exists()
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_atomic_excel_fallback_cleanup_failure_does_not_mask_primary_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source.xlsx"
+    target = tmp_path / "cleanup-failure.xlsx"
+    source.write_bytes(b"completed-workbook")
+
+    monkeypatch.setattr(
+        "diffractscout.quick_export.os.link",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError(errno.EOPNOTSUPP, "hardlinks unavailable")
+        ),
+    )
+
+    def partial_then_fail(_source: object, destination: object) -> None:
+        destination.write(b"partial")  # type: ignore[union-attr]
+        raise OSError("primary fallback failure")
+
+    monkeypatch.setattr("diffractscout.quick_export.shutil.copyfileobj", partial_then_fail)
+    original_unlink = Path.unlink
+
+    def fail_target_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        if self == target:
+            raise PermissionError("cleanup failure")
+        original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_target_unlink)
+    with pytest.raises(OSError, match="primary fallback failure"):
+        _copy_excel_atomic(source, target, overwrite=False)
+
+
+def test_quick_export_xlsx_lock_competition_fails_closed(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.quick_export as quick_export_module
+
+    def lock_unavailable(*_args: object, **_kwargs: object) -> Path:
+        raise FileExistsError("Excel output transaction lock is unavailable")
+
+    def unexpected_analysis(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("analysis must not start while the Excel lock is held")
+
+    monkeypatch.setattr(quick_export_module, "_acquire_transaction_lock", lock_unavailable)
+    monkeypatch.setattr(quick_export_module, "analyze_cifs", unexpected_analysis)
+    with pytest.raises(FileExistsError, match="transaction lock"):
+        quick_export([demo_inputs], tmp_path / "locked.xlsx")
 
 
 def test_quick_export_can_atomically_replace_existing_excel_when_authorized(
@@ -462,6 +579,22 @@ def test_standalone_quick_export_custom_source_requires_explicit_radiation(
 
     assert code == 2
     assert "Custom source requires --wavelength-A or --energy-keV" in capsys.readouterr().err
+
+
+def test_quick_export_cli_maps_oserror_to_error_exit_2(
+    demo_inputs: Path, tmp_path: Path, monkeypatch, capsys
+) -> None:
+    import diffractscout.quick_export as quick_export_module
+
+    def fail(*_args: object, **_kwargs: object) -> object:
+        raise OSError("invalid Windows output path")
+
+    monkeypatch.setattr(quick_export_module, "quick_export", fail)
+    code = quick_export_main([str(demo_inputs), "-o", str(tmp_path / "out.xlsx")])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.err.startswith("ERROR:")
+    assert "Traceback" not in captured.err
 
 
 def test_standalone_quick_export_radiation_options_are_mutually_exclusive() -> None:

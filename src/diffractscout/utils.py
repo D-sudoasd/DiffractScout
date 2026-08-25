@@ -144,6 +144,17 @@ def package_versions(
 ) -> dict[str, str]:
     versions: dict[str, str] = {}
     for name in names:
+        if name.casefold() == "diffractscout":
+            # Resolve the local package lazily.  Importing it at module scope
+            # would create a cycle while diffractscout itself is initializing,
+            # and installed metadata may describe an older checkout.
+            try:
+                from . import __version__ as runtime_version
+            except (ImportError, AttributeError):
+                versions[name] = "not-installed"
+            else:
+                versions[name] = str(runtime_version)
+            continue
         try:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:

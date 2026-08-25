@@ -3,11 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import math
+from numbers import Integral, Real
 from typing import Any
 
 
 def normalize_hkl(values: Iterable[object]) -> tuple[int, ...]:
-    hkl = tuple(int(value) for value in values)
+    try:
+        raw_values = tuple(values)
+    except TypeError as exc:
+        raise ValueError("hkl must be an iterable of finite integer indices.") from exc
+    normalized: list[int] = []
+    for value in raw_values:
+        if isinstance(value, bool) or isinstance(value, (str, bytes)):
+            raise ValueError(f"hkl indices must be finite integers, got {value!r}.")
+        if isinstance(value, Integral):
+            normalized.append(int(value))
+            continue
+        if isinstance(value, Real):
+            numeric = float(value)
+            if math.isfinite(numeric) and numeric.is_integer():
+                normalized.append(int(numeric))
+                continue
+        raise ValueError(f"hkl indices must be finite integers, got {value!r}.")
+    hkl = tuple(normalized)
     if len(hkl) not in {3, 4}:
         raise ValueError(f"hkl must contain 3 or 4 indices, got {len(hkl)}: {hkl}")
     return hkl
@@ -44,10 +63,11 @@ def plane_hkl_for_normal(values: Iterable[object]) -> tuple[int, int, int]:
     return h, k, ell
 
 
-def miller_bravais_i(h: int, k: int) -> int:
+def miller_bravais_i(h: object, k: object) -> int:
     """Return the Miller–Bravais basal index ``i = -(h + k)``."""
 
-    return -(int(h) + int(k))
+    h_i, k_i, _ = normalize_hkl((h, k, 0))
+    return -(h_i + k_i)
 
 
 def _uses_miller_bravais(crystal_system: str) -> bool:
@@ -79,26 +99,31 @@ def uses_miller_bravais(space_group: Any) -> bool:
 
 
 def family_label_hkl(
-    h: int,
-    k: int,
-    l: int,  # noqa: E741 - conventional Miller index name
+    h: object,
+    k: object,
+    l: object,  # noqa: E741 - conventional Miller index name
     *,
     use_four_index: bool = False,
-    i: int | None = None,
+    i: object | None = None,
 ) -> str:
     """Curly-brace family label; optional Miller–Bravais four-index form."""
 
-    h_i, k_i, l_i = int(h), int(k), int(l)
+    h_i, k_i, l_i = normalize_hkl((h, k, l))
+    explicit_i: int | None = None
+    if use_four_index and i is not None:
+        four_index = normalize_hkl((h_i, k_i, i, l_i))
+        plane_hkl_for_normal(four_index)
+        explicit_i = four_index[2]
     if use_four_index:
-        index_i = miller_bravais_i(h_i, k_i) if i is None else int(i)
+        index_i = miller_bravais_i(h_i, k_i) if explicit_i is None else explicit_i
         return "{" + f"{h_i} {k_i} {index_i} {l_i}" + "}"
     return "{" + f"{h_i} {k_i} {l_i}" + "}"
 
 
 def label_hkl_for_crystal_system(
-    h: int,
-    k: int,
-    l: int,  # noqa: E741 - conventional Miller index name
+    h: object,
+    k: object,
+    l: object,  # noqa: E741 - conventional Miller index name
     crystal_system: str,
 ) -> tuple[str, int | None]:
     """Return a display label and optional Miller–Bravais ``i``.
@@ -108,7 +133,7 @@ def label_hkl_for_crystal_system(
     ``(1 0 -1 0)``. Other systems use three-index ``(h k l)``.
     """
 
-    h_i, k_i, l_i = int(h), int(k), int(l)
+    h_i, k_i, l_i = normalize_hkl((h, k, l))
     setting_text = str(crystal_system).upper().replace(" ", "")
     if ":R" in setting_text or setting_text.endswith("_R"):
         use_miller_bravais = False

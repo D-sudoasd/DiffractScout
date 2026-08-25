@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 from uuid import uuid4
 
+import numpy as np
+
 from .composition import parse_composition_text
 from .diffraction import simulate_powder_pattern, validate_analysis_settings
 from .elasticity import (
@@ -284,29 +286,141 @@ def _path_exists(path: Path) -> bool:
         return True
 
 
-def _bundle_member_fingerprint(target: Path) -> tuple[tuple[str, int, str], ...] | None:
-    """Fingerprint every manifest-declared member of a verified bundle."""
+def _bundle_member_fingerprint(
+    target: Path,
+    *,
+    manifest_name: str = "manifest.json",
+) -> tuple[tuple[str, int, str], ...] | None:
+    """Fingerprint every manifest-declared member of a verified bundle.
 
-    manifest = target / "manifest.json"
+    Normal result bundles continue to use :func:`verify_bundle`.  Benchmark
+    bundles intentionally use a different manifest name/schema, but the
+    transaction expected-state contract still needs the same member-level
+    digest protection.  The small generic reader below is limited to the
+    shared ``files``/``path``/``size_bytes``/``sha256`` shape.
+    """
+
+    manifest = target / manifest_name
     if not _path_exists(manifest):
+        if manifest_name != "manifest.json":
+            try:
+                has_entries = any(target.iterdir())
+            except OSError as exc:
+                raise FileExistsError(
+                    f"Cannot inspect benchmark target without {manifest_name}: {target}."
+                ) from exc
+            if has_entries:
+                raise FileExistsError(
+                    f"Benchmark target has files but no {manifest_name}: {target}."
+                )
         return None
-    report = verify_bundle(target)
-    if not report["ok"]:
-        details = "; ".join(report["errors"][:5])
-        raise FileExistsError(
-            f"Cannot fingerprint an unverifiable output target {target}: {details}"
-        )
+    if manifest_name == "manifest.json":
+        report = verify_bundle(target)
+        if not report["ok"]:
+            details = "; ".join(report["errors"][:5])
+            raise FileExistsError(
+                f"Cannot fingerprint an unverifiable output target {target}: {details}"
+            )
+        entries = report["files"]
+    else:
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise FileExistsError(
+                f"Cannot fingerprint an unreadable output target manifest {manifest}: {exc}"
+            ) from exc
+        entries = payload.get("files") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            raise FileExistsError(
+                f"Cannot fingerprint malformed output target manifest {manifest}."
+            )
     members: list[tuple[str, int, str]] = []
-    for entry in report["files"]:
+    declared_paths: set[str] = set()
+    for entry in entries:
         try:
             relative = str(entry["path"])
-            size = int(entry["actual_size_bytes"])
-            digest = str(entry["actual_sha256"])
+            if manifest_name == "manifest.json":
+                size = int(entry["actual_size_bytes"])
+                digest = str(entry["actual_sha256"])
+            else:
+                size = int(entry["size_bytes"])
+                digest = str(entry["sha256"])
         except (KeyError, TypeError, ValueError) as exc:
             raise FileExistsError(
                 f"Cannot fingerprint malformed output target {target}."
             ) from exc
-        members.append((relative, size, digest))
+        relative_path = Path(relative)
+        normalized = relative_path.as_posix()
+        if (
+            not relative
+            or relative_path.is_absolute()
+            or normalized == "."
+            or ".." in relative_path.parts
+            or any(part in {"", "."} for part in relative_path.parts)
+            or normalized == manifest_name
+        ):
+            raise FileExistsError(
+                f"Cannot fingerprint unsafe manifest path {relative!r} in {manifest}."
+            )
+        if manifest_name != "manifest.json" and normalized in declared_paths:
+            raise FileExistsError(
+                f"Duplicate benchmark manifest path: {normalized}."
+            )
+        declared_paths.add(normalized)
+        member = target.joinpath(*relative_path.parts)
+        try:
+            _reject_reparse_components(member, label="manifest member")
+            resolved = member.resolve(strict=False)
+            resolved.relative_to(target.resolve())
+        except (OSError, ValueError) as exc:
+            raise FileExistsError(
+                f"Cannot fingerprint unsafe manifest member {relative!r} in {target}."
+            ) from exc
+        if not member.is_file():
+            raise FileExistsError(
+                f"Cannot fingerprint missing manifest member {relative!r} in {target}."
+            )
+        try:
+            actual_size = member.stat().st_size
+            actual_digest = sha256_file(member)
+        except OSError as exc:
+            raise FileExistsError(
+                f"Cannot fingerprint unreadable manifest member {relative!r} in {target}."
+            ) from exc
+        if actual_size != size or actual_digest != digest:
+            raise FileExistsError(
+                f"Cannot fingerprint changed manifest member {relative!r} in {target}."
+            )
+        members.append((normalized, actual_size, actual_digest))
+    if manifest_name != "manifest.json":
+        # Benchmark targets use a different manifest schema, so the normal
+        # result-bundle verifier is not available as the final guard.  The
+        # expected state must nevertheless cover every actual file: an
+        # unlisted external file must stop the transaction before isolation.
+        actual: set[str] = set()
+        try:
+            for path in target.rglob("*"):
+                if path == manifest:
+                    continue
+                _reject_reparse_components(path, label="manifest member")
+                if path.is_file():
+                    actual.add(path.relative_to(target).as_posix())
+        except (OSError, ValueError) as exc:
+            raise FileExistsError(
+                f"Cannot enumerate actual files for benchmark target {target}."
+            ) from exc
+        declared = {item[0] for item in members}
+        if actual != declared:
+            extras = sorted(actual - declared)
+            missing = sorted(declared - actual)
+            details: list[str] = []
+            if extras:
+                details.append(f"unlisted files: {', '.join(extras[:5])}")
+            if missing:
+                details.append(f"missing files: {', '.join(missing[:5])}")
+            raise FileExistsError(
+                f"Benchmark target files differ from its manifest: {'; '.join(details)}."
+            )
     return tuple(sorted(members))
 
 
@@ -317,7 +431,11 @@ def _target_identity(stat_result: os.stat_result) -> tuple[int, int]:
     )
 
 
-def _capture_target_state(target: Path) -> _TargetState:
+def _capture_target_state(
+    target: Path,
+    *,
+    manifest_name: str = "manifest.json",
+) -> _TargetState:
     """Capture a target state without following the target itself."""
 
     try:
@@ -359,7 +477,7 @@ def _capture_target_state(target: Path) -> _TargetState:
             identity=identity,
         )
 
-    manifest = target / "manifest.json"
+    manifest = target / manifest_name
     manifest_sha256: str | None = None
     manifest_size: int | None = None
     if _path_exists(manifest):
@@ -376,7 +494,7 @@ def _capture_target_state(target: Path) -> _TargetState:
         identity=identity,
         manifest_sha256=manifest_sha256,
         manifest_size=manifest_size,
-        members=_bundle_member_fingerprint(target),
+        members=_bundle_member_fingerprint(target, manifest_name=manifest_name),
     )
 
 
@@ -798,8 +916,8 @@ def _attempt_restore_backup(
             _add_exception_note(primary_error, message)
         return
     try:
-        backup.replace(target)
-    except OSError as exc:
+        _rename_directory_noreplace(backup, target)
+    except Exception as exc:
         message = (
             f"Could not restore isolated backup {backup} to {target}: "
             f"{type(exc).__name__}: {exc}; backup was preserved."
@@ -953,17 +1071,25 @@ def _commit_staging_output(
     *,
     expected_state: _TargetState | None = None,
     warning_sink: list[str] | None = None,
+    manifest_name: str = "manifest.json",
 ) -> None:
     """Commit a verified staging tree without deleting a changed target."""
 
+    def capture(path: Path) -> _TargetState:
+        # Keep the historical one-argument call shape for default result
+        # bundles; tests and callers monkeypatch this diagnostic seam.
+        if manifest_name == "manifest.json":
+            return _capture_target_state(path)
+        return _capture_target_state(path, manifest_name=manifest_name)
+
     if expected_state is None:
-        expected_state = _capture_target_state(target)
+        expected_state = capture(target)
     lock_path = _acquire_transaction_lock(target, warning_sink=warning_sink)
     backup: Path | None = None
     committed = False
     primary_error: BaseException | None = None
     try:
-        current = _capture_target_state(target)
+        current = capture(target)
         if current.reparse:
             raise FileExistsError(
                 f"Output target is a symbolic link or reparse point: {target}."
@@ -978,7 +1104,7 @@ def _commit_staging_output(
             # Directory replacement is atomic on the same filesystem.  The
             # backup is retained until the new target has been published.
             target.replace(backup)
-            isolated = _capture_target_state(backup)
+            isolated = capture(backup)
             if isolated.reparse:
                 raise FileExistsError(
                     f"Isolated output target is a symbolic link or reparse point: {backup}."
@@ -997,7 +1123,7 @@ def _commit_staging_output(
         # Re-check immediately before the platform adapter's atomic
         # no-replace directory publication if an external writer wins this
         # last race.
-        current = _capture_target_state(target)
+        current = capture(target)
         if current.reparse:
             raise FileExistsError(
                 f"Output target is a symbolic link or reparse point: {target}."
@@ -1241,6 +1367,193 @@ def _copy_local_snapshot(
         _safe_unlink(temporary, context="local CIF temporary snapshot")
 
 
+def _remove_owned_snapshot(path: Path | None, *, digest: str, size: int) -> None:
+    """Remove a snapshot only while it still has the bytes we published."""
+
+    if path is None or not _path_exists(path):
+        return
+    try:
+        if path.is_file() and path.stat().st_size == size and sha256_file(path) == digest:
+            path.unlink()
+    except OSError:
+        # Cleanup is best effort; an external replacement must never be
+        # removed merely because our transaction is being rolled back.
+        return
+
+
+def _local_elasticity_sources(cif_path: Path) -> list[Path]:
+    """List local elasticity inputs without parsing any source bytes."""
+
+    exact = cif_path.with_name(f"{cif_path.stem}_elasticity.json")
+    if exact.is_file():
+        return [exact]
+    candidates = [
+        item
+        for item in sorted(cif_path.parent.glob("*_elasticity.json"))
+        if item.is_file()
+    ]
+    for name in (
+        "elasticity_index.csv",
+        "diffractscout_elasticity.csv",
+        "elasticity.csv",
+    ):
+        item = cif_path.parent / name
+        if item.is_file():
+            candidates.append(item)
+    return candidates
+
+
+def _copy_verified_local_elasticity(
+    source: Path,
+    destination: Path,
+) -> tuple[str, int, bool]:
+    """Snapshot a local sidecar with source-before/source-after checks."""
+
+    digest = sha256_file(source)
+    size = source.stat().st_size
+    _reject_reparse_components(destination, label="local elasticity staging target")
+    if _path_exists(destination):
+        if not destination.is_file():
+            raise FileExistsError(
+                f"Local elasticity staging target is not a file: {destination}."
+            )
+        destination_digest = sha256_file(destination)
+        destination_size = destination.stat().st_size
+        source_after_digest = sha256_file(source)
+        source_after_size = source.stat().st_size
+        if (
+            destination_digest == digest
+            and destination_size == size
+            and source_after_digest == digest
+            and source_after_size == size
+        ):
+            return digest, size, False
+        raise FileExistsError(
+            f"Local elasticity staging target conflicts with source bytes: {destination}."
+        )
+    _copy_local_snapshot(
+        source,
+        destination,
+        expected_digest=digest,
+        expected_size=size,
+    )
+    return digest, size, True
+
+
+def _bind_override_to_staged_sidecar(
+    override: ElasticTensor,
+    staged: ElasticTensor | None,
+    staged_path: Path,
+) -> ElasticTensor:
+    """Keep explicit override values after checking a staged provenance sidecar."""
+
+    if staged is None or staged.status == "invalid":
+        raise ValueError(
+            f"Elasticity override sidecar {staged_path.name} did not contain a valid tensor."
+        )
+    matrix_matches = (
+        override.stiffness_GPa.shape == staged.stiffness_GPa.shape
+        and override.stiffness_GPa.shape == (6, 6)
+        and bool(
+            np.allclose(
+                override.stiffness_GPa,
+                staged.stiffness_GPa,
+                rtol=1e-10,
+                atol=1e-12,
+            )
+        )
+    )
+    frame_matches = override.coordinate_frame == staged.coordinate_frame
+    if not matrix_matches or not frame_matches:
+        details: list[str] = []
+        if not matrix_matches:
+            details.append("stiffness matrix")
+        if not frame_matches:
+            details.append("coordinate frame")
+        raise ValueError(
+            f"Explicit elasticity override does not match staged sidecar "
+            f"{staged_path.name} ({' and '.join(details)} mismatch)."
+        )
+    # The explicit override remains authoritative for numerical values and
+    # provenance; only the raw payload path is rebound into the committed tree.
+    override.raw_payload_path = staged_path
+    return override
+
+
+def _stage_local_elasticity(
+    cif_path: Path,
+    staged_cif: Path,
+    inputs_dir: Path,
+) -> tuple[ElasticTensor | None, list[tuple[Path, str, int]]]:
+    """Stage and parse local elasticity only from private snapshot bytes."""
+
+    sources = _local_elasticity_sources(cif_path)
+    if not sources:
+        return None, []
+
+    owned: list[tuple[Path, str, int]] = []
+    exact = sources[0] if sources[0].name == f"{cif_path.stem}_elasticity.json" else None
+    if exact is not None:
+        destination = staged_cif.with_name(f"{staged_cif.stem}_elasticity.json")
+        digest, size, created = _copy_verified_local_elasticity(exact, destination)
+        if created:
+            owned.append((destination, digest, size))
+        if staged_cif.name != cif_path.name:
+            normalize_elasticity_sidecar(
+                destination,
+                destination,
+                cif_path=cif_path,
+                committed_cif_name=staged_cif.name,
+            )
+            digest = sha256_file(destination)
+            size = destination.stat().st_size
+            if created:
+                owned[-1] = (destination, digest, size)
+        tensor = discover_elastic_tensor(staged_cif)
+        if tensor is None:
+            _remove_owned_snapshot(destination, digest=digest, size=size)
+            return None, []
+        return tensor, owned
+
+    # Probe fallback sidecars/index files from a private directory first.  No
+    # source path is parsed before its verified snapshot exists.
+    probe = Path(tempfile.mkdtemp(prefix=".elasticity-probe-", dir=str(inputs_dir)))
+    try:
+        for source in sources:
+            probe_target = probe / source.name
+            _copy_verified_local_elasticity(source, probe_target)
+        probe_cif = probe / cif_path.name
+        tensor = discover_elastic_tensor(probe_cif)
+        raw = tensor.raw_payload_path if tensor is not None else None
+        if raw is None or not raw.is_file():
+            return None, []
+        if raw.suffix.lower() == ".json":
+            destination = staged_cif.with_name(f"{staged_cif.stem}_elasticity.json")
+        else:
+            destination = inputs_dir / raw.name
+        digest, size, created = _copy_verified_local_elasticity(raw, destination)
+        if created:
+            owned.append((destination, digest, size))
+        if destination.suffix.lower() == ".json" and staged_cif.name != cif_path.name:
+            normalize_elasticity_sidecar(
+                destination,
+                destination,
+                cif_path=cif_path,
+                committed_cif_name=staged_cif.name,
+            )
+            digest = sha256_file(destination)
+            size = destination.stat().st_size
+            if created:
+                owned[-1] = (destination, digest, size)
+        final_tensor = discover_elastic_tensor(staged_cif)
+        if final_tensor is None:
+            _remove_owned_snapshot(destination, digest=digest, size=size)
+            return None, []
+        return final_tensor, owned
+    finally:
+        _safe_rmtree(probe, context="local elasticity probe")
+
+
 def _copy_local_input(
     cif_path: Path,
     inputs_dir: Path,
@@ -1251,34 +1564,63 @@ def _copy_local_input(
     digest = sha256_file(cif_path)
     size = cif_path.stat().st_size
     target = _unique_input_target(cif_path, inputs_dir, digest)
-    _copy_local_snapshot(
-        cif_path,
-        target,
-        expected_digest=digest,
-        expected_size=size,
-    )
-
-    if not include_elasticity:
-        return target, None
-
-    if elastic_override is not None:
-        tensor = _revalidate_user_tensor(elastic_override)
-        if tensor.raw_payload_path is not None and tensor.raw_payload_path.is_file():
-            sidecar_target = target.with_name(
-                f"{target.stem}_elasticity{tensor.raw_payload_path.suffix}"
-            )
-            shutil.copy2(tensor.raw_payload_path, sidecar_target)
-            tensor.raw_payload_path = sidecar_target
-        return target, tensor
-
-    tensor = discover_elastic_tensor(cif_path)
-    if tensor is not None and tensor.raw_payload_path is not None and tensor.raw_payload_path.is_file():
-        sidecar_target = target.with_name(
-            f"{target.stem}_elasticity{tensor.raw_payload_path.suffix}"
+    owned_sidecars: list[tuple[Path, str, int]] = []
+    try:
+        _copy_local_snapshot(
+            cif_path,
+            target,
+            expected_digest=digest,
+            expected_size=size,
         )
-        shutil.copy2(tensor.raw_payload_path, sidecar_target)
-        tensor.raw_payload_path = sidecar_target
-    return target, tensor
+
+        if not include_elasticity:
+            return target, None
+
+        if elastic_override is not None:
+            tensor = _revalidate_user_tensor(elastic_override)
+            raw = tensor.raw_payload_path
+            if raw is not None and raw.is_file():
+                sidecar_target = target.with_name(
+                    f"{target.stem}_elasticity{raw.suffix}"
+                )
+                if raw.suffix.lower() != ".json":
+                    sidecar_target = inputs_dir / raw.name
+                sidecar_digest, sidecar_size, sidecar_created = _copy_verified_local_elasticity(
+                    raw,
+                    sidecar_target,
+                )
+                if sidecar_created:
+                    owned_sidecars.append((sidecar_target, sidecar_digest, sidecar_size))
+                if raw.suffix.lower() == ".json" and target.name != cif_path.name:
+                    normalize_elasticity_sidecar(
+                        sidecar_target,
+                        sidecar_target,
+                        cif_path=cif_path,
+                        committed_cif_name=target.name,
+                    )
+                    sidecar_digest = sha256_file(sidecar_target)
+                    sidecar_size = sidecar_target.stat().st_size
+                    if sidecar_created:
+                        owned_sidecars[-1] = (sidecar_target, sidecar_digest, sidecar_size)
+                staged_tensor = discover_elastic_tensor(target)
+                tensor = _bind_override_to_staged_sidecar(
+                    tensor,
+                    staged_tensor,
+                    sidecar_target,
+                )
+            return target, tensor
+
+        tensor, owned_sidecars = _stage_local_elasticity(cif_path, target, inputs_dir)
+        return target, tensor
+    except Exception:
+        for sidecar, sidecar_digest, sidecar_size in owned_sidecars:
+            _remove_owned_snapshot(
+                sidecar,
+                digest=sidecar_digest,
+                size=sidecar_size,
+            )
+        _remove_owned_snapshot(target, digest=digest, size=size)
+        raise
 
 
 def _safe_staged_filename(value: object, fallback: str, *, suffix: str) -> str:
@@ -1605,8 +1947,11 @@ def _normalize_download_artifacts(
                     suffix=".json",
                 )
                 elasticity_status, elasticity_error = normalize_elasticity_sidecar(
-                    item.elasticity_path,
                     staged_elasticity,
+                    staged_elasticity,
+                    # Keep provider pairing validation against the provider's
+                    # original CIF identity; all numeric parsing and rewrite
+                    # input now comes from the staged sidecar snapshot.
                     cif_path=item.cif_path,
                     committed_cif_name=staged_cif.name,
                     expected_material_id=item.candidate.material_id,

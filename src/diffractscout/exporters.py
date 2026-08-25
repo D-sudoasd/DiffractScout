@@ -312,9 +312,18 @@ def _write_csv(
     bundle_root: Path | None = None,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary: Path | None = None
     try:
-        with temporary.open("w", newline="", encoding="utf-8-sig") as handle:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            newline="",
+            encoding="utf-8-sig",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
             writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             for row in rows:
@@ -324,9 +333,11 @@ def _write_csv(
                         for name in fieldnames
                     }
                 )
+            handle.flush()
+            os.fsync(handle.fileno())
         temporary.replace(path)
     finally:
-        temporary.unlink(missing_ok=True)
+        _unlink_temporary(temporary)
     return path
 
 
@@ -731,12 +742,19 @@ def write_excel_workbook(
         if "推荐峰表" in workbook.sheetnames:
             workbook.active = workbook["推荐峰表"]
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary: Path | None = None
     try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
         workbook.save(temporary)
         temporary.replace(path)
     finally:
-        temporary.unlink(missing_ok=True)
+        _unlink_temporary(temporary)
     return path
 
 

@@ -14,7 +14,8 @@ from openpyxl import load_workbook
 import pytest
 
 import diffractscout.exporters as exporters
-from diffractscout.models import AnalysisSettings
+from diffractscout.elasticity_input import parse_cubic_cij
+from diffractscout.models import AnalysisSettings, CandidateRecord, DownloadArtifact
 from diffractscout.pipeline import (
     _TargetState,
     _acquire_transaction_lock,
@@ -24,6 +25,7 @@ from diffractscout.pipeline import (
     _copy_local_input,
     _lock_path_for,
     _lookup_elastic_override,
+    _normalize_download_artifacts,
     _release_transaction_lock,
     analyze_cifs,
     collect_cif_paths,
@@ -147,6 +149,141 @@ def test_same_named_inputs_are_preserved_without_collision(
     assert bundled[0] == "phase.cif"
     assert len(bundled) == 2
     assert bundled[1].startswith("phase_")
+
+
+def test_same_named_local_sidecars_are_rebound_to_collision_safe_cifs(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    left = tmp_path / "left-with-sidecar"
+    right = tmp_path / "right-with-sidecar"
+    left.mkdir()
+    right.mkdir()
+    for directory in (left, right):
+        shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", directory / "phase.cif")
+        payload = json.loads(
+            (demo_inputs / "synthetic_fcc_al_elasticity.json").read_text(encoding="utf-8")
+        )
+        payload["cif_filename"] = "phase.cif"
+        payload["provenance"]["paired_cif"] = "phase.cif"
+        payload["diffractscout"]["paired_cif"] = "phase.cif"
+        (directory / "phase_elasticity.json").write_text(
+            json.dumps(payload),
+            encoding="utf-8",
+        )
+
+    result = analyze_cifs(
+        [left, right],
+        tmp_path / "local-sidecar-collision",
+        include_excel=False,
+    )
+    assert len(result.analyses) == 2
+    for analysis in result.analyses:
+        assert analysis.elastic_tensor is not None
+        sidecar = analysis.elastic_tensor.raw_payload_path
+        assert sidecar is not None and sidecar.is_file()
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert payload["cif_filename"] == analysis.structure.cif_path.name
+
+
+def _write_local_elasticity_index(path: Path, rows: list[dict[str, object]]) -> None:
+    fields = [
+        "cif_name",
+        "status",
+        "source_provider",
+        "source_record_id",
+        "coordinate_frame",
+        *[f"C{i}{j}_GPa" for i in range(1, 7) for j in range(1, 7)],
+    ]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def test_local_elasticity_csv_index_is_staged_and_loaded(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    source_dir = tmp_path / "single-index-source"
+    source_dir.mkdir()
+    cif = source_dir / "one.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    _write_local_elasticity_index(
+        source_dir / "elasticity.csv",
+        [
+            {
+                "cif_name": cif.name,
+                "status": "valid",
+                "source_provider": "local-index",
+                "source_record_id": "one",
+                "coordinate_frame": "crystal_cartesian_from_cif_lattice",
+                **{
+                    f"C{i}{j}_GPa": 150 if i == j else 0
+                    for i in range(1, 7)
+                    for j in range(1, 7)
+                },
+            }
+        ],
+    )
+
+    result = analyze_cifs(
+        [cif],
+        tmp_path / "single-index-output",
+        include_excel=False,
+    )
+    tensor = result.analyses[0].elastic_tensor
+    assert tensor is not None
+    assert tensor.stiffness_GPa[0, 0] == pytest.approx(150.0)
+    assert tensor.raw_payload_path == result.output_dir / "inputs" / "elasticity.csv"
+    assert tensor.raw_payload_path.is_file()
+
+
+def test_shared_local_elasticity_index_is_reused_for_two_cifs(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    source_dir = tmp_path / "shared-index-source"
+    source_dir.mkdir()
+    cifs = [source_dir / "one.cif", source_dir / "two.cif"]
+    for cif in cifs:
+        shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    _write_local_elasticity_index(
+        source_dir / "elasticity_index.csv",
+        [
+            {
+                "cif_name": cif.name,
+                "status": "valid",
+                "source_provider": "shared-local-index",
+                "source_record_id": cif.stem,
+                "coordinate_frame": "crystal_cartesian_from_cif_lattice",
+                **{
+                    f"C{i}{j}_GPa": value if i == j else 0
+                    for i in range(1, 7)
+                    for j in range(1, 7)
+                    for value in (160.0 if cif.stem == "one" else 170.0,)
+                },
+            }
+            for cif in cifs
+        ],
+    )
+
+    result = analyze_cifs(
+        [source_dir],
+        tmp_path / "shared-index-output",
+        include_excel=False,
+    )
+    assert len(result.analyses) == 2
+    values = {
+        analysis.structure.cif_path.name: float(analysis.elastic_tensor.stiffness_GPa[0, 0])
+        for analysis in result.analyses
+        if analysis.elastic_tensor is not None
+    }
+    assert values == {"one.cif": 160.0, "two.cif": 170.0}
+    raw_paths = {
+        analysis.elastic_tensor.raw_payload_path
+        for analysis in result.analyses
+        if analysis.elastic_tensor is not None
+    }
+    assert raw_paths == {result.output_dir / "inputs" / "elasticity_index.csv"}
 
 
 def test_missing_explicit_input_is_not_silently_ignored(tmp_path: Path) -> None:
@@ -386,6 +523,32 @@ def test_rollback_diagnostic_preserves_primary_exception_without_add_note(
     assert str(primary) == "primary rollback failure"
     assert (target / "external.txt").read_text(encoding="utf-8") == "external"
     assert (backup / "old.txt").read_text(encoding="utf-8") == "old"
+
+
+def test_rollback_restore_uses_atomic_no_replace_when_target_reappears(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    backup = tmp_path / "restore-backup"
+    backup.mkdir()
+    (backup / "old.txt").write_text("old", encoding="utf-8")
+    target = tmp_path / "restore-target"
+
+    def race(source: Path, destination: Path) -> None:
+        assert source == backup
+        destination.mkdir()
+        (destination / "external.txt").write_text("keep", encoding="utf-8")
+        raise FileExistsError("target appeared during restore")
+
+    monkeypatch.setattr(pipeline, "_rename_directory_noreplace", race)
+    warning_sink: list[str] = []
+    with pytest.warns(RuntimeWarning, match="Could not restore isolated backup"):
+        _attempt_restore_backup(backup, target, warning_sink=warning_sink)
+
+    assert (target / "external.txt").read_text(encoding="utf-8") == "keep"
+    assert (backup / "old.txt").read_text(encoding="utf-8") == "old"
+    assert any("backup was preserved" in message for message in warning_sink)
 
 
 def test_target_state_survives_same_filesystem_directory_rename(
@@ -820,6 +983,182 @@ def test_local_cif_copy_fails_closed_when_source_mutates(
         _copy_local_input(source, destination, include_elasticity=False)
     assert not list(destination.glob("*.cif"))
     assert not list(destination.glob("*.tmp"))
+
+
+def test_local_elasticity_tensor_comes_from_verified_sidecar_snapshot(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    source = demo_inputs / "synthetic_fcc_al.cif"
+    sidecar = demo_inputs / "synthetic_fcc_al_elasticity.json"
+    destination = tmp_path / "staged-inputs"
+    original_copy = pipeline._copy_local_snapshot
+    original_payload = sidecar.read_text(encoding="utf-8")
+    expected_value = json.loads(original_payload)["stiffness_GPa"][0][0]
+    changed_payload = original_payload.replace(str(expected_value), "999.0", 1)
+
+    def copy_then_mutate(source_path: Path, target: Path, **kwargs: object) -> Path:
+        result = original_copy(source_path, target, **kwargs)
+        if source_path == sidecar:
+            sidecar.write_text(changed_payload, encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(pipeline, "_copy_local_snapshot", copy_then_mutate)
+    staged_cif, tensor = _copy_local_input(
+        source,
+        destination,
+        include_elasticity=True,
+    )
+
+    assert tensor is not None
+    assert tensor.stiffness_GPa[0, 0] == pytest.approx(expected_value)
+    assert tensor.raw_payload_path == destination / "synthetic_fcc_al_elasticity.json"
+    assert json.loads(tensor.raw_payload_path.read_text(encoding="utf-8"))["stiffness_GPa"][0][0] == pytest.approx(expected_value)
+    assert staged_cif.read_bytes() == source.read_bytes()
+
+
+def test_local_elasticity_sidecar_mutation_fails_closed(
+    demo_inputs: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    source = demo_inputs / "synthetic_fcc_al.cif"
+    sidecar = demo_inputs / "synthetic_fcc_al_elasticity.json"
+    destination = tmp_path / "staged-inputs"
+    original_copy2 = pipeline.shutil.copy2
+
+    def copy_then_mutate(source_path: str | Path, target: str | Path, **kwargs: object) -> Path:
+        result = original_copy2(source_path, target, **kwargs)
+        if Path(source_path) == sidecar:
+            sidecar.write_text(sidecar.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(pipeline.shutil, "copy2", copy_then_mutate)
+    with pytest.raises(RuntimeError, match="source changed"):
+        _copy_local_input(source, destination, include_elasticity=True)
+    assert not list(destination.glob("*.cif"))
+    assert not list(destination.glob("*_elasticity.*"))
+    assert not list(destination.glob("*.tmp"))
+
+
+def test_provider_normalization_ignores_post_snapshot_source_mutation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    source_dir = tmp_path / "provider-source"
+    source_dir.mkdir()
+    source_cif = source_dir / "phase.cif"
+    source_cif.write_text("data_phase\n_cell_length_a 1\n", encoding="utf-8")
+    source_sidecar = source_dir / "phase_elasticity.json"
+    payload = {
+        "cif_filename": "phase.cif",
+        "material_id": "mp-1",
+        "coordinate_frame": "crystal_cartesian_from_cif_lattice",
+        "stiffness_GPa": [[100.0 if i == j else 0.0 for j in range(6)] for i in range(6)],
+    }
+    source_sidecar.write_text(json.dumps(payload), encoding="utf-8")
+    item = DownloadArtifact(
+        candidate=CandidateRecord(material_id="mp-1", formula="Al"),
+        cif_path=source_cif,
+        elasticity_path=source_sidecar,
+    )
+    destination = tmp_path / "inputs"
+    original_copy = pipeline._copy_provider_artifact
+
+    def copy_then_mutate(source: str | Path, *args: object, **kwargs: object) -> Path:
+        result = original_copy(source, *args, **kwargs)
+        if Path(source) == source_sidecar:
+            changed = dict(payload)
+            changed["stiffness_GPa"] = [
+                [999.0 if i == j else 0.0 for j in range(6)] for i in range(6)
+            ]
+            source_sidecar.write_text(json.dumps(changed), encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(pipeline, "_copy_provider_artifact", copy_then_mutate)
+    normalized, diagnostics = _normalize_download_artifacts(
+        [item],
+        destination,
+        include_elasticity=True,
+    )
+
+    assert not [item for item in diagnostics if item.level == "error"]
+    assert normalized[0].elasticity_path is not None
+    assert normalized[0].elasticity_status == "ok"
+    staged_payload = json.loads(normalized[0].elasticity_path.read_text(encoding="utf-8"))
+    assert staged_payload["stiffness_GPa"][0][0] == pytest.approx(100.0)
+
+
+def _write_override_sidecar(path: Path, cif_name: str, tensor: object) -> None:
+    matrix = tensor.stiffness_GPa.tolist()  # type: ignore[union-attr]
+    coordinate_frame = tensor.coordinate_frame  # type: ignore[union-attr]
+    path.write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "cif_filename": cif_name,
+                "coordinate_frame": coordinate_frame,
+                "stiffness_GPa": matrix,
+                "provenance": {
+                    "provider": "sidecar-provider",
+                    "coordinate_frame": coordinate_frame,
+                    "paired_cif": cif_name,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_local_elastic_override_sidecar_matrix_mismatch_fails_closed(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    source = demo_inputs / "synthetic_fcc_al.cif"
+    sidecar = tmp_path / "explicit_elasticity.json"
+    override = parse_cubic_cij(111.0, 22.0, 33.0, source="explicit-provider")
+    staged_sidecar_tensor = parse_cubic_cij(222.0, 44.0, 66.0, source="sidecar-provider")
+    _write_override_sidecar(sidecar, source.name, staged_sidecar_tensor)
+    override.raw_payload_path = sidecar
+    destination = tmp_path / "override-mismatch-inputs"
+
+    with pytest.raises(ValueError, match="stiffness matrix mismatch"):
+        _copy_local_input(
+            source,
+            destination,
+            include_elasticity=True,
+            elastic_override=override,
+        )
+    assert not list(destination.glob("*.cif"))
+    assert not list(destination.glob("*_elasticity.*"))
+    assert not list(destination.glob("*.tmp"))
+
+
+def test_local_elastic_override_keeps_provenance_and_rebinds_staged_sidecar(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    source = demo_inputs / "synthetic_fcc_al.cif"
+    sidecar = tmp_path / "explicit_elasticity.json"
+    override = parse_cubic_cij(111.0, 22.0, 33.0, source="explicit-provider")
+    _write_override_sidecar(sidecar, source.name, override)
+    override.raw_payload_path = sidecar
+    destination = tmp_path / "override-matching-inputs"
+
+    staged_cif, tensor = _copy_local_input(
+        source,
+        destination,
+        include_elasticity=True,
+        elastic_override=override,
+    )
+
+    assert tensor is not None
+    assert tensor.source_record_id == "explicit-provider"
+    assert tensor.nature_of_data == "explicit-provider"
+    assert tensor.stiffness_GPa[0, 0] == pytest.approx(111.0)
+    assert tensor.raw_payload_path == destination / "synthetic_fcc_al_elasticity.json"
+    assert tensor.raw_payload_path.is_file()
+    assert staged_cif.is_file()
 
 
 def test_json_cleanup_failure_warns_without_masking_success(

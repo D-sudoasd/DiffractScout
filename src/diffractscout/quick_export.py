@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import shutil
 import sys
@@ -16,8 +17,8 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from .models import AnalysisSettings, PipelineResult, XrayInputMode
-from .pipeline import analyze_cifs
-from .utils import to_jsonable
+from .pipeline import _acquire_transaction_lock, _release_transaction_lock, analyze_cifs
+from .utils import sha256_file, to_jsonable
 
 # Keyword names accepted as AnalysisSettings fields when building defaults.
 _SETTINGS_KEYS = frozenset(AnalysisSettings.__dataclass_fields__)
@@ -52,12 +53,46 @@ def _validate_excel_target(path: Path, *, overwrite: bool) -> None:
         )
 
 
+def _file_identity(stat_result: os.stat_result) -> tuple[int, int]:
+    return (
+        int(getattr(stat_result, "st_dev", 0)),
+        int(getattr(stat_result, "st_ino", 0)),
+    )
+
+
+def _remove_owned_excel_target(
+    target: Path,
+    identity: tuple[int, int] | None,
+) -> None:
+    """Remove only the fallback file descriptor's exact target object."""
+
+    if identity is None or identity == (0, 0):
+        return
+    try:
+        current = target.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError:
+        return
+    if _file_identity(current) != identity:
+        # Another writer replaced the path; preserving it is mandatory.
+        return
+    try:
+        target.unlink()
+    except OSError:
+        # Cleanup is best effort and must not mask the primary copy error.
+        return
+
+
 def _copy_excel_atomic(source: Path, target: Path, *, overwrite: bool) -> None:
     """Copy a completed bundle workbook without exposing a partial target."""
 
     _validate_excel_target(target, overwrite=overwrite)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary_name = ""
+    temporary: Path | None = None
+    fallback_identity: tuple[int, int] | None = None
+    source_digest = sha256_file(source)
+    source_size = source.stat().st_size
     try:
         with tempfile.NamedTemporaryFile(
             prefix=f".{target.name}.",
@@ -65,9 +100,15 @@ def _copy_excel_atomic(source: Path, target: Path, *, overwrite: bool) -> None:
             dir=target.parent,
             delete=False,
         ) as handle:
-            temporary_name = handle.name
-        temporary = Path(temporary_name)
+            temporary = Path(handle.name)
         shutil.copy2(source, temporary)
+        if (
+            sha256_file(temporary) != source_digest
+            or temporary.stat().st_size != source_size
+            or sha256_file(source) != source_digest
+            or source.stat().st_size != source_size
+        ):
+            raise OSError(f"Excel source changed while exporting: {source}")
         if overwrite:
             temporary.replace(target)
         else:
@@ -80,9 +121,75 @@ def _copy_excel_atomic(source: Path, target: Path, *, overwrite: bool) -> None:
                     f"Excel output was created while exporting: {target}. "
                     "The new file was preserved; rerun with overwrite=True only if intended."
                 ) from exc
+            except OSError as exc:
+                unsupported = isinstance(exc, PermissionError) or exc.errno in {
+                    value
+                    for value in (
+                        getattr(errno, "EOPNOTSUPP", None),
+                        getattr(errno, "ENOTSUP", None),
+                        getattr(errno, "EXDEV", None),
+                        getattr(errno, "EPERM", None),
+                        getattr(errno, "ENOSYS", None),
+                    )
+                    if value is not None
+                }
+                if not unsupported:
+                    raise
+                descriptor: int | None = None
+                try:
+                    descriptor = os.open(
+                        os.fspath(target),
+                        os.O_CREAT
+                        | os.O_EXCL
+                        | os.O_WRONLY
+                        | getattr(os, "O_BINARY", 0),
+                        0o600,
+                    )
+                    fallback_identity = _file_identity(os.fstat(descriptor))
+                    with os.fdopen(descriptor, "wb") as destination:
+                        descriptor = None
+                        with temporary.open("rb") as input_file:
+                            shutil.copyfileobj(input_file, destination)
+                        destination.flush()
+                        os.fsync(destination.fileno())
+                    try:
+                        target_stat = target.stat(follow_symlinks=False)
+                    except OSError as exc:
+                        raise OSError(
+                            f"Could not verify published Excel output: {target}"
+                        ) from exc
+                    if _file_identity(target_stat) != fallback_identity:
+                        raise FileExistsError(
+                            f"Excel output changed during fallback publication: {target}"
+                        )
+                    if (
+                        target_stat.st_size != source_size
+                        or sha256_file(target) != source_digest
+                    ):
+                        raise OSError(
+                            f"Published Excel output failed integrity verification: {target}"
+                        )
+                except FileExistsError as exists:
+                    raise FileExistsError(
+                        f"Excel output was created while exporting: {target}. "
+                        "The new file was preserved; rerun with overwrite=True only if intended."
+                    ) from exists
+                finally:
+                    if descriptor is not None:
+                        try:
+                            os.close(descriptor)
+                        except OSError:
+                            pass
+    except Exception:
+        _remove_owned_excel_target(target, fallback_identity)
+        raise
     finally:
-        if temporary_name:
-            Path(temporary_name).unlink(missing_ok=True)
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                # Cleanup must not replace the primary copy/publication error.
+                pass
 
 
 def _default_settings(**overrides: object) -> AnalysisSettings:
@@ -258,14 +365,39 @@ def quick_export(
     excel_target: Path | None = None
     if output_path.suffix.lower() == ".xlsx":
         excel_target = output_path if output_path.is_absolute() else output_path.resolve()
-        _validate_excel_target(excel_target, overwrite=overwrite)
         bundle_dir = excel_target.with_name(f"{excel_target.stem}_bundle")
         # Excel shortcut always materializes the workbook in the bundle first.
         include_excel = True
     else:
         bundle_dir = output_path if output_path.is_absolute() else output_path.resolve()
 
-    result = analyze_cifs(
+    if excel_target is not None:
+        # Keep target preflight, bundle generation, and external workbook
+        # publication in one fail-closed logical transaction.
+        warning_sink: list[str] = []
+        lock_path = _acquire_transaction_lock(excel_target, warning_sink=warning_sink)
+        try:
+            _validate_excel_target(excel_target, overwrite=overwrite)
+            result = analyze_cifs(
+                inputs,
+                bundle_dir,
+                settings=settings,
+                recursive=recursive,
+                include_excel=include_excel,
+                overwrite=overwrite,
+                elastic_overrides=elastic_overrides,  # type: ignore[arg-type]
+            )
+            source_xlsx = result.output_dir / "results.xlsx"
+            if not source_xlsx.is_file():
+                raise RuntimeError(
+                    f"Expected results.xlsx in bundle {result.output_dir}, but it is missing."
+                )
+            _copy_excel_atomic(source_xlsx, excel_target, overwrite=overwrite)
+            return result
+        finally:
+            _release_transaction_lock(lock_path, warning_sink=warning_sink)
+
+    return analyze_cifs(
         inputs,
         bundle_dir,
         settings=settings,
@@ -274,16 +406,6 @@ def quick_export(
         overwrite=overwrite,
         elastic_overrides=elastic_overrides,  # type: ignore[arg-type]
     )
-
-    if excel_target is not None:
-        source_xlsx = result.output_dir / "results.xlsx"
-        if not source_xlsx.is_file():
-            raise RuntimeError(
-                f"Expected results.xlsx in bundle {result.output_dir}, but it is missing."
-            )
-        _copy_excel_atomic(source_xlsx, excel_target, overwrite=overwrite)
-
-    return result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -397,7 +519,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             include_excel=not args.no_excel,
             overwrite=args.overwrite,
         )
-    except (ValueError, FileNotFoundError, FileExistsError, PermissionError, RuntimeError, TypeError) as exc:
+    except (
+        ValueError,
+        FileNotFoundError,
+        FileExistsError,
+        PermissionError,
+        RuntimeError,
+        TypeError,
+        OSError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

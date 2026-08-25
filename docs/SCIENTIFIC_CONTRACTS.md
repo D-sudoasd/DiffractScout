@@ -177,13 +177,36 @@ The current implementation does not infer or fit:
 
 ## 5. Display profile
 
-Each discrete line is broadened with a pseudo-Voigt function:
+Each discrete line is broadened with the selected `profile_model`: `pseudo_voigt`,
+`gaussian`, or `lorentzian`. For `pseudo_voigt`, the line profile is
 
 $$
-p(x) = \eta L(x;\mathrm{FWHM}) + (1-\eta)G(x;\mathrm{FWHM}).
+p_{PV}(x) = \eta L(x;\mathrm{FWHM}) + (1-\eta)G(x;\mathrm{FWHM}).
 $$
 
-The summed profile is normalized to a maximum of 100. FWHM and mixing fraction are user inputs stored in provenance. The profile is a visualization and interoperability product. It is not a fitted instrument function and contains no inferred axial divergence, spectral doublet, microstrain, crystallite size, detector response, or background.
+The mixing fraction `profile_eta` is meaningful and effective only for
+`pseudo_voigt`; for `gaussian` and `lorentzian` it does not change the emitted
+profile. It is stored in provenance. For `gaussian`, the single-component profile is
+
+$$
+G(x) = \exp\left[-\frac{(x-x_0)^2}{2\sigma^2}\right],
+\qquad
+\sigma = \frac{\mathrm{FWHM}}{2\sqrt{2\ln 2}}.
+$$
+
+For `lorentzian`, the single-component profile is
+
+$$
+L(x) = \frac{\gamma^2}{(x-x_0)^2+\gamma^2},
+\qquad
+\gamma = \frac{\mathrm{FWHM}}{2}.
+$$
+
+The summed profile is normalized to a maximum of 100 for every model. FWHM
+and the selected profile model are user inputs stored in provenance. The
+profile is a visualization and interoperability product. It is not a fitted
+instrument function and contains no inferred axial divergence, spectral
+doublet, microstrain, crystallite size, detector response, or background.
 
 ## 6. Resource and query limits
 
