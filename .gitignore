@@ -43,3 +43,7 @@ paper/*.tex
 paper/manuscript_refinement_output/
 
 _paper_demo/
+
+# OMO/Codex local cache
+.omo/
+
