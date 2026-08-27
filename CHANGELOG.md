@@ -81,6 +81,32 @@ All notable changes are recorded here. The project follows semantic versioning a
   path and constrained the Materials Project extras for Python 3.10 to
   `mp-api<0.46` and `pymatgen<2026` while leaving newer Python lower bounds
   unbounded.
+- Parsed additive composition chains without dropping later terms or silently
+  treating them as a different composition syntax.
+- Failed closed when a CIF contains an unknown element instead of emitting a
+  partial or fabricated composition/mass result.
+- Matched elasticity-index records using normalized absolute CIF paths so an
+  index remains unambiguous across working directories.
+- Included nested `manifest.json` files in manifest construction and
+  verification while excluding only the root manifest.
+- Recovered stale transaction locks only when the no-replace safety checks
+  proved that the lock was isolated; an uncertain lock is preserved and fails
+  closed.
+- Applied the profile-grid and reciprocal-candidate resource guards to
+  quick-export before expensive analysis begins.
+- Defined `run_pipeline` elasticity-setting precedence: an explicit keyword
+  override wins, while an omitted override honors `AnalysisSettings`.
+- Made GUI initialization failures actionable and tightened platform-specific
+  test skips so unavailable GUI environments are reported accurately.
+- Hardened Windows launcher interpreter selection to prefer the checkout
+  environment before the active Python and `py -3` fallbacks.
+- Added an installation hint for the optional Materials Project extras and
+  kept API-key handling explicit in user documentation.
+- Recorded stable provenance definitions for expanded unit-cell mass and
+  transformed profile axes, including their schema names and limitations.
+- Completed README/release gate hardening: first-run guidance and
+  release/readiness wording now keep unreleased source status, generated notes,
+  and scientific acceptance distinct.
 
 ### Notes
 

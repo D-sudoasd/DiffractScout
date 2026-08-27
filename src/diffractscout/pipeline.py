@@ -692,14 +692,12 @@ def _recover_stale_transaction_lock(
     try:
         moved_raw = quarantine.read_bytes()
         if moved_raw != raw:
-            if not _path_exists(lock_path):
-                try:
-                    quarantine.replace(lock_path)
-                except OSError as exc:
-                    _record_transaction_warning(
-                        f"Could not restore changed transaction lock {lock_path}: {exc}",
-                        warning_sink,
-                    )
+            _restore_isolated_transaction_lock(
+                quarantine,
+                lock_path,
+                moved_raw,
+                warning_sink,
+            )
             raise FileExistsError(
                 f"Transaction lock {lock_path} changed while being isolated; "
                 "the lock was preserved."
@@ -2322,20 +2320,24 @@ def run_pipeline(
     discovery_settings: DiscoverySettings | None = None,
     analysis_settings: AnalysisSettings | None = None,
     conventional_unit_cell: bool = True,
-    include_elasticity: bool = True,
+    include_elasticity: bool | None = None,
     include_excel: bool = True,
     overwrite: bool = False,
     confirm_above: int = 200,
     authorize_large_download: bool = False,
 ) -> PipelineResult:
-    requested_analysis_settings = analysis_settings or AnalysisSettings(
-        include_elasticity=include_elasticity
-    )
-    if requested_analysis_settings.include_elasticity != include_elasticity:
+    if analysis_settings is None:
+        requested_analysis_settings = AnalysisSettings(
+            include_elasticity=True if include_elasticity is None else include_elasticity
+        )
+    else:
+        requested_analysis_settings = analysis_settings
+    if include_elasticity is not None and requested_analysis_settings.include_elasticity != include_elasticity:
         requested_analysis_settings = replace(
             requested_analysis_settings, include_elasticity=include_elasticity
         )
     validate_analysis_settings(requested_analysis_settings)
+    include_elasticity = requested_analysis_settings.include_elasticity
     if include_elasticity and not conventional_unit_cell:
         raise ValueError(
             "Primitive-cell downloads cannot be paired automatically with Materials Project "

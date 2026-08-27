@@ -334,6 +334,64 @@ Al1 Al {coordinate} 0 0 1
         load_structure(cif)
 
 
+def test_unknown_or_virtual_cif_element_fails_before_mass_and_diffraction(
+    tmp_path: Path,
+) -> None:
+    cif = tmp_path / "unknown_element.cif"
+    cif.write_text(
+        """data_unknown_element
+_cell_length_a 4
+_cell_length_b 4
+_cell_length_c 4
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_space_group_IT_number 225
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_occupancy
+Xx1 Xx 0 0 0 1
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"unknown or virtual.*atomic_number=0"):
+        load_structure(cif)
+
+
+def test_deuterium_cif_element_remains_valid(tmp_path: Path) -> None:
+    cif = tmp_path / "deuterium.cif"
+    cif.write_text(
+        """data_deuterium
+_cell_length_a 4
+_cell_length_b 4
+_cell_length_c 4
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_space_group_IT_number 1
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_occupancy
+D1 D 0 0 0 1
+""",
+        encoding="utf-8",
+    )
+
+    structure = load_structure(cif)
+
+    assert structure.small_structure.sites[0].element.name == "D"
+    assert structure.small_structure.sites[0].element.atomic_number == 1
+
+
 def test_invalid_fractional_coordinate_subprocess_exits_without_native_crash(
     tmp_path: Path,
 ) -> None:

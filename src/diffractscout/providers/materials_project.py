@@ -154,7 +154,9 @@ class MaterialsProjectProvider:
             from mp_api.client import MPRester  # type: ignore[import-not-found]
         except ImportError as exc:
             raise RuntimeError(
-                "Materials Project support is optional. Install with: pip install 'diffractscout[mp]'"
+                "Materials Project support is optional. For an installed package, run "
+                'python -m pip install "diffractscout[mp]"; for a source checkout, run '
+                'python -m pip install -e ".[mp]".'
             ) from exc
         self._mpr_cls = MPRester
         self._metadata: dict[str, object] = {

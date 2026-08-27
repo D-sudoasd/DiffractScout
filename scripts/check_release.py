@@ -13,10 +13,45 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 READINESS_SCRIPT = ROOT / "scripts/joss_readiness.py"
+
+DECLARED_ENTRYPOINTS = {
+    "diffractscout": "diffractscout.cli:main",
+    "diffractscout-quick-export": "diffractscout.quick_export:main",
+    "diffractscout-gui": "diffractscout.gui:main",
+}
+
+
+def _missing_preflight_dependencies(*, skip_tests: bool, skip_wheel: bool) -> list[str]:
+    """Return optional tools needed by the selected preflight checks."""
+
+    required: list[str] = []
+    if not skip_wheel:
+        required.extend(("build", "twine"))
+    if not skip_tests:
+        required.append("pytest")
+    return [name for name in required if importlib.util.find_spec(name) is None]
+
+
+def _ensure_preflight_dependencies(*, skip_tests: bool, skip_wheel: bool) -> None:
+    """Fail early with a copyable install command when tools are unavailable."""
+
+    missing = _missing_preflight_dependencies(
+        skip_tests=skip_tests,
+        skip_wheel=skip_wheel,
+    )
+    if not missing:
+        return
+    missing_text = ", ".join(missing)
+    raise SystemExit(
+        "Missing preflight tooling: "
+        f"{missing_text}. Install it with:\n"
+        '  python -m pip install -e ".[test,release]"'
+    )
 
 
 def _load_readiness_module():
@@ -73,6 +108,56 @@ def _write_release_acceptance(
     return path
 
 
+def _resolve_installed_launchers(
+    environment_path: Path,
+    *,
+    windows: bool | None = None,
+) -> dict[str, Path]:
+    """Return the exact venv launchers for every declared entry point.
+
+    The launcher directory and suffix are deliberately derived from the venv
+    layout rather than from ``PATH``.  This keeps the clean-wheel check bound
+    to the wheel just installed into this environment.
+    """
+
+    is_windows = os.name == "nt" if windows is None else windows
+    launcher_dir = environment_path / ("Scripts" if is_windows else "bin")
+    suffix = ".exe" if is_windows else ""
+    launchers: dict[str, Path] = {}
+    for name in DECLARED_ENTRYPOINTS:
+        launcher = launcher_dir / f"{name}{suffix}"
+        if not launcher.is_file():
+            raise SystemExit(f"Missing installed entry-point launcher: {launcher}")
+        if not is_windows and not os.access(launcher, os.X_OK):
+            raise SystemExit(f"Installed entry-point launcher is not executable: {launcher}")
+        launchers[name] = launcher.resolve()
+    return launchers
+
+
+def _validate_installed_entrypoint_metadata(metadata: Mapping[str, str]) -> None:
+    """Fail if installed entry-point metadata omits or redirects a launcher."""
+
+    missing = sorted(set(DECLARED_ENTRYPOINTS) - set(metadata))
+    mismatched = sorted(
+        name
+        for name, target in DECLARED_ENTRYPOINTS.items()
+        if name in metadata and metadata[name] != target
+    )
+    if missing or mismatched:
+        details: list[str] = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if mismatched:
+            details.append(
+                "mismatched="
+                + ",".join(
+                    f"{name} (expected {DECLARED_ENTRYPOINTS[name]!r}, got {metadata[name]!r})"
+                    for name in mismatched
+                )
+            )
+        raise SystemExit("Installed wheel entry-point metadata mismatch: " + "; ".join(details))
+
+
 def _clean_wheel_smoke(wheel: Path) -> dict[str, str]:
     """Install the just-built wheel without source-path leakage and exercise it."""
 
@@ -103,11 +188,44 @@ def _clean_wheel_smoke(wheel: Path) -> dict[str, str]:
             print("+", " ".join(command))
             subprocess.run(command, cwd=root, check=True, env=clean_environment)
 
+        def run_clean_capture(*args: str) -> str:
+            command = [str(python), *args]
+            print("+", " ".join(command))
+            completed = subprocess.run(
+                command,
+                cwd=root,
+                check=True,
+                env=clean_environment,
+                text=True,
+                capture_output=True,
+            )
+            if completed.stdout:
+                print(completed.stdout, end="")
+            if completed.stderr:
+                print(completed.stderr, end="", file=sys.stderr)
+            return completed.stdout.strip()
+
+        def run_installed(name: str, *args: str) -> None:
+            command = [str(launchers[name]), *args]
+            print("+", " ".join(command))
+            subprocess.run(command, cwd=root, check=True, env=clean_environment)
+
         install_args = ["-m", "pip", "install", "--disable-pip-version-check"]
         if reuse_dependencies:
             install_args.extend(["--no-index", "--no-deps"])
         install_args.append(str(wheel.resolve()))
         run_clean(*install_args)
+        launchers = _resolve_installed_launchers(environment_path)
+        metadata_output = run_clean_capture(
+            "-c",
+            (
+                "import importlib.metadata,json; "
+                "entries={item.name:item.value for item in "
+                "importlib.metadata.distribution('diffractscout').entry_points}; "
+                "print(json.dumps(entries, sort_keys=True))"
+            ),
+        )
+        _validate_installed_entrypoint_metadata(json.loads(metadata_output))
         run_clean("-m", "pip", "check")
         run_clean(
             "-c",
@@ -122,9 +240,10 @@ def _clean_wheel_smoke(wheel: Path) -> dict[str, str]:
         demo = root / "demo"
         benchmark = root / "benchmark"
         quick = root / "quick.xlsx"
-        run_clean("-m", "diffractscout", "demo", "-o", str(demo), "--no-excel")
-        run_clean("-m", "diffractscout", "verify", str(demo))
-        run_clean("-m", "diffractscout", "benchmark", "-o", str(benchmark))
+        run_installed("diffractscout", "--version")
+        run_installed("diffractscout", "demo", "-o", str(demo), "--no-excel")
+        run_installed("diffractscout", "verify", str(demo))
+        run_installed("diffractscout", "benchmark", "-o", str(benchmark))
         packaged_cif = (
             "import diffractscout,pathlib; "
             "print(pathlib.Path(diffractscout.__file__).with_name('benchmark_data')/'fcc_al.cif')"
@@ -137,13 +256,18 @@ def _clean_wheel_smoke(wheel: Path) -> dict[str, str]:
             text=True,
             capture_output=True,
         ).stdout.strip()
-        run_clean("-m", "diffractscout", "quick-export", located, "-o", str(quick))
-        run_clean("-m", "diffractscout", "verify", str(root / "quick_bundle"))
+        if not Path(located).is_file():
+            raise SystemExit(f"Installed benchmark CIF is missing: {located}")
+        run_installed("diffractscout-quick-export", located, "-o", str(quick))
+        run_installed("diffractscout", "verify", str(root / "quick_bundle"))
         return {
             "mode": "system-site-packages" if reuse_dependencies else "isolated-dependencies",
             "package": str(wheel.resolve()),
             "source_tree_import": "rejected",
-            "commands": "pip-check,demo,verify,benchmark,quick-export,verify",
+            "commands": (
+                "pip-check,entrypoint-launchers,entrypoint-metadata,installed-entrypoints,"
+                "version,demo,verify,benchmark,quick-export,verify"
+            ),
         }
 
 
@@ -263,6 +387,10 @@ def main() -> int:
         help="Empty directory for wheel and sdist output; existing files are never removed.",
     )
     args = parser.parse_args()
+    _ensure_preflight_dependencies(
+        skip_tests=args.skip_tests,
+        skip_wheel=args.skip_wheel,
+    )
 
     missing = [path.relative_to(ROOT) for path in _required_files() if not path.is_file()]
     if missing:

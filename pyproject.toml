@@ -56,6 +56,10 @@ test = [
   "PyYAML>=6.0",
   "tomli>=2.0; python_version < '3.11'",
 ]
+release = [
+  "build>=1.2",
+  "twine>=5.1",
+]
 # Optional display figures and JOSS paper figure regeneration.
 figures = [
   "matplotlib>=3.7",

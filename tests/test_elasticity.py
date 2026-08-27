@@ -277,6 +277,51 @@ def test_index_row_matching_multiple_aliases_is_counted_once(
     assert tensor.status == "valid"
 
 
+@pytest.mark.parametrize(
+    "paired_path",
+    [
+        r"C:\archive\diffractscout\absolute_alias.cif",
+        "/var/lib/diffractscout/absolute_alias.cif",
+    ],
+)
+def test_index_row_matches_absolute_paths_by_portable_basename(
+    demo_inputs: Path, tmp_path: Path, paired_path: str
+) -> None:
+    cif = tmp_path / "absolute_alias.cif"
+    shutil.copy2(demo_inputs / "synthetic_fcc_al.cif", cif)
+    index = tmp_path / "elasticity_index.csv"
+    fields = [
+        "cif_filename",
+        "status",
+        "numerical_cij",
+        "source_provider",
+        "coordinate_frame",
+        *[f"C{i}{j}_GPa" for i in range(1, 7) for j in range(1, 7)],
+    ]
+    row = {
+        "cif_filename": paired_path,
+        "status": "valid",
+        "numerical_cij": "true",
+        "source_provider": "fixture",
+        "coordinate_frame": CIF_CARTESIAN_FRAME,
+        **{
+            f"C{i}{j}_GPa": "100" if i == j else "0"
+            for i in range(1, 7)
+            for j in range(1, 7)
+        },
+    }
+    with index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(row)
+
+    tensor = discover_elastic_tensor(cif)
+
+    assert tensor is not None
+    assert tensor.status == "valid"
+    assert tensor.raw_payload_path == index
+
+
 def test_conflicting_canonical_and_legacy_index_pairing_fails_closed(
     demo_inputs: Path, tmp_path: Path
 ) -> None:

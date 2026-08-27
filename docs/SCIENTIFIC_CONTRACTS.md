@@ -23,6 +23,16 @@ Space-group identity is resolved in the following order and the chosen source is
 
 A disagreement between explicit symbol and number, or between the declared group and the independent spglib search, is recorded as a diagnostic. The diffraction calculation uses the resolved Gemmi group; users must review any mismatch before interpreting systematic absences.
 
+### Unit-cell mass and density
+
+The schema field `formula_weight_g_mol` is the expanded crystallographic
+unit-cell mass in g/mol. It sums the masses of all occupied sites in the
+expanded unit cell, including the crystallographic multiplicity `Z`; it is not
+the empirical formula molar mass. The derived `density_g_cm3` uses this
+unit-cell mass and the crystallographic cell volume. These meanings apply to
+the existing schema names and should not be relabeled as empirical-formula
+quantities.
+
 ## 2. Radiation definition
 
 Energy and wavelength are related by
@@ -207,6 +217,14 @@ and the selected profile model are user inputs stored in provenance. The
 profile is a visualization and interoperability product. It is not a fitted
 instrument function and contains no inferred axial divergence, spectral
 doublet, microstrain, crystallite size, detector response, or background.
+
+When `pattern_axis` is `d_spacing`, `q`, or `g`, the profile remains sampled on
+the same uniform `2theta` grid and the emitted coordinates are coordinate
+transforms of those samples. The profile is not uniformly resampled in `q` or
+`d`, and no Jacobian is applied. The canonical columns remain
+`two_theta_deg`, `d_A`, `q_invA`, `g_invA`, `x_axis_mode`, `x`, and
+`relative_intensity`; `pattern_axis` selects the `x` coordinate for the
+continuous CSV/Excel profile only.
 
 ## 6. Resource and query limits
 

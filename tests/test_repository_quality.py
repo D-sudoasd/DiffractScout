@@ -138,6 +138,22 @@ def test_quick_export_batch_normalizes_first_path_without_delayed_expansion() ->
     assert "%%~dpI%%~nI_diffractscout.xlsx" in script
 
 
+def test_gui_batch_launcher_has_safe_python_precedence_and_exit_contract() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "启动DiffractScout.bat").read_text(encoding="utf-8")
+
+    repository_venv = 'if exist "%~dp0.venv\\Scripts\\python.exe" goto :venv_python'
+    current_python_probe = 'python -c "import sys"'
+    current_python_run = 'python "%ENTRY%" gui'
+    assert repository_venv in script
+    assert current_python_probe in script
+    assert "py -3 \"%ENTRY%\" gui" in script
+    assert "scripts\\diffractscout_entry.py" in script
+    assert "endlocal & exit /b %EXIT_CODE%" in script
+    assert script.index(repository_venv) < script.index(current_python_probe)
+    assert script.index(current_python_probe) < script.index(current_python_run)
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="requires Windows cmd.exe")
 def test_quick_export_batch_reports_special_character_sibling_path(
     tmp_path: Path,

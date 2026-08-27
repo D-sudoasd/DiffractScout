@@ -11,11 +11,24 @@ diffractscout gui
 # or: python -m diffractscout gui
 ```
 
-On Windows, after an editable or environment install, double-click `启动DiffractScout.bat` in the repository root (it `cd`s to the script directory and tries `py -3 -m diffractscout gui`, then `diffractscout-gui`).
+On Windows, after an editable or environment install, double-click
+`启动DiffractScout.bat` in the repository root. The repository launcher uses
+the checkout source and prefers interpreters in this order: the repository
+`.venv\Scripts\python.exe`, the current/active `python`, then `py -3`. There is
+no standalone Windows EXE yet, so a Python installation is required. The
+repository launcher is only a convenient source-checkout entry point; an
+installed `diffractscout-gui` or `diffractscout gui` does not require it. The
+optional `scripts/package_windows_portable.py` file documents a future
+PyInstaller layout; it does not ship an executable.
 
 A normal Python installation with Tk support is required. On Linux, the operating-system package is commonly named `python3-tk` or `tk`.
 
 Optional extra `.[gui-dnd]` installs `tkinterdnd2` and enables file/folder drop onto the local CIF list; the button-based workflow remains available without it.
+
+The GUI starts in Chinese (`zh`). Use the language selector in the header to
+switch between Chinese and English. Screenshots in this guide are
+illustrative and may show English labels even though a fresh launch defaults
+to Chinese.
 
 ## Layout and scrolling
 

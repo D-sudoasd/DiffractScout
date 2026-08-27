@@ -521,6 +521,33 @@ def test_quick_export_cli_entry(demo_inputs: Path, tmp_path: Path) -> None:
     assert (tmp_path / "cli_out_bundle" / "manifest.json").is_file()
 
 
+def test_standalone_quick_export_safety_limits_are_propagated(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    output = tmp_path / "limited"
+    code = quick_export_main(
+        [
+            str(demo_inputs),
+            "-o",
+            str(output),
+            "--max-profile-points",
+            "10000",
+            "--max-reflection-estimate",
+            "5678",
+            "--no-elasticity",
+            "--no-excel",
+        ]
+    )
+
+    assert code == 0
+    provenance = json.loads(
+        (output / "provenance.json").read_text(encoding="utf-8")
+    )
+    settings = provenance["analysis_settings"]
+    assert settings["max_profile_points"] == 10000
+    assert settings["max_reflection_estimate"] == 5678
+
+
 @pytest.mark.parametrize(
     ("radiation_option", "radiation_value", "expected_mode", "expected_wavelength", "expected_energy"),
     [
@@ -616,6 +643,8 @@ def test_standalone_quick_export_radiation_options_are_mutually_exclusive() -> N
 def test_standalone_quick_export_help_is_legacy_windows_console_safe() -> None:
     help_text = build_quick_export_parser().format_help()
     assert "K-alpha" in help_text
+    assert "--max-profile-points" in help_text
+    assert "--max-reflection-estimate" in help_text
     help_text.encode("cp936")
 
 

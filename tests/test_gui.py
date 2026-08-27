@@ -231,17 +231,128 @@ def test_analysis_form_rejects_unknown_profile_model() -> None:
         )
 
 
+def _is_expected_gui_unavailable(exc: BaseException) -> bool:
+    if isinstance(exc, RuntimeError):
+        return str(exc) == "Tkinter is unavailable in this Python installation."
+    tcl_error = getattr(gui_module.tk, "TclError", None)
+    if tcl_error is None or not isinstance(exc, tcl_error):
+        return False
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "no display name and no $display environment variable",
+            "couldn't connect to display",
+            "can't open display",
+            "unable to connect to display",
+        )
+    )
+
+
 def _create_test_app():
     try:
         return create_app()
     except RuntimeError as exc:
-        if "Tkinter" in str(exc):
+        if _is_expected_gui_unavailable(exc):
             pytest.skip("Tkinter unavailable")
         raise
     except Exception as exc:
-        if gui_module.tk is not None and isinstance(exc, gui_module.tk.TclError):
+        if _is_expected_gui_unavailable(exc):
             pytest.skip(f"Tk display unavailable: {exc}")
         raise
+
+
+def test_gui_main_converts_constructor_failure_to_actionable_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    def fail() -> object:
+        if gui_module.tk is not None:
+            raise gui_module.tk.TclError(
+                "no display name and no $DISPLAY environment variable"
+            )
+        raise RuntimeError("Tkinter is unavailable in this Python installation.")
+
+    monkeypatch.setattr(gui_module, "create_app", fail)
+    assert gui_module.main() == 2
+    error = capsys.readouterr().err
+    assert error.startswith("ERROR: Could not start the DiffractScout GUI:")
+    assert "Tk support" in error
+    assert "graphical display" in error
+    assert "Traceback" not in error
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "can't find a usable tk.tcl in the following directories",
+        'can\'t read "clamTheme.tcl": no such file or directory',
+        'couldn\'t read "scrlbar.tcl": no such file or directory',
+        'can\'t find "ttk/fonts.tcl"',
+        'couldn\'t read "ttk/vistaTheme.tcl": no such file or directory',
+    ),
+)
+def test_gui_main_converts_known_tcl_resource_failure_to_actionable_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+    message: str,
+) -> None:
+    if gui_module.tk is None:
+        pytest.skip("Tkinter unavailable")
+
+    def fail() -> object:
+        raise gui_module.tk.TclError(message)
+
+    monkeypatch.setattr(gui_module, "create_app", fail)
+    assert gui_module.main() == 2
+    error = capsys.readouterr().err
+    assert "Tcl/Tk" in error
+    assert ".tcl resource files" in error
+    assert "Traceback" not in error
+
+
+def test_gui_main_does_not_swallow_mainloop_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenApp:
+        def mainloop(self) -> None:
+            raise RuntimeError("worker failure")
+
+    monkeypatch.setattr(gui_module, "create_app", lambda: BrokenApp())
+    with pytest.raises(RuntimeError, match="worker failure"):
+        gui_module.main()
+
+
+def test_gui_main_reraises_unexpected_tcl_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if gui_module.tk is None:
+        pytest.skip("Tkinter unavailable")
+
+    def fail() -> object:
+        raise gui_module.tk.TclError("widget setup failed")
+
+    monkeypatch.setattr(gui_module, "create_app", fail)
+    with pytest.raises(gui_module.tk.TclError, match="widget setup failed"):
+        gui_module.main()
+
+
+def test_gui_setup_does_not_skip_unexpected_tcl_or_resource_errors() -> None:
+    if gui_module.tk is None:
+        pytest.skip("Tkinter unavailable")
+    for message in ("widget setup failed", "can't find a usable tk.tcl", "ttk/cursors.tcl"):
+        error = gui_module.tk.TclError(message)
+        assert not _is_expected_gui_unavailable(error)
+
+
+def test_gui_main_reraises_unexpected_constructor_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail() -> object:
+        raise RuntimeError("unexpected GUI construction failure")
+
+    monkeypatch.setattr(gui_module, "create_app", fail)
+    with pytest.raises(RuntimeError, match="unexpected GUI construction failure"):
+        gui_module.main()
 
 
 def test_discovery_form_rejects_zero_limit() -> None:

@@ -20,6 +20,7 @@ from diffractscout.exporters import (
 )
 from diffractscout.models import AnalysisSettings
 from diffractscout.pipeline import analyze_cifs
+from diffractscout.validation import verify_bundle
 
 
 def test_csv_and_excel_escape_formula_like_external_text(tmp_path: Path) -> None:
@@ -49,6 +50,24 @@ def test_empty_csv_keeps_a_stable_header(tmp_path: Path) -> None:
     path = tmp_path / "empty.csv"
     _write_csv(path, [], ["a", "b"])
     assert path.read_text(encoding="utf-8-sig").splitlines() == ["a,b"]
+
+
+def test_bundle_manifest_lists_nested_manifest_and_verifies(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle"
+    nested_manifest = bundle / "inputs" / "manifest.json"
+    nested_manifest.parent.mkdir(parents=True)
+    nested_manifest.write_text('{"source": "nested"}\n', encoding="utf-8")
+
+    export_result_bundle(
+        bundle,
+        analyses=[],
+        settings=AnalysisSettings(include_patterns=False),
+        include_excel=False,
+    )
+
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    assert "inputs/manifest.json" in {entry["path"] for entry in manifest["files"]}
+    assert verify_bundle(bundle)["ok"]
 
 
 def test_pattern_axis_coordinates_keep_zero_q_and_g_finite() -> None:
@@ -156,6 +175,13 @@ def test_provenance_records_effective_conditional_output_flags(tmp_path: Path) -
     assert "results.xlsx" not in (result.output_dir / "README.md").read_text(encoding="utf-8")
     assert "pattern_profiles.csv" not in (result.output_dir / "README.md").read_text(encoding="utf-8")
     assert "always" not in payload["definitions"]["pattern_axis_columns"].lower()
+    formula_weight_definition = payload["definitions"]["formula_weight_g_mol"].lower()
+    assert "expanded unit-cell mass" in formula_weight_definition
+    assert "not the empirical formula mass" in formula_weight_definition
+    sampling = payload["definitions"]["pattern_axis_sampling"].lower()
+    assert "uniform 2theta grid" in sampling
+    assert "not uniformly resampled in q or d" in sampling
+    assert "no jacobian" in sampling
 
 
 def test_bundle_readme_is_conditional_and_names_profile_model() -> None:
