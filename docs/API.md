@@ -1,5 +1,10 @@
 # Core Python API
 
+The public result schemas and scientific meanings are defined in
+[SCIENTIFIC_CONTRACTS.md](SCIENTIFIC_CONTRACTS.md). The CLI/GUI entry points and
+validation workflow are documented in the [GUI guide](GUI.md),
+[README](../README.md), and [release procedure](RELEASE.md).
+
 ## Local CIF analysis
 
 ```python
@@ -146,6 +151,16 @@ result = run_pipeline(
 ```
 
 Downloads above `confirm_above` require `authorize_large_download=True`. Automatic Materials Project elasticity coupling requires a conventional-standard cell. A primitive-cell run must set `include_elasticity=False`.
+
+`run_pipeline(..., include_elasticity=...)` treats the keyword as an optional
+override. An omitted override honors `AnalysisSettings`; an explicit boolean
+overrides it:
+
+- when the override is omitted (`None`) and `analysis_settings` is supplied,
+  the value in `analysis_settings.include_elasticity` is honored;
+- an explicit `True` or `False` overrides that setting;
+- when both `analysis_settings` and the override are omitted, elasticity remains
+  enabled by default (`True`).
 
 ## Result records
 

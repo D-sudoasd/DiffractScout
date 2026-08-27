@@ -1,6 +1,6 @@
 # JOSS readiness assessment
 
-Assessment date: **12 August 2026**
+Assessment date: **12 August 2026** (static baseline snapshot; not a live status)
 
 Software version assessed: **0.4.0 release candidate**
 
@@ -17,6 +17,18 @@ Primary requirements consulted:
 - JOSS paper format: `https://joss.readthedocs.io/en/latest/paper.html`
 - JOSS submission and archive sequence: `https://joss.readthedocs.io/en/latest/submitting.html`
 - JOSS AI policy: `https://joss.readthedocs.io/en/latest/policies.html`
+
+This page records a dated baseline and is not updated automatically. For the
+current assessment, run the live readiness script and inspect its generated
+JSON/Markdown report, for example:
+
+```bash
+python scripts/joss_readiness.py --stage release --output build/joss-readiness
+```
+
+The release receipt and engineering checks are software-process evidence only;
+they do not establish scientific validity, real-material agreement, or JOSS
+acceptance.
 
 ## Current conclusion
 
@@ -90,6 +102,10 @@ The packaged analytic suite and synthetic FCC fixture establish calculation,
 schema, provenance, and integrity contracts. They do not establish experimental
 validity, adoption, or research impact. Only completed and traceable records may
 be added to `docs/evidence/impact_evidence.json`.
+
+Passing tests, benchmarks, CI, or release-preflight checks therefore remain
+engineering readiness signals, not scientific validation or a JOSS acceptance
+decision.
 
 The real multiphase case must identify the material, lawful input source,
 software version, frozen CIF hashes, complete settings, result bundle, actual

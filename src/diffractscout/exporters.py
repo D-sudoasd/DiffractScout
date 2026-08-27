@@ -1068,6 +1068,10 @@ def export_result_bundle(
                 "are compatibility aliases for the two volume-normalized theoretical intensity channels; "
                 "they are not crystallographic residual factors or standardized QPA coefficients"
             ),
+            "formula_weight_g_mol": (
+                "Expanded unit-cell mass in g/mol, calculated from all occupied sites in the "
+                "crystallographic unit cell (including Z); it is not the empirical formula mass."
+            ),
             "elastic_modulus": "E(n) = 1 / (q(n)^T S q(n)) under engineering-shear Voigt convention",
             "lab_views_schema": (
                 "When effective_export_lab_views is true, the emitted results.xlsx opens on 推荐峰表 after 使用说明: "
@@ -1080,6 +1084,11 @@ def export_result_bundle(
                 "When pattern_profiles.csv is emitted (include_patterns is true), it includes "
                 "two_theta_deg, d_A, q_invA, g_invA, "
                 "x_axis_mode (settings.pattern_axis), x (selected axis value), and relative_intensity"
+            ),
+            "pattern_axis_sampling": (
+                "Pattern profiles are sampled on a uniform 2theta grid and transformed to the "
+                "selected d, q, or g coordinate; they are not uniformly resampled in q or d, "
+                "and no Jacobian is applied."
             ),
             "two_theta_ranges": (
                 "In phase metadata, two_theta_range_deg is the configured analysis bound; "
@@ -1141,7 +1150,7 @@ def export_result_bundle(
     for path in sorted(output.rglob("*")):
         if path.is_symlink():
             raise ValueError(f"Result bundles cannot contain symbolic links: {path}")
-        if not path.is_file() or path.name == "manifest.json":
+        if not path.is_file() or path == output / "manifest.json":
             continue
         relative = path.relative_to(output).as_posix()
         suffix = path.suffix.lower()

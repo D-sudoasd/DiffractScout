@@ -2013,10 +2013,99 @@ def create_app() -> DiffractScoutApp:
     return DiffractScoutApp()
 
 
-def main() -> None:
-    app = create_app()
+_GUI_DISPLAY_ERROR_MARKERS = (
+    "no display name and no $display environment variable",
+    "couldn't connect to display",
+    "could not connect to display",
+    "can't open display",
+    "cannot open display",
+    "unable to connect to display",
+)
+_GUI_TCL_RESOURCE_FILE_MARKERS = (
+    "clamtheme.tcl",
+    "scrlbar.tcl",
+    "ttk/fonts.tcl",
+    "vistatheme.tcl",
+)
+_GUI_TCL_RESOURCE_NAME_MARKERS = (
+    "init.tcl",
+    "tk.tcl",
+    "tcl_library",
+    "package tk",
+    "package ttk",
+)
+_GUI_TCL_RESOURCE_FAILURE_MARKERS = (
+    "can't find",
+    "couldn't find",
+    "cannot find",
+    "unable to find",
+    "can't read",
+    "couldn't read",
+    "cannot read",
+    "no such file",
+    "error reading",
+    "can't open",
+    "couldn't open",
+    "cannot open",
+)
+
+
+def _is_tcl_error(exc: BaseException) -> bool:
+    tcl_error = getattr(tk, "TclError", None)
+    return tcl_error is not None and isinstance(exc, tcl_error)
+
+
+def _is_gui_display_initialization_error(exc: BaseException) -> bool:
+    if not _is_tcl_error(exc):
+        return False
+    message = str(exc).casefold()
+    return any(marker in message for marker in _GUI_DISPLAY_ERROR_MARKERS)
+
+
+def _is_tcl_resource_initialization_error(exc: BaseException) -> bool:
+    if not _is_tcl_error(exc):
+        return False
+    message = str(exc).casefold().replace("\\", "/")
+    has_resource_file = any(marker in message for marker in _GUI_TCL_RESOURCE_FILE_MARKERS)
+    has_resource_name = any(marker in message for marker in _GUI_TCL_RESOURCE_NAME_MARKERS)
+    has_resource_failure = any(marker in message for marker in _GUI_TCL_RESOURCE_FAILURE_MARKERS)
+    return (has_resource_file or has_resource_name) and has_resource_failure
+
+
+def _is_known_gui_startup_tcl_error(exc: BaseException) -> bool:
+    return _is_gui_display_initialization_error(exc) or _is_tcl_resource_initialization_error(exc)
+
+
+def _print_startup_error(exc: BaseException) -> None:
+    if _is_gui_display_initialization_error(exc):
+        guidance = "Ensure Python has Tk support and a graphical display is available."
+    elif _is_tcl_resource_initialization_error(exc):
+        guidance = "Install or repair Python's Tcl/Tk runtime and its .tcl resource files."
+    else:
+        guidance = "Install Python with Tk support and ensure a graphical display is available."
+    print(
+        "ERROR: Could not start the DiffractScout GUI: "
+        f"{exc}\n" + guidance,
+        file=sys.stderr,
+    )
+
+
+def main() -> int:
+    try:
+        app = create_app()
+    except RuntimeError as exc:
+        if str(exc) != "Tkinter is unavailable in this Python installation.":
+            raise
+        _print_startup_error(exc)
+        return 2
+    except Exception as exc:
+        if not _is_known_gui_startup_tcl_error(exc):
+            raise
+        _print_startup_error(exc)
+        return 2
     app.mainloop()  # type: ignore[attr-defined]
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

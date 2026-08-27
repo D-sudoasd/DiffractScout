@@ -4,6 +4,8 @@
 
 # DiffractScout
 
+> **Status:** The latest formal [GitHub Release is v0.3.0](https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0). The current source and package files in this checkout are **v0.4.0 Unreleased**. The supported Python range is **3.10–3.13**. Install this checkout from source (normally with an editable install), or install a wheel attached to a GitHub Release; no PyPI release is claimed. There is no standalone Windows EXE yet: Windows use requires Python. The repository launcher is a convenient source-checkout entry point; installed `diffractscout-gui` / `diffractscout gui` do not require it.
+
 [![CI](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml)
 [![JOSS draft](https://github.com/D-sudoasd/DiffractScout/actions/workflows/draft-pdf.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/draft-pdf.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -11,7 +13,7 @@
 
 **DiffractScout turns a chemical-system question or a folder of CIF files into a verifiable theoretical powder-diffraction reference bundle.** It preserves database identity, exact CIF hashes, structural diagnostics, radiation settings, optional elastic-tensor provenance, indexed reflections, warnings, and file checksums in one workflow.
 
-[中文说明](README.zh-CN.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Architecture](docs/ARCHITECTURE.md) · [Validation](docs/VALIDATION.md) · [Analytic benchmarks](docs/ANALYTIC_BENCHMARKS.md) · [JOSS readiness](docs/JOSS_READINESS.md)
+[中文说明](README.zh-CN.md) · [API](docs/API.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Validation](docs/VALIDATION.md) · [Release procedure](docs/RELEASE.md) · [JOSS readiness](docs/JOSS_READINESS.md)
 
 ## Why this software exists
 
@@ -41,7 +43,9 @@ diffractscout-gui
 
 The desktop interface exposes the scientific controls used by the Python API: radiation definition, angular window, *d*-spacing filters, profile model and spacing, pseudo-Voigt parameters, pattern axis, optional continuous patterns and figures, elastic-tensor pairing, candidate limits, reciprocal-space resource guards, overwrite authorization, progress, structured diagnostics, Excel/lab-view dependencies, and result access. The API key remains in memory and is not written to project files. See [docs/GUI.md](docs/GUI.md).
 
-On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export.
+The GUI defaults to Chinese (`zh`); use its language selector to switch to English. The screenshots are illustrative and may show English even when a fresh launch starts in Chinese.
+
+On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export. The GUI launcher is a source-checkout convenience entry point: it runs the checkout source and prefers the repository `.venv\Scripts\python.exe`, then the current/active `python`, then `py -3`. Installed `diffractscout-gui` / `diffractscout gui` do not require the repository launcher.
 
 ## CIF2Peaks parity features
 
@@ -65,6 +69,40 @@ metadata distinguish `requested_two_theta_range_deg`,
 `profile_sampled_two_theta_range_deg` endpoints, `effective_window_empty`, and
 `geometric_d_min_A` versus the filter `d_min_A`.
 
+## First-run quick start
+
+Run these commands from the DiffractScout checkout. They create a local virtual
+environment, install the current source, print the source version, and execute
+the offline synthetic demo followed by bundle verification.
+
+### Bash
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+diffractscout --version
+diffractscout demo -o outputs/first-run
+diffractscout verify outputs/first-run
+```
+
+### PowerShell
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+diffractscout --version
+diffractscout demo -o outputs/first-run
+diffractscout verify outputs/first-run
+```
+
+The key successful output is `diffractscout 0.4.0`, `Analyzed phases: 1`, and
+`PASS`. The demo is synthetic and offline; it is an installation and integrity
+check, not experimental validation. A rerun needs a new output directory, or
+an explicit `--overwrite` only after the existing directory has passed
+`diffractscout verify` and is a recognized DiffractScout bundle.
+
 ## Installation
 
 ### Local CIF analysis
@@ -77,18 +115,43 @@ python -m pip install -e .
 
 ### Materials Project support
 
+Use the optional `mp` extra and provide your own key through the environment.
+Keep the placeholder below; never commit, paste, or share a real key. Prefer a
+secret manager or an interactive shell prompt for automation, and unset/remove
+the variable after use. DiffractScout keeps the key in process memory and does
+not write it to result bundles.
+
+#### Bash
+
 ```bash
 python -m pip install -e ".[mp]"
-export MP_API_KEY="your-key"     # PowerShell: $env:MP_API_KEY = "your-key"
+export MP_API_KEY="replace-with-your-key"
+diffractscout discover "Ti-Al-V" -o outputs/ti_al_v_candidates
+unset MP_API_KEY
+```
+
+#### PowerShell
+
+```powershell
+python -m pip install -e ".[mp]"
+$env:MP_API_KEY = "replace-with-your-key"
+diffractscout discover "Ti-Al-V" -o outputs/ti_al_v_candidates
+Remove-Item Env:MP_API_KEY
 ```
 
 ### Optional extras
 
-```bash
-python -m pip install -e ".[figures]"   # optional matplotlib rendering path / paper figures
-python -m pip install -e ".[gui-dnd]"   # optional Tk drag-and-drop helper
-python -m pip install -e ".[mp]"        # Materials Project
-```
+| Extra | Install | Use |
+|---|---|---|
+| base | `python -m pip install -e .` | Offline local CIF analysis, CLI/API, synthetic demo and verification |
+| `mp` | `python -m pip install -e ".[mp]"` | Materials Project discovery/download and optional provider metadata; requires your own API key |
+| `figures` | `python -m pip install -e ".[figures]"` | Optional matplotlib rendering path and paper-figure tooling |
+| `gui-dnd` | `python -m pip install -e ".[gui-dnd]"` | Optional `tkinterdnd2` file/folder drag-and-drop; button-based GUI use remains available without it |
+| `test` | `python -m pip install -e ".[test]"` | Pytest, coverage, Ruff, YAML support, and development checks |
+| `release` | `python -m pip install -e ".[release]"` | `build` and `twine` required for a complete local release preflight |
+
+For a formal release, install the wheel attached to its GitHub Release in a
+compatible environment. This project does not claim a published PyPI release.
 
 ### Development environment
 
@@ -96,6 +159,10 @@ python -m pip install -e ".[mp]"        # Materials Project
 python -m pip install -e ".[test]"
 pytest -q
 ```
+
+Normal development and test work only needs `.[test]`. Before running the
+complete local release preflight, install both test and release tooling with
+`python -m pip install -e ".[test,release]"`.
 
 ## Five-minute offline verification
 
@@ -213,6 +280,14 @@ J_no_LP   = I_no_LP / V_cell²
 The legacy fields `material_scattering_factor_R_hkl` and `material_scattering_factor_R_hkl_no_lp` remain as compatibility aliases for the two project-defined `J` channels. They are not crystallographic residual factors, standardized quantitative-phase coefficients, or experimentally calibrated scattering factors.
 
 The continuous pseudo-Voigt profile is a visualization product with user-supplied width and mixing fraction. Resource guards cap both profile-grid size and the conservative reciprocal-lattice candidate estimate before memory-intensive work begins.
+
+The schema field `formula_weight_g_mol` means the expanded crystallographic
+unit-cell mass in g/mol: it sums all occupied sites in the unit cell, including
+the crystallographic multiplicity `Z`. It is not the empirical formula molar
+mass. For continuous profiles, `pattern_axis` selects coordinates transformed
+from a uniform `2theta` grid. `d`, `q`, and `g` are not uniformly resampled
+axes, and no Jacobian is applied; the canonical schema names remain
+`two_theta_deg`, `d_A`, `q_invA`, `g_invA`, `x_axis_mode`, and `x`.
 
 Full equations, units, tensor convention, coordinate-frame rules, structure validation, and exclusions are defined in [docs/SCIENTIFIC_CONTRACTS.md](docs/SCIENTIFIC_CONTRACTS.md).
 

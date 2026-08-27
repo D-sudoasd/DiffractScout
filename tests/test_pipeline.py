@@ -15,7 +15,12 @@ import pytest
 
 import diffractscout.exporters as exporters
 from diffractscout.elasticity_input import parse_cubic_cij
-from diffractscout.models import AnalysisSettings, CandidateRecord, DownloadArtifact
+from diffractscout.models import (
+    AnalysisSettings,
+    CandidateRecord,
+    DiscoverySettings,
+    DownloadArtifact,
+)
 from diffractscout.pipeline import (
     _TargetState,
     _acquire_transaction_lock,
@@ -33,6 +38,70 @@ from diffractscout.pipeline import (
 )
 from diffractscout.utils import write_json
 from diffractscout.validation import verify_bundle
+
+
+_UNSET = object()
+
+
+def _run_include_elasticity_contract(
+    demo_inputs: Path,
+    output: Path,
+    *,
+    settings: AnalysisSettings | None = None,
+    include_elasticity: bool | object = _UNSET,
+) -> tuple[object, bool]:
+    observed: dict[str, bool] = {}
+
+    class Provider:
+        name = "include-elasticity-contract"
+
+        def search_subsystem(
+            self, chemsys: str, **_kwargs: object
+        ) -> list[CandidateRecord]:
+            return [
+                CandidateRecord(
+                    material_id="synthetic-isotropic-cubic",
+                    formula="Al",
+                    energy_above_hull_eV_atom=0.0,
+                    is_stable=True,
+                    queried_chemsys=chemsys,
+                    source_provider=self.name,
+                )
+            ]
+
+        def metadata(self) -> dict[str, object]:
+            return {"provider": self.name}
+
+        def download_candidates(
+            self,
+            candidates: object,
+            _output_dir: Path,
+            **kwargs: object,
+        ) -> list[DownloadArtifact]:
+            observed["include_elasticity"] = bool(kwargs["include_elasticity"])
+            candidate = list(candidates)[0]
+            return [
+                DownloadArtifact(
+                    candidate=candidate,
+                    cif_path=demo_inputs / "synthetic_fcc_al.cif",
+                    elasticity_path=demo_inputs / "synthetic_fcc_al_elasticity.json",
+                    status="ok",
+                )
+            ]
+
+    options: dict[str, object] = {
+        "discovery_settings": DiscoverySettings(
+            mode="single_chemsys", max_total=1
+        ),
+        "include_excel": False,
+        "confirm_above": 1,
+    }
+    if settings is not None:
+        options["analysis_settings"] = settings
+    if include_elasticity is not _UNSET:
+        options["include_elasticity"] = include_elasticity
+    result = run_pipeline("Al", Provider(), output, **options)  # type: ignore[arg-type]
+    return result, observed["include_elasticity"]
 
 
 def test_local_pipeline_is_self_contained_and_verifiable(demo_inputs: Path, tmp_path: Path) -> None:
@@ -62,6 +131,45 @@ def test_local_pipeline_is_self_contained_and_verifiable(demo_inputs: Path, tmp_
 
     workbook = load_workbook(output / "results.xlsx", read_only=True)
     assert {"Summary", "Phases", "Peaks", "Elasticity", "Candidates", "Downloads", "Patterns"}.issubset(workbook.sheetnames)
+
+
+def test_run_pipeline_honors_analysis_settings_elasticity_when_override_omitted(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result, observed = _run_include_elasticity_contract(
+        demo_inputs,
+        tmp_path / "settings-disabled",
+        settings=AnalysisSettings(include_elasticity=False),
+    )
+
+    assert observed is False
+    assert result.analyses[0].metadata["elasticity_requested"] is False
+
+
+def test_run_pipeline_explicit_elasticity_override_wins_over_analysis_settings(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result, observed = _run_include_elasticity_contract(
+        demo_inputs,
+        tmp_path / "override-enabled",
+        settings=AnalysisSettings(include_elasticity=False),
+        include_elasticity=True,
+    )
+
+    assert observed is True
+    assert result.analyses[0].metadata["elasticity_requested"] is True
+
+
+def test_run_pipeline_without_settings_preserves_elasticity_default(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    result, observed = _run_include_elasticity_contract(
+        demo_inputs,
+        tmp_path / "default-enabled",
+    )
+
+    assert observed is True
+    assert result.analyses[0].metadata["elasticity_requested"] is True
 
 
 def test_excel_omission_warning_is_retained_in_pipeline_result(
@@ -612,6 +720,94 @@ def test_stale_lock_recovery_and_live_lock_protection(
     with pytest.raises(FileExistsError, match="active"):
         _acquire_transaction_lock(target)
     assert lock.exists()
+
+
+def test_stale_lock_restore_never_replaces_live_lock_after_vacancy_check(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import diffractscout.pipeline as pipeline
+
+    target = tmp_path / "stale-restore-race-target"
+    lock = _lock_path_for(target)
+    stale_payload = {
+        "version": 1,
+        "host": pipeline._lock_host(),
+        "pid": 424242,
+        "created_at": 1.0,
+    }
+    live_payload = {
+        "version": 1,
+        "host": pipeline._lock_host(),
+        "pid": os.getpid(),
+        "created_at": 2.0,
+    }
+    stale_raw = (json.dumps(stale_payload, sort_keys=True) + "\n").encode()
+    live_raw = (json.dumps(live_payload, sort_keys=True) + "\n").encode()
+    lock.write_bytes(stale_raw)
+    monkeypatch.setattr(pipeline, "_process_is_alive", lambda _pid: False)
+
+    original_read_bytes = Path.read_bytes
+    changed_read = False
+
+    def report_changed_quarantine(path: Path) -> bytes:
+        nonlocal changed_read
+        raw = original_read_bytes(path)
+        if path.name.startswith(f"{lock.name}.stale-") and not changed_read:
+            changed_read = True
+            return raw + b"changed-after-isolation"
+        return raw
+
+    monkeypatch.setattr(Path, "read_bytes", report_changed_quarantine)
+
+    original_exists = pipeline._path_exists
+    vacancy_checked = False
+
+    def observe_vacancy(path: Path) -> bool:
+        nonlocal vacancy_checked
+        result = original_exists(path)
+        if path == lock and not result:
+            vacancy_checked = True
+        return result
+
+    monkeypatch.setattr(pipeline, "_path_exists", observe_vacancy)
+
+    original_replace = Path.replace
+    original_link = pipeline.os.link
+    live_created = False
+
+    def create_live_lock() -> None:
+        nonlocal live_created
+        if not live_created:
+            lock.write_bytes(live_raw)
+            live_created = True
+
+    def race_on_replace(source: Path, destination: str | Path) -> Path:
+        if (
+            vacancy_checked
+            and source.name.startswith(f"{lock.name}.stale-")
+            and Path(destination) == lock
+        ):
+            create_live_lock()
+        return original_replace(source, destination)
+
+    def race_on_link(source: str, destination: str) -> None:
+        if Path(destination) == lock:
+            create_live_lock()
+        return original_link(source, destination)
+
+    monkeypatch.setattr(Path, "replace", race_on_replace)
+    monkeypatch.setattr(pipeline.os, "link", race_on_link)
+    warning_sink: list[str] = []
+
+    with pytest.warns(RuntimeWarning, match="appeared while restoring"):
+        with pytest.raises(FileExistsError, match="changed while being isolated"):
+            pipeline._recover_stale_transaction_lock(lock, warning_sink)
+
+    assert lock.read_bytes() == live_raw
+    quarantines = sorted(tmp_path.glob(f"{lock.name}.stale-*"))
+    assert len(quarantines) == 1
+    assert quarantines[0].read_bytes() == stale_raw
+    assert any("appeared while restoring" in message for message in warning_sink)
 
 
 def test_lock_snapshot_identity_is_rename_stable_and_replacement_sensitive(

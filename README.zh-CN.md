@@ -4,9 +4,11 @@
 
 # DiffractScout 中文说明
 
+> **状态：** 最新正式 [GitHub Release 为 v0.3.0](https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0)。本 checkout 中当前 source/package files（源码和包文件/元数据）为 **v0.4.0 Unreleased（未发布）**。支持的 Python 版本范围为 **3.10–3.13**。请从源码安装（通常使用可编辑安装），或安装 GitHub Release 附带的 wheel；本项目不宣称已有 PyPI 发布版本。Windows 目前没有独立 EXE，使用必须有 Python；仓库启动器只是源码 checkout 的便捷入口，安装后的 `diffractscout-gui` / `diffractscout gui` 不依赖它。
+
 **DiffractScout 将合金/化学体系候选相检索、本地 CIF 检查、理论粉末衍射计算、可选晶面法向弹性分析和可验证结果导出连接为一个流程。** 每项结果均可追溯到数据库记录或本地文件、CIF 哈希、辐射条件、计算定义、软件版本和结构化诊断。
 
-[英文主页](README.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [解析基准](docs/ANALYTIC_BENCHMARKS.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
+[英文主页](README.md) · [API](docs/API.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [发布流程](docs/RELEASE.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
 
 ## 两类工作流
 
@@ -32,7 +34,9 @@ diffractscout-gui
 
 界面提供：CIF 文件与文件夹批量选择、递归扫描、光源/能量/波长、`2θ` 范围、`d` 过滤、线型模型、步长、FWHM、伪 Voigt 混合参数、CSV/Excel 谱线坐标、连续谱线与图件、弹性配对、候选相数量上限、倒易空间资源限制、覆盖授权、Excel/实验室视图依赖、运行状态、结构化日志和结果入口。API 密钥只保存在当前进程内存中，不写入项目文件。详见 [docs/GUI.md](docs/GUI.md)。
 
-Windows 下可在可编辑安装后双击 `启动DiffractScout.bat` 启动界面；或将 CIF 拖到 `quick_export_diffractscout.bat` 进行一次实验室默认导出。
+GUI 默认语言为中文（`zh`），可通过语言选择器切换为 English。截图仅作示意，可能显示英文，即使新启动的界面默认是中文。
+
+Windows 下可在可编辑安装后双击 `启动DiffractScout.bat` 启动界面；或将 CIF 拖到 `quick_export_diffractscout.bat` 进行一次实验室默认导出。GUI 启动器是源码 checkout 的便捷入口，使用 checkout 源码，并按仓库 `.venv\Scripts\python.exe`、当前/激活的 `python`、`py -3` 顺序选择解释器；安装后的 `diffractscout-gui` / `diffractscout gui` 不依赖仓库启动器。
 
 ## 已吸收 CIF2Peaks 桌面能力
 
@@ -56,6 +60,39 @@ DiffractScout 在可追溯结果包中重实现了 CIF2Peaks 的主要桌面工�
 `profile_sampled_two_theta_range_deg`、`effective_window_empty`，以及几何
 `geometric_d_min_A` 与过滤字段 `d_min_A`。
 
+## 首次运行快速开始
+
+以下命令应在 DiffractScout 源码 checkout 根目录执行。它们会创建虚拟
+环境、安装当前源码、打印版本，并运行离线合成演示和结果包校验。
+
+### Bash
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+diffractscout --version
+diffractscout demo -o outputs/first-run
+diffractscout verify outputs/first-run
+```
+
+### PowerShell
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+diffractscout --version
+diffractscout demo -o outputs/first-run
+diffractscout verify outputs/first-run
+```
+
+成功时应看到 `diffractscout 0.4.0`、`Analyzed phases: 1` 和 `PASS` 等关键
+输出。演示使用合成数据且离线运行，只验证安装与结果包完整性，不证明实验
+科学有效性。重跑时请使用新的输出目录；只有在已有目录先通过
+`diffractscout verify` 且确认它是 DiffractScout 结果包时，才可以显式使用
+`--overwrite`。
+
 ## 安装
 
 本地 CIF 分析：
@@ -68,17 +105,42 @@ python -m pip install -e .
 
 Materials Project 支持：
 
+请安装可选的 `mp` extra，并通过环境变量提供你自己的密钥。下方仅使用
+占位符，绝不要提交、粘贴或分享真实密钥；自动化环境优先使用密钥管理器或
+交互式输入，并在使用后清除变量。DiffractScout 只在进程内存中使用密钥，
+不会写入结果包。
+
+### Bash
+
 ```bash
 python -m pip install -e ".[mp]"
+export MP_API_KEY="replace-with-your-key"
+diffractscout discover "Ti-Al-V" -o outputs/ti_al_v_candidates
+unset MP_API_KEY
+```
+
+### PowerShell
+
+```powershell
+python -m pip install -e ".[mp]"
+$env:MP_API_KEY = "replace-with-your-key"
+diffractscout discover "Ti-Al-V" -o outputs/ti_al_v_candidates
+Remove-Item Env:MP_API_KEY
 ```
 
 可选依赖：
 
-```bash
-python -m pip install -e ".[figures]"   # 可选 matplotlib 渲染路径 / 论文图
-python -m pip install -e ".[gui-dnd]"   # 可选 Tk 拖放辅助
-python -m pip install -e ".[mp]"        # Materials Project
-```
+| Extra | 安装 | 用途 |
+|---|---|---|
+| base | `python -m pip install -e .` | 离线本地 CIF、CLI/API、合成演示和校验 |
+| `mp` | `python -m pip install -e ".[mp]"` | Materials Project 检索/下载和可选 provider 元数据；需要自己的 API 密钥 |
+| `figures` | `python -m pip install -e ".[figures]"` | 可选 matplotlib 渲染路径和论文制图工具 |
+| `gui-dnd` | `python -m pip install -e ".[gui-dnd]"` | 可选 `tkinterdnd2` 文件/文件夹拖放；没有它仍可使用按钮式 GUI |
+| `test` | `python -m pip install -e ".[test]"` | pytest、覆盖率、Ruff、YAML 支持和开发检查 |
+| `release` | `python -m pip install -e ".[release]"` | 完整本地 release preflight 所需的 `build` 和 `twine` |
+
+正式版本可安装其 GitHub Release 附带的 wheel；本项目不宣称已有 PyPI
+发布版本。
 
 开发与测试：
 
@@ -86,6 +148,10 @@ python -m pip install -e ".[mp]"        # Materials Project
 python -m pip install -e ".[test]"
 pytest -q
 ```
+
+普通开发和测试只需安装 `.[test]`。运行完整的本地 release preflight 前，
+请安装测试与发布工具：
+`python -m pip install -e ".[test,release]"`。
 
 ## 离线验证
 
@@ -125,10 +191,11 @@ diffractscout analyze D:\path\to\cifs -o D:\results\run_83keV `
 ## Materials Project 完整流程
 
 ```powershell
-$env:MP_API_KEY = "your-key"
+$env:MP_API_KEY = "replace-with-your-key"
 diffractscout run "Ti-Al-V" -o D:\results\ti_al_v `
   --mode near_stable --e-hull-max 0.05 `
   --max-subsystem-order 3 --max-subsystems 4096 --max-total 50
+Remove-Item Env:MP_API_KEY
 ```
 
 默认下载常规标准晶胞。raw/POSCAR 和 IEEE 格式张量会保留数值及来源，但由于当前 provider 没有持久化足够的上游结构取向，无法验证其到导出 CIF Cartesian 坐标系的变换，因此两者均标记为 `frame_transform_required`，不输出方向模量，直至用户提供经过验证的坐标变换。原胞下载需要同时使用 `--no-elasticity`。软件会在访问数据库前估算化学子体系查询数量，超过 `--max-subsystems`（默认 4096）时停止，避免高元体系产生组合式查询膨胀。
@@ -170,6 +237,12 @@ J_no_LP   = I_no_LP / V_cell²
 ```
 
 兼容字段 `material_scattering_factor_R_hkl` 和 `material_scattering_factor_R_hkl_no_lp` 对应上述两个 `J` 通道。它们不表示晶体学残差因子、标准化定量物相系数或实验标定散射因子。连续伪 Voigt 谱线用于显示，峰宽和混合参数均由用户指定。
+
+模式字段 `formula_weight_g_mol` 表示扩展后的晶体学晶胞质量（g/mol）：对
+晶胞中所有有占位的原子位点求和，并包含晶体学倍数 `Z`；它不是经验式摩尔
+质量。连续谱线的 `pattern_axis` 是从均匀 `2theta` 网格变换得到的坐标，
+不是在均匀 `q` 或 `d` 网格上重新采样，也不施加 Jacobian；规范字段名
+`two_theta_deg`、`d_A`、`q_invA`、`g_invA`、`x_axis_mode` 和 `x` 保持不变。
 
 详细公式、单位、弹性 Voigt 约定、坐标系规则、资源上限和排除项见 [docs/SCIENTIFIC_CONTRACTS.md](docs/SCIENTIFIC_CONTRACTS.md)。
 

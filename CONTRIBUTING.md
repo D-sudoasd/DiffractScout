@@ -19,6 +19,13 @@ python -m pip install -e ".[test]"
 pytest -q
 ```
 
+Normal development and test work only needs `.[test]`. Before running the
+complete local release preflight, install the additional release tooling with:
+
+```bash
+python -m pip install -e ".[test,release]"
+```
+
 Materials Project development additionally requires:
 
 ```bash

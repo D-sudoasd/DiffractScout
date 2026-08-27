@@ -442,6 +442,24 @@ def _validate_raw_fractional_coordinates(block: gemmi.cif.Block) -> None:
                 )
 
 
+def _validate_parsed_elements(*structures: gemmi.SmallStructure) -> None:
+    """Reject unknown/virtual Gemmi elements before mass or diffraction work."""
+
+    for structure in structures:
+        for site in structure.sites:
+            element = site.element
+            atomic_number = int(getattr(element, "atomic_number", 0))
+            if atomic_number > 0:
+                continue
+            label = str(getattr(site, "label", "") or "")
+            type_symbol = str(getattr(site, "type_symbol", "") or "")
+            raise ValueError(
+                f"CIF atom site {label or '<unlabeled>'!r} has unknown or virtual "
+                f"element {type_symbol or element.name!r} (atomic_number={atomic_number}); "
+                "refusing mass and diffraction output."
+            )
+
+
 def _dataset_value(dataset: object, name: str) -> object:
     if isinstance(dataset, dict):
         return dataset.get(name)
@@ -587,6 +605,7 @@ def load_structure(cif_path: str | Path) -> StructureRecord:
         structure_factor_small = gemmi.make_small_structure_from_block(block)
     except Exception as exc:
         raise ValueError(f"Gemmi could not parse a crystal structure from {path.name}: {exc}") from exc
+    _validate_parsed_elements(small, structure_factor_small)
 
     cell = small.cell
     values = (cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma)
@@ -603,6 +622,7 @@ def load_structure(cif_path: str | Path) -> StructureRecord:
         small, structure_factor_small = _reparse_with_resolved_space_group(
             block, space_group
         )
+        _validate_parsed_elements(small, structure_factor_small)
     # Keep both independent structures in the same resolved setting. The second
     # object is modified only for Gemmi's crystallographic occupancy convention.
     small.spacegroup_hm = space_group.xhm()

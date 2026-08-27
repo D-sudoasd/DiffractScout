@@ -1,6 +1,9 @@
+import builtins
 import json
 import math
 from pathlib import Path
+
+import pytest
 
 from diffractscout.elasticity import MP_CONVENTIONAL_CIF_FRAME, MP_IEEE_CONVENTIONAL_FRAME
 from diffractscout.models import CandidateRecord
@@ -27,6 +30,25 @@ def _candidate() -> CandidateRecord:
 
 def _diagonal_matrix(value: float) -> list[list[float]]:
     return [[value if i == j else 0.0 for j in range(6)] for i in range(6)]
+
+
+def test_missing_materials_project_dependency_explains_both_install_modes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def fail_mp_api(name: str, *args: object, **kwargs: object) -> object:
+        if name == "mp_api.client":
+            raise ImportError("simulated missing mp-api")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fail_mp_api)
+    with pytest.raises(RuntimeError) as exc_info:
+        MaterialsProjectProvider("test-key")
+
+    message = str(exc_info.value)
+    assert 'python -m pip install "diffractscout[mp]"' in message
+    assert 'python -m pip install -e ".[mp]"' in message
 
 
 def test_materials_project_document_normalization() -> None:

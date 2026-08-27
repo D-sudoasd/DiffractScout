@@ -447,6 +447,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fwhm", type=float, default=0.15)
     parser.add_argument("--eta", type=float, default=0.5)
     parser.add_argument("--no-elasticity", action="store_true")
+    parser.add_argument(
+        "--max-profile-points",
+        type=int,
+        default=1_000_000,
+        help="Safety limit for the generated display-profile grid.",
+    )
+    parser.add_argument(
+        "--max-reflection-estimate",
+        type=int,
+        default=2_000_000,
+        help="Safety limit for reciprocal-lattice candidate generation.",
+    )
     parser.add_argument("--d-min", type=float, default=None, dest="d_min")
     parser.add_argument("--d-max", type=float, default=None, dest="d_max")
     parser.add_argument(
@@ -502,6 +514,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             fwhm_deg=args.fwhm,
             profile_eta=args.eta,
             include_elasticity=not args.no_elasticity,
+            max_profile_points=args.max_profile_points,
+            max_reflection_estimate=args.max_reflection_estimate,
             d_min_A=args.d_min,
             d_max_A=args.d_max,
             profile_model=args.profile_model,

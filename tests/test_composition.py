@@ -83,6 +83,72 @@ def test_formula_and_mpids_can_coexist() -> None:
     assert parsed.material_ids == ("mp-23", "mp-149")
 
 
+@pytest.mark.parametrize("text", ["Fe+Ni", "Fe/Ni", "Fe with Ni", "Fe和Ni"])
+def test_additive_composition_keeps_both_elements(text: str) -> None:
+    assert parse_composition_text(text).elements == ("Fe", "Ni")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Fe+Ni+Cr", ("Fe", "Ni", "Cr")),
+        ("Fe with Ni with Cr", ("Fe", "Ni", "Cr")),
+        ("Fe+Ni/Cr和Mn", ("Fe", "Ni", "Cr", "Mn")),
+    ],
+)
+def test_additive_composition_keeps_chained_elements(
+    text: str, expected: tuple[str, ...]
+) -> None:
+    assert parse_composition_text(text).elements == expected
+
+
+def test_additive_composition_normalizes_and_deduplicates() -> None:
+    assert parse_composition_text("fe+ni/fe").elements == ("Fe", "Ni")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "in/to",
+        "Fe/Xx",
+        "Fe+Xx",
+        "Fe with Xx",
+        "Fe+Ni+Xx",
+        "SS304 + Xx",
+        "Fe50Ni50 + Xx",
+        "foo+Fe",
+        "foo with Fe",
+        "foo和Fe",
+        "foo加Fe",
+        "foo/Fe",
+        "phase/Fe",
+        "Fe/",
+        "Fe//Ni",
+        "Fe/+Ni",
+        "Fe +",
+        "Fe with",
+    ],
+)
+def test_invalid_additive_does_not_keep_partial_elements(text: str) -> None:
+    with pytest.raises(ValueError, match="Explicit additive composition"):
+        parse_composition_text(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("SS304 + Mo", ("Fe", "Cr", "Ni", "Mo")),
+        ("Fe50Ni50 + Cr", ("Fe", "Ni", "Cr")),
+        ("Ti6Al4V + Cu", ("Ti", "Al", "V", "Cu")),
+        ("Ti-6Al-4V + Cu", ("Ti", "Al", "V", "Cu")),
+    ],
+)
+def test_additive_composition_keeps_right_side_after_complex_left(
+    text: str, expected: tuple[str, ...]
+) -> None:
+    assert parse_composition_text(text).elements == expected
+
+
 def test_common_unicode_dashes_and_lowercase_chemsys_are_normalized() -> None:
     alloy = parse_composition_text("Ti–10V–2Fe–3Al")
     assert set(alloy.elements) == {"Ti", "V", "Fe", "Al"}

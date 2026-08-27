@@ -607,11 +607,21 @@ _ELASTICITY_INDEX_NAMES = (
 )
 
 
+def _index_pairing_basename(value: object) -> str:
+    """Normalize a CIF pairing value to a portable, case-insensitive basename."""
+
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = text.replace("\\", "/").rstrip("/")
+    return normalized.rsplit("/", 1)[-1].casefold()
+
+
 def _index_pairing_aliases(row: dict[str, str]) -> set[str]:
     return {
-        str(row.get(key) or "").strip().lower()
+        _index_pairing_basename(row.get(key))
         for key in ("cif_name", "cif_filename", "paired_cif")
-        if str(row.get(key) or "").strip()
+        if _index_pairing_basename(row.get(key))
     }
 
 
@@ -625,7 +635,7 @@ def _index_match_count(index_path: Path, cif_path: Path) -> int | None:
             rows = list(csv.DictReader(handle))
     except OSError:
         return -1
-    target_name = cif_path.name.lower()
+    target_name = _index_pairing_basename(cif_path)
     return sum(target_name in _index_pairing_aliases(row) for row in rows)
 
 
@@ -656,7 +666,7 @@ def _load_from_index(index_path: Path, cif_path: Path) -> ElasticTensor | None:
             rows = list(csv.DictReader(handle))
     except OSError as exc:
         return _invalid_tensor(f"Could not read elasticity index {index_path.name}: {exc}", path=index_path)
-    target_name = cif_path.name.lower()
+    target_name = _index_pairing_basename(cif_path)
     matches: list[dict[str, str]] = []
     for row in rows:
         aliases = _index_pairing_aliases(row)

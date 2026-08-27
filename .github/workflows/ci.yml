@@ -164,9 +164,15 @@ jobs:
           python -m venv wheel-test
           wheel-test/bin/python -m pip install dist/*.whl
           wheel-test/bin/python -m pip check
-          wheel-test/bin/python -m diffractscout demo -o wheel_demo
-          wheel-test/bin/python -m diffractscout verify wheel_demo
-          wheel-test/bin/python -m diffractscout benchmark -o wheel_benchmark
+          wheel-test/bin/diffractscout --version
+          wheel-test/bin/diffractscout demo -o wheel_demo
+          wheel-test/bin/diffractscout verify wheel_demo
+          wheel-test/bin/diffractscout benchmark -o wheel_benchmark
+          wheel_cif=$(wheel-test/bin/python -c "import pathlib,diffractscout; print(pathlib.Path(diffractscout.__file__).with_name('benchmark_data')/'fcc_al.cif')")
+          test -f "$wheel_cif"
+          wheel-test/bin/diffractscout-quick-export "$wheel_cif" -o wheel_quick.xlsx
+          wheel-test/bin/diffractscout verify wheel_quick_bundle
+          test -x wheel-test/bin/diffractscout-gui
       - name: Upload distributions
         uses: actions/upload-artifact@v7
         with:

@@ -104,6 +104,71 @@ def _append_unique(store: list[str], values: Iterable[str]) -> None:
             store.append(normalized)
 
 
+_ADDITIVE_SEPARATOR_RE = re.compile(r"[+/、和加]|\bwith\b", re.IGNORECASE)
+_ADDITIVE_TERM_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]*")
+
+
+def _adjacent_additive_term(text: str, index: int, *, direction: int) -> str:
+    """Return the nearest lexical term on one side of an additive separator."""
+
+    step = 1 if direction > 0 else -1
+    cursor = index if direction > 0 else index - 1
+    while 0 <= cursor < len(text) and text[cursor].isspace():
+        cursor += step
+    if not 0 <= cursor < len(text):
+        return ""
+    if text[cursor] in "+/、和加":
+        return ""
+    if direction > 0:
+        match = _ADDITIVE_TERM_RE.match(text, cursor)
+        return match.group(0) if match else ""
+    end = cursor + 1
+    while cursor >= 0 and (text[cursor].isalnum() or text[cursor] in "-_"):
+        cursor -= 1
+    return text[cursor + 1 : end]
+
+
+def _is_supported_additive_left(term: str) -> bool:
+    """Return whether a non-slash additive left term has known semantics."""
+
+    if normalize_element(term):
+        return True
+    if any(_alias_has_input_boundaries(term, alias) for alias in ALLOY_ALIASES):
+        return True
+    parsed = formula_elements(term)
+    return len(parsed) >= 2 or (len(parsed) == 1 and bool(re.search(r"\d", term)))
+
+
+def _validate_explicit_additive_syntax(text: str) -> None:
+    """Reject malformed explicit separators before formula/token fallback."""
+
+    for match in _ADDITIVE_SEPARATOR_RE.finditer(text):
+        left = _adjacent_additive_term(text, match.start(), direction=-1)
+        right = _adjacent_additive_term(text, match.end(), direction=1)
+        separator = match.group(0)
+        if not left or not right:
+            raise ValueError(
+                "Explicit additive composition has a missing term around "
+                f"separator {separator!r} in {text!r}."
+            )
+        if separator == "/":
+            if not normalize_element(left) or not normalize_element(right):
+                raise ValueError(
+                    "Explicit additive composition slash requires recognized element symbols "
+                    f"on both sides: {left!r}/{right!r}."
+                )
+        elif not _is_supported_additive_left(left):
+            raise ValueError(
+                "Explicit additive composition has an unknown or unsupported left "
+                f"term {left!r}; provide an element, formula, grade, or alloy alias."
+            )
+        elif not normalize_element(right):
+            raise ValueError(
+                "Explicit additive composition contains unknown element term(s) "
+                f"{right!r}; every additive term must be a recognized element symbol."
+            )
+
+
 def _alias_has_input_boundaries(text: str, alias: str) -> bool:
     """Return whether a compact alias is standalone in the original input.
 
@@ -192,6 +257,7 @@ def parse_composition_text(text: str) -> ParsedComposition:
     material_ids = list(dict.fromkeys(material_ids))
 
     _reject_embedded_alias_tokens(normalized_raw)
+    _validate_explicit_additive_syntax(normalized_raw)
 
     for alias, alias_elements in ALLOY_ALIASES.items():
         if _alias_has_input_boundaries(normalized_raw, alias):
@@ -260,15 +326,56 @@ def parse_composition_text(text: str) -> ParsedComposition:
             _append_unique(elements, parsed)
             labels.append(token)
 
-    # Explicit additive notation, e.g. Ti-6Al-4V + Cu.
+    # Explicit additive notation, e.g. Fe+Ni, Fe/Ni, Fe with Ni, or Fe和Ni.
+    # Capture the complete chain: a right-only match silently dropped the
+    # first element, while pairwise matching would miss every other element.
+    invalid_additive_terms: list[str] = []
     for match in re.finditer(
-        r"(?:\+|＋|/|、|和|加|with)\s*([A-Z][a-z]?)\b",
+        r"(?<![A-Za-z])([A-Z][a-z]?)"
+        r"(?:\s*(?:\+|/|、|和|加)\s*[A-Z][a-z]?|"
+        r"\s+with\s+[A-Z][a-z]?)+\b",
         normalized_raw,
         flags=re.IGNORECASE,
     ):
-        normalized = normalize_element(match.group(1))
-        if normalized:
-            _append_unique(elements, [normalized])
+        tokens = re.split(
+            r"\s*(?:\+|/|、|和|加)\s*|\s+with\s+",
+            match.group(0),
+            flags=re.IGNORECASE,
+        )
+        normalized_tokens = [normalize_element(token) for token in tokens]
+        if not all(normalized_tokens):
+            invalid_additive_terms.extend(
+                token
+                for token, normalized in zip(tokens, normalized_tokens, strict=True)
+                if not normalized
+            )
+        else:
+            _append_unique(elements, tokens)
+
+    # Preserve right-side additives when the left operand is a complete
+    # formula/grade or a known alias (for example ``SS304 + Mo``).  Slash is
+    # intentionally excluded here so arbitrary prose such as ``phase/phase``
+    # cannot be interpreted as an additive expression.
+    for match in re.finditer(
+        r"(?:\+|、|和|加)\s*([A-Z][a-z]?)\b|"
+        r"\s+with\s+([A-Z][a-z]?)\b",
+        normalized_raw,
+        flags=re.IGNORECASE,
+    ):
+        token = match.group(1) or match.group(2) or ""
+        if normalize_element(token):
+            _append_unique(elements, [token])
+        else:
+            invalid_additive_terms.append(token)
+
+    if invalid_additive_terms:
+        unknown_terms = ", ".join(
+            repr(term) for term in dict.fromkeys(invalid_additive_terms)
+        )
+        raise ValueError(
+            "Explicit additive composition contains unknown element term(s) "
+            f"{unknown_terms}; every additive term must be a recognized element symbol."
+        )
 
     # Last-resort token parse for input such as "Ti Al V".
     if not elements and not material_ids:

@@ -357,8 +357,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "gui":
             from .gui import main as gui_main
 
-            gui_main()
-            return 0
+            return int(gui_main() or 0)
     except (
         ValueError,
         FileNotFoundError,

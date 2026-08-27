@@ -12,6 +12,13 @@
 
 ## 2. Run local preflight
 
+Normal development only needs `.[test]`. Before a complete local release
+preflight, install both the test and release tools:
+
+```bash
+python -m pip install -e ".[test,release]"
+```
+
 ```bash
 python scripts/check_release.py
 ```
@@ -137,6 +144,14 @@ The dry run still checks GitHub CLI authentication and repository visibility, th
 
 Pushing a version tag matching the package version triggers `.github/workflows/release.yml`. The workflow repeats the release preflight, which builds the wheel and source distribution, validates distribution metadata with Twine, and smoke-tests the built wheel; it then packages the analytic benchmark, offline demo, and readiness report with `scripts/archive_tree.py`, computes `SHA256SUMS.txt`, and creates the GitHub Release. The archive helper uses sorted paths, a timestamp fixed by `SOURCE_DATE_EPOCH`, a single safe root, symbolic-link rejection, and atomic replacement so the scientific evidence archives are reproducible for a fixed source and runtime stack.
 
+When a release is created for the first time, the workflow passes
+`--generate-notes` to GitHub, so GitHub automatically generates the release
+notes. The workflow does not use `CHANGELOG.md` as a notes file. Maintainers
+must review and curate the generated notes against the current-version
+`CHANGELOG.md`, before publication when practical or immediately after
+publication when that is the available review point. `CHANGELOG.md` remains
+the project's versioned history and review reference.
+
 `.github/workflows/monthly-audit.yml` reruns the release and scientific checks on the first day of each month and retains deterministic evidence archives for 90 days. `.github/dependabot.yml` proposes monthly Python and GitHub Actions updates. Timer-triggered audit runs are maintenance evidence; they do not substitute for substantive public commits, validation, support records, issues, pull requests, or releases during the six-month period.
 
 After CI passes on the release commit:
@@ -145,7 +160,9 @@ After CI passes on the release commit:
 2. delete the merged feature branch after confirming the PR head SHA is represented in the default branch;
 3. create a new annotated tag matching the package version, for example `v0.4.0`; never move an existing tag;
 4. push the tag;
-5. create GitHub release notes from `CHANGELOG.md`;
+5. review and curate GitHub's automatically generated release notes against the
+   current-version `CHANGELOG.md` before publication when practical, or
+   immediately after publication;
 6. attach distribution files and checksums when appropriate;
 7. for ordinary pre-submission releases, retain the verified GitHub Release artifacts and public CI URL;
 8. after successful JOSS review, create the final tag if needed and archive that exact repository state with Zenodo or an equivalent service;

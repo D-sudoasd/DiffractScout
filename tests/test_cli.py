@@ -117,3 +117,18 @@ def test_partial_batch_has_distinct_exit_code() -> None:
         diagnostics = [DiagnosticRecord("analysis", "bad.cif", "error", "failed")]
 
     assert _pipeline_exit_code(Result()) == 3
+
+
+def test_gui_constructor_failure_returns_actionable_exit_code(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    import diffractscout.gui as gui_module
+
+    def fail() -> object:
+        raise RuntimeError("Tkinter is unavailable in this Python installation.")
+
+    monkeypatch.setattr(gui_module, "create_app", fail)
+    assert main(["gui"]) == 2
+    error = capsys.readouterr().err
+    assert error.startswith("ERROR: Could not start the DiffractScout GUI:")
+    assert "Traceback" not in error
