@@ -128,7 +128,7 @@ def _resolve_installed_launchers(
         launcher = launcher_dir / f"{name}{suffix}"
         if not launcher.is_file():
             raise SystemExit(f"Missing installed entry-point launcher: {launcher}")
-        if not os.access(launcher, os.X_OK):
+        if not is_windows and not os.access(launcher, os.X_OK):
             raise SystemExit(f"Installed entry-point launcher is not executable: {launcher}")
         launchers[name] = launcher.resolve()
     return launchers

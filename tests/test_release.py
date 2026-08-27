@@ -145,6 +145,11 @@ def test_resolve_installed_launchers_uses_venv_layout_and_platform_suffix(
     windows_scripts.mkdir(parents=True)
     for name in module.DECLARED_ENTRYPOINTS:
         (windows_scripts / f"{name}.exe").write_bytes(b"launcher")
+
+    def reject_posix_permission_probe(path, mode):
+        raise AssertionError(f"Windows launcher unexpectedly probed with os.access: {path}")
+
+    monkeypatch.setattr(module.os, "access", reject_posix_permission_probe)
     windows = module._resolve_installed_launchers(windows_environment, windows=True)
     assert windows == {
         name: (windows_scripts / f"{name}.exe").resolve()
