@@ -4,6 +4,7 @@ REM Usage: drop CIF files/folders onto this script, or pass paths on the command
 REM Delayed expansion stays disabled so exclamation marks in input paths survive.
 setlocal EnableExtensions DisableDelayedExpansion
 cd /d "%~dp0"
+set "ENTRY=%~dp0scripts\diffractscout_entry.py"
 
 if "%~1"=="" goto :usage
 
@@ -22,37 +23,46 @@ goto :trim_first
 for %%I in ("%FIRST%") do set "FIRST_FULL=%%~fI"
 for %%I in ("%FIRST_FULL%") do set "OUT=%%~dpI%%~nI_diffractscout.xlsx"
 
+REM Match the GUI launcher: checkout .venv first so a README venv install
+REM works without activating the environment or a global package import.
+if exist "%~dp0.venv\Scripts\python.exe" goto :venv_python
+
 where diffractscout-quick-export >nul 2>&1
 if not errorlevel 1 goto :run_installed
 
-REM Prefer an interpreter only after proving it imports the installed package.
-REM Once an actual export starts, its failure is final; there is no retry with
-REM another runtime that could produce a second bundle or hide the first error.
+REM Prefer an interpreter that can start; scripts\diffractscout_entry.py
+REM adds the checkout src/ path so a global `import diffractscout` is not
+REM required. Once an actual export starts, its failure is final.
 where python >nul 2>&1
 if errorlevel 1 goto :check_py_launcher
-call python -c "import diffractscout" >nul 2>&1
-if not errorlevel 1 goto :run_python
+python -c "import sys" >nul 2>&1
+if errorlevel 1 goto :check_py_launcher
+goto :run_python
 
 :check_py_launcher
 where py >nul 2>&1
 if errorlevel 1 goto :missing_runtime
-call py -3 -c "import diffractscout" >nul 2>&1
-if errorlevel 1 goto :missing_runtime
 goto :run_py
 
-:run_py
-call py -3 -m diffractscout quick-export -o "%OUT%" %*
+:venv_python
+"%~dp0.venv\Scripts\python.exe" "%ENTRY%" quick-export -o "%OUT%" %*
 set "RC=%ERRORLEVEL%"
 goto :report
 
 :run_python
-call python -m diffractscout quick-export -o "%OUT%" %*
+python "%ENTRY%" quick-export -o "%OUT%" %*
+set "RC=%ERRORLEVEL%"
+goto :report
+
+:run_py
+py -3 "%ENTRY%" quick-export -o "%OUT%" %*
 set "RC=%ERRORLEVEL%"
 goto :report
 
 :run_installed
 call diffractscout-quick-export -o "%OUT%" %*
 set "RC=%ERRORLEVEL%"
+goto :report
 
 :report
 if "%RC%"=="0" goto :success
@@ -83,7 +93,7 @@ exit /b 1
 
 :missing_runtime
 echo ERROR: DiffractScout quick-export is unavailable in the current environment.
-echo Checked the installed diffractscout-quick-export command and Python import preflights.
+echo Checked the repository .venv, installed diffractscout-quick-export, python, and py -3.
 echo Install or activate the package with:
 echo   py -3 -m pip install -e .
 pause

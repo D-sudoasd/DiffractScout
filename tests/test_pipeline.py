@@ -404,6 +404,33 @@ def test_missing_explicit_input_is_not_silently_ignored(tmp_path: Path) -> None:
         raise AssertionError("Expected an explicit missing input to raise FileNotFoundError")
 
 
+def test_empty_directory_fails_closed_before_output_writes(tmp_path: Path) -> None:
+    empty = tmp_path / "no-cifs"
+    empty.mkdir()
+    output = tmp_path / "empty-dir-out"
+    try:
+        analyze_cifs([empty], output, include_excel=False)
+    except FileNotFoundError as exc:
+        assert "No CIF files" in str(exc)
+    else:
+        raise AssertionError("Expected an empty input directory to raise FileNotFoundError")
+    assert not output.exists()
+
+
+def test_empty_cif_is_recorded_as_an_error_diagnostic(tmp_path: Path) -> None:
+    """A zero-byte CIF must not produce a quiet success with no analyses."""
+
+    bad = tmp_path / "empty.cif"
+    bad.write_text("", encoding="utf-8")
+    output = tmp_path / "empty-cif-out"
+    result = analyze_cifs([bad], output, include_excel=False)
+    assert result.analyses == []
+    errors = [item for item in result.diagnostics if item.level == "error"]
+    assert errors
+    assert any("empty.cif" in item.item for item in errors)
+    assert verify_bundle(output)["ok"]
+
+
 def test_input_output_overlap_is_rejected_before_writes(demo_inputs: Path) -> None:
     output = demo_inputs / "nested-result"
     try:

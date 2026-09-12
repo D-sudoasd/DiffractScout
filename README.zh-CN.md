@@ -36,7 +36,7 @@ diffractscout-gui
 
 GUI 默认语言为中文（`zh`），可通过语言选择器切换为 English。截图仅作示意，可能显示英文，即使新启动的界面默认是中文。
 
-Windows 下可在可编辑安装后双击 `启动DiffractScout.bat` 启动界面；或将 CIF 拖到 `quick_export_diffractscout.bat` 进行一次实验室默认导出。GUI 启动器是源码 checkout 的便捷入口，使用 checkout 源码，并按仓库 `.venv\Scripts\python.exe`、当前/激活的 `python`、`py -3` 顺序选择解释器；安装后的 `diffractscout-gui` / `diffractscout gui` 不依赖仓库启动器。
+Windows 下可在可编辑安装后双击 `启动DiffractScout.bat` 启动界面；或将 CIF 拖到 `quick_export_diffractscout.bat` 进行一次实验室默认导出。两个仓库启动器都是源码 checkout 的便捷入口：经 `scripts/diffractscout_entry.py` 运行 checkout 源码，并按仓库 `.venv\Scripts\python.exe`、当前/激活的 `python`、`py -3` 顺序选择解释器。无 `.venv` 时，quick-export 启动器还会使用已安装的 `diffractscout-quick-export`。安装后的 `diffractscout-gui` / `diffractscout gui` / `diffractscout-quick-export` 不依赖仓库启动器。
 
 ## 已吸收 CIF2Peaks 桌面能力
 

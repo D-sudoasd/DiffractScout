@@ -130,7 +130,7 @@ diffractscout-quick-export path/to/sample.cif -o path/to/energy_out.xlsx --energ
 diffractscout quick-export path/to/cifs -o path/to/bundle_dir
 ```
 
-On Windows, drag CIF files or folders onto `quick_export_diffractscout.bat`. The script normalizes a trailing folder separator and writes `<first-stem>_diffractscout.xlsx` next to the first input (bundle: `<stem>_diffractscout_bundle/`).
+On Windows, drag CIF files or folders onto `quick_export_diffractscout.bat`. The script normalizes a trailing folder separator and writes `<first-stem>_diffractscout.xlsx` next to the first input (bundle: `<stem>_diffractscout_bundle/`). Like the GUI launcher, it prefers the repository `.venv`, then an installed `diffractscout-quick-export` command, then `python` / `py -3` with `scripts/diffractscout_entry.py`, so a README venv install works without activating the environment.
 
 An existing workbook is never replaced implicitly. Choose a different path or enable the explicit overwrite option; an authorized replacement is written through a temporary file so a failed copy does not expose a partial workbook.
 

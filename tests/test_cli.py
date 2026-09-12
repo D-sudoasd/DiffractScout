@@ -76,6 +76,20 @@ def test_quick_export_help_is_legacy_windows_console_safe(capsys) -> None:
     help_text.encode("cp936")
 
 
+def test_cli_empty_input_directory_returns_error_exit_2(
+    tmp_path: Path, capsys
+) -> None:
+    empty = tmp_path / "no-cifs"
+    empty.mkdir()
+    output = tmp_path / "cli-empty-out"
+    code = main(["analyze", str(empty), "-o", str(output), "--no-excel"])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.err.startswith("ERROR:")
+    assert "No CIF files" in captured.err
+    assert not output.exists()
+
+
 def test_cli_rejects_conflicting_radiation_inputs(tmp_path: Path) -> None:
     output = tmp_path / "conflicting-radiation"
     with pytest.raises(SystemExit) as exc_info:

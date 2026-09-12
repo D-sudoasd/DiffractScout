@@ -9,6 +9,7 @@ import diffractscout.gui as gui_module
 from diffractscout.gui import (
     analysis_settings_from_form,
     canonical_input_identity,
+    cif_file_dialog_types,
     create_app,
     discovery_settings_from_form,
 )
@@ -249,17 +250,38 @@ def _is_expected_gui_unavailable(exc: BaseException) -> bool:
     )
 
 
+_TCL_STARTUP_MARKERS = (
+    "can't find a usable tk.tcl",
+    "couldn't read file",
+    "tcl_findlibrary",
+    "no display name and no $display environment variable",
+    "couldn't connect to display",
+    "can't open display",
+    "unable to connect to display",
+)
+
+
+def _is_tcl_startup_failure(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return any(marker in message for marker in _TCL_STARTUP_MARKERS)
+
+
 def _create_test_app():
-    try:
-        return create_app()
-    except RuntimeError as exc:
-        if _is_expected_gui_unavailable(exc):
-            pytest.skip("Tkinter unavailable")
-        raise
-    except Exception as exc:
-        if _is_expected_gui_unavailable(exc):
-            pytest.skip(f"Tk display unavailable: {exc}")
-        raise
+    last_exc: BaseException | None = None
+    for _attempt in range(2):
+        try:
+            return create_app()
+        except RuntimeError as exc:
+            if _is_expected_gui_unavailable(exc):
+                pytest.skip("Tkinter unavailable")
+            raise
+        except Exception as exc:
+            if _is_expected_gui_unavailable(exc) or _is_tcl_startup_failure(exc):
+                last_exc = exc
+                continue
+            raise
+    assert last_exc is not None
+    pytest.skip(f"Tk/Tcl startup unavailable: {last_exc}")
 
 
 def test_gui_main_converts_constructor_failure_to_actionable_exit(
@@ -360,6 +382,114 @@ def test_discovery_form_rejects_zero_limit() -> None:
         discovery_settings_from_form(
             {"mode": "possible_phases", "max_total": "0"}
         )
+
+
+def test_discovery_form_parses_string_booleans_for_deprecated_flag() -> None:
+    """Form helpers must not treat a non-empty 'false' string as True."""
+
+    excluded = discovery_settings_from_form(
+        {"mode": "possible_phases", "include_deprecated": "false"}
+    )
+    assert excluded.exclude_deprecated is True
+
+    included = discovery_settings_from_form(
+        {"mode": "possible_phases", "include_deprecated": "true"}
+    )
+    assert included.exclude_deprecated is False
+
+    included_off = discovery_settings_from_form(
+        {"mode": "possible_phases", "include_deprecated": "0"}
+    )
+    assert included_off.exclude_deprecated is True
+
+    included_on = discovery_settings_from_form(
+        {"mode": "possible_phases", "include_deprecated": True}
+    )
+    assert included_on.exclude_deprecated is False
+
+
+def test_cif_file_dialog_accepts_mixed_case_suffixes() -> None:
+    zh_types, all_types = cif_file_dialog_types("zh")
+    en_types, _all_en = cif_file_dialog_types("en")
+    assert zh_types[1] == "*.cif *.CIF"
+    assert en_types[1] == "*.cif *.CIF"
+    assert all_types[1] == "*.*"
+    assert zh_types[0] == t("zh", "filetype_cif")
+    assert en_types[0] == t("en", "filetype_cif")
+
+
+def test_status_text_rerenders_in_the_selected_language() -> None:
+    """Language switches must retranslate busy/completed/failed status, not only Ready."""
+
+    if not hasattr(gui_module.DiffractScoutApp, "_refresh_status_text"):
+        pytest.skip("Tkinter unavailable")
+
+    class Variable:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def set(self, value: str) -> None:
+            self.value = value
+
+    controller = type("Controller", (), {})()
+    controller.lang = "zh"
+    controller._t = lambda key, **fmt: t(controller.lang, key, **fmt)
+    controller.status_text = Variable()
+    controller._status_state = ("status_ready", {})
+    controller._set_status = gui_module.DiffractScoutApp._set_status.__get__(controller)
+    controller._refresh_status_text = gui_module.DiffractScoutApp._refresh_status_text.__get__(
+        controller
+    )
+
+    controller._set_status(
+        "status_summary",
+        completion_key="status_completed",
+        phases=2,
+        diagnostics=1,
+    )
+    zh_status = controller.status_text.get()
+    assert "已完成" in zh_status
+    assert "2" in zh_status
+    assert "1" in zh_status
+
+    controller.lang = "en"
+    controller._refresh_status_text()
+    en_status = controller.status_text.get()
+    assert "Completed" in en_status
+    assert "2 phase" in en_status
+    assert "已完成" not in en_status
+
+    controller._set_status("status_failed")
+    controller.lang = "zh"
+    controller._refresh_status_text()
+    assert controller.status_text.get() == t("zh", "status_failed")
+
+
+def test_create_app_language_switch_rerenders_completion_status() -> None:
+    app = _create_test_app()
+    try:
+        app._set_status(
+            "status_summary",
+            completion_key="status_completed",
+            phases=1,
+            diagnostics=0,
+        )
+        app.update_idletasks()
+        assert "已完成" in app.status_text.get()
+        app._set_language("en")
+        app.update_idletasks()
+        assert "Completed" in app.status_text.get()
+        assert "1 phase" in app.status_text.get()
+        assert "已完成" not in app.status_text.get()
+        app._set_language("zh")
+        app.update_idletasks()
+        assert "已完成" in app.status_text.get()
+        assert "Completed" not in app.status_text.get()
+    finally:
+        app.destroy()
 
 
 def test_analysis_form_rejects_non_numeric_value() -> None:

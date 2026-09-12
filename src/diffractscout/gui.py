@@ -180,10 +180,22 @@ def discovery_settings_from_form(values: Mapping[str, object]) -> DiscoverySetti
         max_subsystem_order=_optional_int(values.get("max_subsystem_order"), "Maximum subsystem order"),
         max_per_subsystem=_optional_int(values.get("max_per_subsystem"), "Maximum per subsystem"),
         max_total=_optional_int(values.get("max_total"), "Maximum candidates"),
-        exclude_deprecated=not bool(values.get("include_deprecated", False)),
+        exclude_deprecated=not _as_bool(values.get("include_deprecated", False), False),
     )
     validate_discovery_settings(settings)
     return settings
+
+
+def cif_file_dialog_types(lang: str | None = None) -> tuple[tuple[str, str], tuple[str, str]]:
+    """Return Tk file-dialog types that accept mixed-case CIF suffixes."""
+
+    code = str(lang or DEFAULT_LANG).strip().lower()
+    if code not in {"zh", "en"}:
+        code = DEFAULT_LANG
+    return (
+        (t(code, "filetype_cif"), "*.cif *.CIF"),
+        (t(code, "filetype_all"), "*.*"),
+    )
 
 
 def open_path(path: str | Path) -> None:
@@ -414,6 +426,7 @@ if tk is not None:
             self.mp_conventional = tk.BooleanVar(value=True)
 
             self.status_text = tk.StringVar(value=self._t("status_ready"))
+            self._status_state: tuple[str, dict[str, object]] = ("status_ready", {})
             self.input_count_text = tk.StringVar(value=self._t("inputs_none"))
 
         def _build_header(self) -> None:
@@ -1202,6 +1215,36 @@ if tk is not None:
             self.lang_var.set(code)
             self._apply_language()
 
+        def _set_status(self, key: str, **fmt: object) -> None:
+            """Record a translatable status so language switches re-render it."""
+
+            self._status_state = (str(key), dict(fmt))
+            self._refresh_status_text()
+
+        def _refresh_status_text(self) -> None:
+            key, fmt = getattr(self, "_status_state", ("status_ready", {}))
+            if key == "status_summary":
+                completion_key = str(fmt.get("completion_key") or "status_completed")
+                extra = (
+                    {"n": fmt["n"]}
+                    if completion_key == "status_completed_diagnostics" and "n" in fmt
+                    else {}
+                )
+                message = self._t(completion_key, **extra)
+                self.status_text.set(
+                    self._t(
+                        "status_summary",
+                        message=message,
+                        phases=fmt.get("phases", 0),
+                        diagnostics=fmt.get("diagnostics", 0),
+                    )
+                )
+                return
+            try:
+                self.status_text.set(self._t(key, **fmt))
+            except (KeyError, ValueError):
+                self.status_text.set(self._t("status_ready"))
+
         def _apply_language(self) -> None:
             for widget, key, attr in self._i18n_targets:
                 try:
@@ -1219,13 +1262,7 @@ if tk is not None:
                     self.notebook.tab(index, text=self._t(key))
                 except tk.TclError:
                     continue
-            if not self.running and self.status_text.get() in {
-                t("zh", "status_ready"),
-                t("en", "status_ready"),
-                "Ready",
-                "就绪",
-            }:
-                self.status_text.set(self._t("status_ready"))
+            self._refresh_status_text()
             self._refresh_inputs()
             self._refresh_cij_status()
             self._sync_radiation_controls()
@@ -1554,7 +1591,7 @@ if tk is not None:
         def _add_cif_files(self) -> None:
             selected = filedialog.askopenfilenames(
                 title=self._t("dialog_file_select"),
-                filetypes=((self._t("filetype_cif"), "*.cif"), (self._t("filetype_all"), "*.*")),
+                filetypes=cif_file_dialog_types(self.lang),
             )
             self._add_input_paths(Path(item) for item in selected)
 
@@ -1821,7 +1858,7 @@ if tk is not None:
 
         def _start_task(self, label: str, function: Callable[[], PipelineResult]) -> None:
             self.running = True
-            self.status_text.set(self._t("status_busy", label=label))
+            self._set_status("status_busy", label=label)
             self.progress.start(12)
             DiffractScoutApp._update_open_button_state(self)
             for button in self._run_buttons:
@@ -1878,20 +1915,26 @@ if tk is not None:
                     self.last_output = result.output_dir
                     error_count = sum(item.level == "error" for item in result.diagnostics)
                     if not result.analyses:
-                        completion = self._t("status_completed_empty")
+                        completion_key = "status_completed_empty"
                         log_level = "warning"
                     elif error_count:
-                        completion = self._t("status_completed_diagnostics", n=error_count)
+                        completion_key = "status_completed_diagnostics"
                         log_level = "warning"
                     else:
-                        completion = self._t("status_completed")
+                        completion_key = "status_completed"
                         log_level = "success"
-                    self.status_text.set(self._t(
+                    self._set_status(
                         "status_summary",
-                        message=completion,
+                        completion_key=completion_key,
+                        n=error_count,
                         phases=len(result.analyses),
                         diagnostics=len(result.diagnostics),
-                    ))
+                    )
+                    completion = (
+                        self._t(completion_key, n=error_count)
+                        if completion_key == "status_completed_diagnostics"
+                        else self._t(completion_key)
+                    )
                     DiffractScoutApp._update_open_button_state(self)
                     self._log(self._t("log_completed", message=completion, path=result.output_dir), log_level)
                     self._log(self._t("log_manifest", path=result.manifest_path), "info")
@@ -1916,7 +1959,7 @@ if tk is not None:
                     )
                 else:
                     exc, details = payload
-                    self.status_text.set(self._t("status_failed"))
+                    self._set_status("status_failed")
                     self._log(f"{exc}", "error")
                     self._log(str(details), "error")
                     messagebox.showerror(
@@ -1931,7 +1974,7 @@ if tk is not None:
         def _copy_log(self) -> None:
             self.clipboard_clear()
             self.clipboard_append(self.log.get("1.0", "end-1c"))
-            self.status_text.set(self._t("status_log_copied"))
+            self._set_status("status_log_copied")
 
         def _clear_log(self) -> None:
             self.log.configure(state="normal")

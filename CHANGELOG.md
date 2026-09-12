@@ -22,6 +22,14 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Fixed
 
+- Windows `quick_export_diffractscout.bat` now uses `scripts/diffractscout_entry.py`
+  and the same checkout interpreter order as the GUI launcher (repository
+  `.venv`, then `python`, then `py -3`), so drag-and-drop works after the README
+  venv install without a global `import diffractscout` preflight.
+- GUI status bar re-renders busy/completed/failed text when the language is
+  switched; CIF file dialogs accept mixed-case `.cif` / `.CIF` suffixes.
+- Discovery form mapping treats string checkbox values such as `"false"` as
+  booleans instead of as true.
 - Made GUI radiation transitions unit-safe with explicit Å/keV labels and
   conversion/clearing rules; quick-export now infers and validates radiation
   keyword modes before any output target is created.

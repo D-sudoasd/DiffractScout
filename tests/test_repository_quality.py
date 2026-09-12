@@ -138,6 +138,25 @@ def test_quick_export_batch_normalizes_first_path_without_delayed_expansion() ->
     assert "%%~dpI%%~nI_diffractscout.xlsx" in script
 
 
+def test_quick_export_batch_launcher_matches_gui_checkout_runtime_order() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "quick_export_diffractscout.bat").read_text(encoding="utf-8")
+
+    repository_venv = 'if exist "%~dp0.venv\\Scripts\\python.exe" goto :venv_python'
+    current_python_probe = 'python -c "import sys"'
+    current_python_run = 'python "%ENTRY%" quick-export'
+    py_run = 'py -3 "%ENTRY%" quick-export'
+    assert repository_venv in script
+    assert "scripts\\diffractscout_entry.py" in script
+    assert current_python_probe in script
+    assert current_python_run in script
+    assert py_run in script
+    assert 'call python -c "import diffractscout"' not in script
+    assert script.index(repository_venv) < script.index(current_python_probe)
+    assert script.index(current_python_probe) < script.index(current_python_run)
+    assert script.index(current_python_run) < script.index(py_run)
+
+
 def test_gui_batch_launcher_has_safe_python_precedence_and_exit_contract() -> None:
     root = Path(__file__).resolve().parents[1]
     script = (root / "启动DiffractScout.bat").read_text(encoding="utf-8")
@@ -167,6 +186,9 @@ def test_quick_export_batch_reports_special_character_sibling_path(
     (input_dir / "sample.cif").write_bytes(
         (root / "examples" / "demo_cifs" / "synthetic_fcc_al.cif").read_bytes()
     )
+    environment = os.environ.copy()
+    scripts_dir = str(Path(sys.executable).resolve().parent)
+    environment["PATH"] = scripts_dir + os.pathsep + environment.get("PATH", "")
     completed = subprocess.run(
         ["cmd.exe", "/d", "/c", "call", str(script), str(input_dir)],
         input="\r\n",
@@ -174,16 +196,21 @@ def test_quick_export_batch_reports_special_character_sibling_path(
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=20,
+        env=environment,
+        timeout=60,
         check=False,
     )
 
     expected = input_dir.parent / f"{input_dir.name}_diffractscout.xlsx"
-    assert completed.returncode == 0, completed.stderr
+    assert completed.returncode == 0, completed.stdout + completed.stderr
     assert f'Excel: "{expected}"' in completed.stdout
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="requires Windows cmd.exe")
+@pytest.mark.skipif(
+    (Path(__file__).resolve().parents[1] / ".venv" / "Scripts" / "python.exe").exists(),
+    reason="repository .venv takes precedence over PATH stubs",
+)
 def test_quick_export_batch_prefers_installed_console_over_unrelated_py(
     tmp_path: Path,
 ) -> None:

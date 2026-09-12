@@ -45,7 +45,7 @@ The desktop interface exposes the scientific controls used by the Python API: ra
 
 The GUI defaults to Chinese (`zh`); use its language selector to switch to English. The screenshots are illustrative and may show English even when a fresh launch starts in Chinese.
 
-On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export. The GUI launcher is a source-checkout convenience entry point: it runs the checkout source and prefers the repository `.venv\Scripts\python.exe`, then the current/active `python`, then `py -3`. Installed `diffractscout-gui` / `diffractscout gui` do not require the repository launcher.
+On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export. Both repository launchers are source-checkout convenience entry points: they run the checkout source through `scripts/diffractscout_entry.py` and prefer the repository `.venv\Scripts\python.exe`, then the current/active `python`, then `py -3`. The quick-export launcher also uses an installed `diffractscout-quick-export` command when `.venv` is absent. Installed `diffractscout-gui` / `diffractscout gui` / `diffractscout-quick-export` do not require the repository launchers.
 
 ## CIF2Peaks parity features
 
