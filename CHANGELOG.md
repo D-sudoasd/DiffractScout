@@ -13,6 +13,8 @@ All notable changes are recorded here. The project follows semantic versioning a
   positions and cubic directional moduli, with numerical reports retained by CI.
 - Revised JOSS manuscript, software-comparison references, and evidence-based
   submission documentation.
+- Separate evidence-file input for JOSS readiness checks, so final verification
+  records can reference a committed source without changing its Git identity.
 - Excel result overview and worksheet navigation, semantic header colors,
   consistent scientific number formats, frozen phase columns, expandable
   detail columns, and phase-relative intensity bars without changing canonical
@@ -40,6 +42,8 @@ All notable changes are recorded here. The project follows semantic versioning a
 - Rejected `.xlsx` quick-export targets combined with disabled Excel output
   before writing, and reported the retained bundle workbook if publishing its
   separate Excel copy fails.
+- Prevented concurrent preset saves from replacing a newly created target
+  without explicit overwrite authorization.
 - Reported CLI error diagnostics with their actual severity and exposed the
   generated result files in completion summaries.
 

@@ -33,8 +33,11 @@ fields are defined by `impact_evidence.schema.json` and validated by
   false.
 - Add `public_development_activity` for meaningful public commits, issues,
   pull requests, and releases that document real work. Record the public URL
-  and outcome. Do not count private history, planned or empty issues, scheduled
-  CI, stars, views, download counts, or unmerged changes.
+  and outcome. An open public PR can evidence proposed iteration if its status
+  is explicit; do not describe it as integrated or released. Do not count
+  private history, planned or empty issues, scheduled CI, stars, views, or
+  download counts. PR #14 currently points to public head commit
+  `a09ee1b0e48de4bf07898bceda4bec46b70dab43`.
 - Add an `archived_releases` record only when the exact final tag is archived
   with a persistent DOI. An ordinary GitHub Release does not satisfy that
   post-review record.
@@ -48,17 +51,25 @@ should report these as local controls, not as verbatim JOSS requirements.
 
 ## Submission metadata
 
-Leave confirmation booleans false and URLs/hashes empty until the submitting
-author confirms them for the selected source. As of 26 September 2026, the
-author confirmed that the currently listed Delun Gong name, ORCID, and
-Institute of Metal Research affiliation are correct. The complete author
-list, any coauthor consent and affiliations, funding/sponsor role,
-contributor list, related publications, and human review of all AI-assisted
-work still need to be confirmed; a current identity confirmation does not
-complete that review.
+Use `scripts/joss_readiness.py --evidence-file PATH` for a final audit ledger
+stored under ignored `outputs/` or outside the repository. Copy the shared
+ledger, then record the selected commit's CI/build results and confirmed
+author inputs in that copy. Updating a separate file keeps the selected Git
+commit unchanged. The checker reports the file it used and applies the same
+validation rules; an unreadable or invalid file blocks the check.
 
-Record the public remote CI run and official Open Journals build only when
-they test the same exact 40-character commit selected for submission. After
-building and inspecting the final PDF, record the source and PDF SHA-256 values
-reported by readiness. Following successful JOSS review, create the final tag
+Keep author-controlled confirmation booleans false until the submitting
+author confirms them for the selected source. As of 26 September 2026, the
+user confirmed that the currently listed Delun Gong name, ORCID, and Institute
+of Metal Research affiliation are correct. The complete author list, any
+coauthor consent and affiliations, funding/sponsor role, contributor list,
+related publications, and human review of all AI-assisted work still need to
+be confirmed; a current identity confirmation does not complete that review.
+
+The ledger records successful CI run `36242599844` and official Open Journals
+build `36242597087` on candidate commit
+`a09ee1b0e48de4bf07898bceda4bec46b70dab43`; both links and the paper-source/PDF
+hashes must remain tied to that same commit. The four-page PDF passed artifact
+identity and rendered-content checks, while author review of all AI-assisted
+work remains pending. Following successful JOSS review, create the final tag
 and software archive DOI and enter them for the `publication` stage.

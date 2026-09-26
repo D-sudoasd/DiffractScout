@@ -61,6 +61,102 @@ def test_evidence_payload_validation_accepts_empty_honest_ledger() -> None:
     assert READINESS.validate_evidence_payload(_valid_payload()) == []
 
 
+def test_evidence_loader_keeps_the_tracked_ledger_as_its_default() -> None:
+    tracked = json.loads(READINESS.EVIDENCE_PATH.read_text(encoding="utf-8"))
+
+    assert READINESS._load_evidence() == tracked
+
+
+def test_readiness_cli_reads_and_reports_a_separate_evidence_file(tmp_path: Path) -> None:
+    payload = _valid_payload()
+    payload["public_repository"]["public_since"] = "2026-09-01"
+    payload["public_development_activity"] = [
+        {
+            "date": "2026-09-20",
+            "title": "External evidence ledger smoke test",
+            "url": "https://github.com/D-sudoasd/DiffractScout/issues/999999",
+            "software_version": "0.4.0",
+            "claim_supported": "sidecar ledger selection",
+            "activity_type": "issue",
+            "outcome": "Demonstrates external evidence file selection.",
+        }
+    ]
+    evidence_path = tmp_path / "external-evidence.json"
+    evidence_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--stage",
+            "release",
+            "--evidence-file",
+            str(evidence_path),
+            "--json",
+        ],
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    assert report["evidence_file"] == str(evidence_path.resolve())
+    assert report["evidence_load_error"] is None
+    assert report["public_since"] == "2026-09-01"
+    assert report["evidence_counts"]["public_development_activity"] == 1
+    integrity = next(
+        item for item in report["checks"] if item["name"] == "Evidence-ledger integrity"
+    )
+    assert integrity["status"] == "pass", integrity
+
+
+def test_missing_or_non_utf8_evidence_file_is_blocked_without_default_fallback(
+    tmp_path: Path,
+) -> None:
+    missing_path = tmp_path / "missing.json"
+    missing_payload = READINESS._load_evidence(missing_path)
+    assert missing_payload["schema"] == "invalid"
+    assert missing_payload["error"]
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--stage",
+            "release",
+            "--evidence-file",
+            str(missing_path),
+            "--json",
+        ],
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    assert report["evidence_file"] == str(missing_path.resolve())
+    assert report["evidence_load_error"]
+    assert report["evidence_counts"]["public_development_activity"] == 0
+    integrity = next(
+        item for item in report["checks"] if item["name"] == "Evidence-ledger integrity"
+    )
+    assert integrity["status"] == "block"
+
+    invalid_encoding_path = tmp_path / "invalid-encoding.json"
+    invalid_encoding_path.write_bytes(b"\xff\xfe\x00")
+    invalid_encoding_payload = READINESS._load_evidence(invalid_encoding_path)
+    assert invalid_encoding_payload["schema"] == "invalid"
+    assert invalid_encoding_payload["error"]
+
+    for payload in (missing_payload, invalid_encoding_payload):
+        errors = READINESS.validate_evidence_payload(payload)
+        assert "Unknown or missing evidence schema." in errors
+        assert payload != READINESS._load_evidence()
+
+
 def test_evidence_payload_validation_rejects_untraceable_and_duplicate_records() -> None:
     payload = _valid_payload()
     record = {

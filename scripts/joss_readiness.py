@@ -333,10 +333,11 @@ def _release_acceptance(version: str | None) -> dict[str, Any]:
     }
 
 
-def _load_evidence() -> dict[str, Any]:
+def _load_evidence(path: Path | None = None) -> dict[str, Any]:
+    evidence_path = path if path is not None else EVIDENCE_PATH
     try:
-        payload = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return {"schema": "invalid", "error": str(exc)}
     return payload if isinstance(payload, dict) else {"schema": "invalid"}
 
@@ -796,6 +797,7 @@ def _public_development_snapshot(
     *,
     public_since: date | None,
     as_of: date,
+    evidence_path: Path = EVIDENCE_PATH,
 ) -> dict[str, Any]:
     """Count only ledger-linked public repository activity, never local timestamps."""
 
@@ -816,11 +818,15 @@ def _public_development_snapshot(
             continue
         accepted.append(record)
     active_months = Counter(str(record["date"])[:7] for record in accepted)
+    try:
+        evidence_source = evidence_path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        evidence_source = str(evidence_path.resolve())
     return {
         "entries": len(accepted),
         "active_months": dict(sorted(active_months.items())),
         "active_month_count": len(active_months),
-        "source": "docs/evidence/impact_evidence.json public_development_activity",
+        "source": f"{evidence_source} public_development_activity",
         "limitation": (
             "Each ledger URL remains subject to human review; local commit dates are context only."
         ),
@@ -928,11 +934,20 @@ def build_report(
     public_since: date | None,
     as_of: date,
     stage: str = "submission",
+    evidence_file: Path | None = None,
 ) -> dict[str, Any]:
     if stage not in STAGES:
         raise ValueError(f"Unknown readiness stage: {stage!r}.")
-    evidence = _load_evidence()
+    selected_evidence_path = (
+        evidence_file.expanduser().resolve() if evidence_file is not None else EVIDENCE_PATH
+    )
+    evidence = _load_evidence(selected_evidence_path)
     evidence_errors = validate_evidence_payload(evidence)
+    evidence_load_error = (
+        str(evidence["error"])
+        if evidence.get("schema") == "invalid" and isinstance(evidence.get("error"), str)
+        else None
+    )
     citation = _citation_metadata()
     remote = _git_remote()
     version = _version_metadata()
@@ -1080,6 +1095,7 @@ def build_report(
         evidence,
         public_since=public_since,
         as_of=as_of,
+        evidence_path=selected_evidence_path,
     )
     active_month_count = int(public_development["active_month_count"])
     _check(
@@ -1242,6 +1258,8 @@ def build_report(
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "as_of": as_of.isoformat(),
         "stage": stage,
+        "evidence_file": str(selected_evidence_path),
+        "evidence_load_error": evidence_load_error,
         "public_since": public_since.isoformat() if public_since else None,
         "earliest_calendar_eligibility": eligible_on.isoformat() if eligible_on else None,
         "ready": selected_status["ready"],
@@ -1283,6 +1301,7 @@ def report_markdown(report: dict[str, Any]) -> str:
         "",
         f"- As of: `{report['as_of']}`",
         f"- Selected stage: `{report['stage']}`",
+        f"- Evidence ledger: `{report['evidence_file']}`",
         f"- Public since: `{report['public_since'] or 'not recorded'}`",
         f"- Earliest six-month date: `{report['earliest_calendar_eligibility'] or 'not calculable'}`",
         f"- Status: **{'READY' if report['ready'] else 'BLOCKED'}**",
@@ -1332,11 +1351,24 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--stage", choices=STAGES, default="submission")
+    parser.add_argument(
+        "--evidence-file",
+        metavar="PATH",
+        help=(
+            "Read a separate JSON evidence ledger (default: "
+            "docs/evidence/impact_evidence.json). The selected file is read-only."
+        ),
+    )
     args = parser.parse_args()
 
     public_since = date.fromisoformat(args.public_since) if args.public_since else None
     as_of = date.fromisoformat(args.as_of)
-    report = build_report(public_since=public_since, as_of=as_of, stage=args.stage)
+    report = build_report(
+        public_since=public_since,
+        as_of=as_of,
+        stage=args.stage,
+        evidence_file=Path(args.evidence_file) if args.evidence_file else None,
+    )
     if args.output:
         output = Path(args.output).expanduser().resolve()
         output.mkdir(parents=True, exist_ok=True)

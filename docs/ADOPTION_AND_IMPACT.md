@@ -19,10 +19,15 @@ The public repository contains a 45-check analytic benchmark and a synthetic
 FCC demonstration. These materials support reproducibility of selected
 calculation, software, and provenance contracts. They do not show experimental
 accuracy, external adoption, productivity gains, or research impact by
-themselves. A comparison with another implementation can support a numerical
-validation claim when the method and acceptance criteria were fixed in
-advance; it does not establish use by another research group or agreement with
-experiment.
+themselves. A new [pymatgen comparison case](../validation_cases/independent_engines/README.md)
+checks diffraction positions and selection rules on four synthetic CIFs, plus
+directional Young's moduli for a synthetic cubic stiffness matrix. The
+immutable report is in public candidate commit
+[`a09ee1b`](https://github.com/D-sudoasd/DiffractScout/blob/a09ee1b0e48de4bf07898bceda4bec46b70dab43/validation_cases/independent_engines/reference_engine_comparison.md);
+the evidence ledger records its Markdown and JSON hashes. It passes the stated
+software-comparison tolerances for those inputs and versions. It does not
+establish a real-material property, experimental agreement, external adoption,
+or research impact.
 
 ## Evidence categories
 
@@ -50,10 +55,13 @@ differences, and unresolved discrepancies. For diffraction, state radiation
 and scan range. For elasticity, identify tensor source and coordinate frame,
 Voigt convention, transformations, and tested directions.
 
-These two public comparison reports are required by the local readiness
-script. They are useful internal scientific controls; current JOSS criteria do
-not list independent diffraction and elasticity reports as stand-alone
-reviewer-checklist gates.
+The two reports under `validation_cases/independent_engines/` are indexed with
+the immutable commit `a09ee1b`, the Markdown report hash, and the JSON result hash.
+They satisfy the local readiness script's diffraction and elasticity
+comparison-record requirements for those synthetic inputs and conventions.
+They are implementation cross-checks, not experimental validation or reports
+from an external validator. The current JOSS checklist does not name
+independent diffraction and elasticity reports as stand-alone reviewer gates.
 
 ### External engagement
 
@@ -70,22 +78,26 @@ research impact.
 The ledger records meaningful public commits, issues, pull requests, and
 releases with their dates and outcomes. The public repository date is
 12 August 2026. Do not count commits predating that date, private changes,
-unmerged branches, or automatic CI. A tagged software release is not an
-immutable archive DOI. After successful review, tag and archive the reviewed
-source and record its DOI for the publication stage.
+unpublished local work, or automatic CI. Public PR #14 records proposed
+iteration at its current public head; do not describe it as merged or released.
+A tagged software release is not an immutable archive DOI. After successful
+review, tag and archive the reviewed source and record its DOI for the
+publication stage.
 
 ## Claim ledger
 
 | Potential manuscript claim | Evidence now available | Status |
 |---|---|---|
 | The software has been used in published research | Submitting-author report, 26 September 2026; representative papers and exact use not yet indexed | **Reported; citation-level audit pending.** Do not state a paper count until verified. |
-| The package reproduces defined analytic diffraction and elasticity cases | 45-check analytic suite and synthetic offline FCC workflow | Supportable only as reproducible software/analytic verification; not an experimental-accuracy or impact claim. |
+| The package reproduces defined analytic diffraction and elasticity cases | 45-check analytic suite, synthetic offline FCC workflow, and the pymatgen reference-engine comparison | Supportable for the named analytic/synthetic cases and recorded implementations only; not an experimental-accuracy or impact claim. |
 | A real multiphase workflow informed a specific research decision | No hashed, versioned case report is indexed | Pending. |
-| Indexed reflection geometry agrees with an independent reference | No completed, pre-toleranced diffraction report is indexed | Pending. |
-| Directional elasticity agrees with an independent tensor reference | No completed, tensor-basis-aware report is indexed | Pending. |
+| Indexed reflection geometry agrees with an independent reference | Pymatgen `XRDCalculator` comparison on four synthetic CIFs with recorded grouping and position tolerances | Verified for those fixtures and settings only; not for real materials or experiment. |
+| Directional elasticity agrees with an independent tensor reference | Pymatgen compliance contraction on one synthetic cubic matrix and `[100]`, `[110]`, `[111]` directions | Verified for that matrix, basis, convention, and reference version only; not for experimental or database tensors. |
 | Researchers outside the development environment installed or used the software | No external test or use record is indexed | Pending. |
 | The software changed a research decision, dataset, presentation, preprint, or paper | Author reports published use; affected result and software contribution are not yet mapped to sources | Source verification pending. |
 
-The evidence ledger intentionally retains empty research-use, validation, and
+The evidence ledger intentionally retains empty research-use and
 external-engagement arrays until their source records satisfy the documented
-checks. Do not substitute prospective plans for completed work.
+checks. The validation entries link to immutable source-commit URLs and hashed
+reports. Do not substitute these numerical comparisons for research-use or
+external-engagement evidence.

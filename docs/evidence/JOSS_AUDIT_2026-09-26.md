@@ -1,8 +1,9 @@
 # JOSS readiness evidence audit — 26 September 2026
 
-This is a dated snapshot of the public repository before the current 0.4.0
-usability work was pushed. It records verifiable evidence and outstanding
-evidence requests; it is not a JOSS editorial decision.
+The baseline timeline and assessment below are a dated snapshot of public
+`main` at commit `0d56f99`, **before the 0.4.0 usability and manuscript
+upgrade**. The follow-up at the end records the public PR #14 candidate as of
+26 September 2026. This is an evidence audit, not a JOSS editorial decision.
 
 ## Public-development timeline
 
@@ -59,7 +60,7 @@ research decision, experimental validation, or external adoption.
 | Public age and iteration | More than six months public, active development across the period, evidence of a release and public issues/PRs; concentrated history can fail screening. | **Blocked by time and distribution.** Two public calendar months are recorded; meaningful work must continue through the period. |
 | Research impact | Evidence of actual research use, at least by the developers; citations, documented workflow use, and external integration are examples. A future-potential claim alone is insufficient. | **Reported, source audit pending.** The author identifies published use, but the representative source records and exact software contribution remain to be recorded. |
 | Open-source practice | For a single-author project, JOSS accepts broader evidence, but expects multiple indicators such as ongoing public commits, release/changelog, tests/CI, documentation, contribution and support expectations. | Core routes and one release exist; continue iterative activity and capture real interactions. |
-| Paper | 750–1750 words; required sections, references, author/affiliation metadata, applicable publication examples, funding acknowledgement, and specific AI disclosure. | The draft needs a final impact-reference map, funding statement, exact AI-use and human-review confirmation, official build, and page review. |
+| Paper | 750–1750 words; required sections, references, author/affiliation metadata, applicable publication examples, funding acknowledgement, and specific AI disclosure. | The Open Journals workflow built commit `a09ee1b` successfully and the four-page PDF passed artifact/source and rendered-content checks. Author confirmation, impact-source mapping, funding, and human review of AI-assisted work remain open. |
 | Project's stricter scientific gates | Not separate boxes in the current JOSS checklist. | Local script also requires four active months, a hashed real-use case, diffraction and elasticity comparison reports, and an external-engagement record. Keep these labeled as local controls. |
 
 JOSS's current sources are [submission requirements](https://joss.readthedocs.io/en/latest/submitting.html),
@@ -74,9 +75,10 @@ JOSS's current sources are [submission requirements](https://joss.readthedocs.io
    verify the DOI/URL, how DiffractScout was used, the matching release or
    commit, and the claim the paper can support. Add the citation to the paper
    bibliography and `publications_or_preprints` only after verification.
-2. Continue substantive public maintenance across each remaining month. Add
-   only merged, meaningful work to the public-development ledger; do not
-   backdate activity or count CI.
+2. Continue substantive public maintenance across each remaining month.
+   Record meaningful public issues and PRs with their actual open/merged state;
+   describe integrated behavior only after merge, and do not backdate activity
+   or count CI as development.
 3. Complete the final 0.4.0 source acceptance, remote CI, and official
    Open Journals build against one clean commit. Update the readiness snapshot
    after those checks rather than carrying the pre-upgrade diagnostic forward.
@@ -92,3 +94,32 @@ JOSS's current sources are [submission requirements](https://joss.readthedocs.io
 After successful JOSS review, create the final tag and immutable archive DOI
 and add them to `archived_releases`; an ordinary GitHub Release does not fill
 that post-review step.
+
+## Current candidate follow-up — 26 September 2026
+
+Public [PR #14](https://github.com/D-sudoasd/DiffractScout/pull/14) is open
+with head commit
+[`a09ee1b0e48de4bf07898bceda4bec46b70dab43`](https://github.com/D-sudoasd/DiffractScout/commit/a09ee1b0e48de4bf07898bceda4bec46b70dab43).
+It records later public iteration for the usability/workbook/CLI workflow and
+contains regenerated synthetic reference-engine comparisons. The Markdown
+report SHA-256 is
+`1f90eacd54dad5eaa93c66ec33ad2747f76df608b1f1275abedd90f98484c8ab`; the
+matching JSON receipt SHA-256 is
+`9c70131e03dc65b7a49c3dabddd131aa011f238299680ccf423bc73bee9c119b`.
+Both hashes were checked against the files in commit `a09ee1b`. The records
+support a numerical software comparison on the named synthetic fixtures;
+they are not experimental validation, a real-material property claim,
+research-impact evidence, or external adoption.
+
+The successful Open Journals run
+[#36242597087](https://github.com/D-sudoasd/DiffractScout/actions/runs/36242597087)
+used commit `a09ee1b0e48de4bf07898bceda4bec46b70dab43`. It confirms PDF
+generation for the current manuscript; full-page inspection remains pending.
+CI run [#36242599844](https://github.com/D-sudoasd/DiffractScout/actions/runs/36242599844)
+for the same commit completed successfully. These runs establish the recorded
+automated checks and PDF artifact only; they do not resolve author-controlled
+metadata or research-use evidence.
+The public-history period and source verification for the author's reported
+published uses remain open. The earlier `--as-of 2026-09-26` diagnostic is a
+pre-upgrade snapshot and must not be presented as a readiness result for this
+candidate.
