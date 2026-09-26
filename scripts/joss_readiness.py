@@ -78,6 +78,13 @@ REQUIRED_PAPER_SECTIONS = (
     "References",
 )
 
+PAPER_SOURCE_PATHS = (
+    "paper/paper.md",
+    "paper/paper.bib",
+    "paper/fig_workflow.png",
+    "paper/fig_validation.png",
+)
+
 REQUIRED_REPOSITORY_FILES = (
     "LICENSE",
     "README.md",
@@ -719,14 +726,42 @@ def _paper_source_sha256(source_paths: list[Path]) -> str:
     return digest.hexdigest()
 
 
+def _official_build_sources_match(
+    build_commit: str,
+    current_head: str,
+) -> bool:
+    """Require the official PDF build commit to contain the current paper source blobs."""
+
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", build_commit) or not re.fullmatch(
+        r"[0-9a-fA-F]{40}", current_head
+    ):
+        return False
+    build_commit = build_commit.lower()
+    current_head = current_head.lower()
+    try:
+        _run_git("merge-base", "--is-ancestor", build_commit, current_head)
+        for relative_path in PAPER_SOURCE_PATHS:
+            build_blob = _run_git(
+                "rev-parse", "--verify", f"{build_commit}:{relative_path}"
+            )
+            head_blob = _run_git(
+                "rev-parse", "--verify", f"{current_head}:{relative_path}"
+            )
+            if (
+                _run_git("cat-file", "-t", str(build_blob)) != "blob"
+                or _run_git("cat-file", "-t", str(head_blob)) != "blob"
+            ):
+                return False
+            if build_blob != head_blob:
+                return False
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
 def _paper_pdf_metadata(evidence: dict[str, Any]) -> dict[str, Any]:
     path = ROOT / "paper/paper.pdf"
-    source_paths = [
-        ROOT / "paper/paper.md",
-        ROOT / "paper/paper.bib",
-        ROOT / "paper/fig_workflow.png",
-        ROOT / "paper/fig_validation.png",
-    ]
+    source_paths = [ROOT / relative_path for relative_path in PAPER_SOURCE_PATHS]
     raw_submission = evidence.get("submission_metadata")
     submission = raw_submission if isinstance(raw_submission, dict) else {}
     try:
@@ -776,12 +811,16 @@ def _submission_metadata(evidence: dict[str, Any], *, current_head: str) -> dict
         for name in ("remote_ci_url", "official_joss_build_url")
         if not _is_public_https_url(values.get(name))
     ]
-    invalid_commits = [
-        name
-        for name in ("remote_ci_commit", "official_joss_build_commit")
-        if not re.fullmatch(r"[0-9a-fA-F]{40}", str(values.get(name, "")))
-        or str(values.get(name, "")).lower() != current_head.lower()
-    ]
+    remote_ci_commit = str(values.get("remote_ci_commit", ""))
+    official_build_commit = str(values.get("official_joss_build_commit", ""))
+    invalid_commits: list[str] = []
+    if (
+        not re.fullmatch(r"[0-9a-fA-F]{40}", remote_ci_commit)
+        or remote_ci_commit.lower() != current_head.lower()
+    ):
+        invalid_commits.append("remote_ci_commit")
+    if not _official_build_sources_match(official_build_commit, current_head):
+        invalid_commits.append("official_joss_build_commit")
     return {
         "ok": not missing_or_false and not invalid_urls and not invalid_commits,
         "required_confirmations": list(SUBMISSION_CONFIRMATIONS),
@@ -1176,7 +1215,10 @@ def build_report(
         "pass" if submission_source["ok"] else "block",
         submission_source,
         gate="project",
-        reason="Submission and publication must use a clean checkout whose HEAD matches the recorded remote CI and official paper builds.",
+        reason=(
+            "Submission and publication must use a clean checkout whose HEAD matches remote CI; "
+            "the official paper build must match the current paper input blobs."
+        ),
         required_from="submission",
     )
 

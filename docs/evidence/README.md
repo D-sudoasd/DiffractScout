@@ -58,6 +58,12 @@ author inputs in that copy. Updating a separate file keeps the selected Git
 commit unchanged. The checker reports the file it used and applies the same
 validation rules; an unreadable or invalid file blocks the check.
 
+Remote CI must verify the selected HEAD. The official PDF build may refer to
+HEAD or an ancestor with identical Git blobs for `paper.md`, `paper.bib`,
+`fig_workflow.png`, and `fig_validation.png`. The checker rejects unknown or
+unrelated commits and changed manuscript inputs, and still checks the recorded
+paper-source and PDF hashes.
+
 Keep author-controlled confirmation booleans false until the submitting
 author confirms them for the selected source. As of 26 September 2026, the
 user confirmed that the currently listed Delun Gong name, ORCID, and Institute
@@ -68,8 +74,9 @@ be confirmed; a current identity confirmation does not complete that review.
 
 The ledger records successful CI run `36242599844` and official Open Journals
 build `36242597087` on candidate commit
-`a09ee1b0e48de4bf07898bceda4bec46b70dab43`; both links and the paper-source/PDF
-hashes must remain tied to that same commit. The four-page PDF passed artifact
+`a09ee1b0e48de4bf07898bceda4bec46b70dab43` as a historical snapshot. A final
+audit must update the CI record to the selected HEAD; the paper build remains
+usable only while its input blobs match that HEAD. The four-page PDF passed artifact
 identity and rendered-content checks, while author review of all AI-assisted
 work remains pending. Following successful JOSS review, create the final tag
 and software archive DOI and enter them for the `publication` stage.

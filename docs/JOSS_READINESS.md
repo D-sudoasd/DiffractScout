@@ -69,7 +69,7 @@ external user adoption or experimental validation.
 | License and package | `LICENSE`, `pyproject.toml`, Python entry points | Present; rerun packaging checks on the final submission commit. |
 | Scope and software need | README, comparison and scientific-contract documents, manuscript | Defined; manuscript must explain the workflow contribution and build-versus-contribute rationale. |
 | User and API documentation | README, CLI/API/GUI guides, offline demo | Present; audit against the final public interfaces. |
-| Automated verification | Test suite, analytic benchmark, CI, demo and bundle verifier | Remote CI for commit `a09ee1b` [#36242599844](https://github.com/D-sudoasd/DiffractScout/actions/runs/36242599844) succeeded. The full local release-acceptance path remains to be checked on the selected clean source. Analytic fixtures do not establish experimental accuracy. |
+| Automated verification | Test suite, analytic benchmark, CI, demo and bundle verifier | Remote CI for commit `39f1477` [#36243627211](https://github.com/D-sudoasd/DiffractScout/actions/runs/36243627211) passed all ten jobs, including Windows, macOS, Python 3.10–3.13, GUI, optional dependencies, and the installed wheel. The local preflight on that source passed 543 tests, 45 analytic checks, packaging, and isolated wheel workflows. Rerun acceptance when the selected source changes. Analytic fixtures do not establish experimental accuracy. |
 | Public development history | Repository created 12 August; `v0.3.0`; merged PRs through August; public PR #14 opened 26 September | **Official blocker.** Only August and September are represented. Continue substantive, iterative public work for more than six months; the planned earliest date of 15 February 2027 is conditional, not an eligibility guarantee. |
 | Research impact | Author reports multiple published uses; individual records are not yet indexed | **Official blocker until traceable evidence is supplied.** Add representative papers with DOI/URL, exact use, software version or commit, and the related research result. |
 | Community engagement | Public issue and contribution routes exist; no non-author engagement is recorded | External engagement is a strong positive signal. Capture real use, review, discussion, or contribution with consent where attribution is used; do not treat its absence as a separate JOSS hard gate. |
@@ -100,9 +100,12 @@ python scripts/joss_readiness.py --stage submission --strict --evidence-file out
 ```
 
 `--evidence-file` reads the specified ledger without changing it and records
-its path in the report. The usual schema, hashes, commit matching, and
-confirmation requirements still apply. Without this option, the repository's
-shared ledger is used.
+its path in the report. The usual schema, hashes, and confirmation requirements
+still apply. Remote CI must match the selected HEAD. An official PDF build may
+use HEAD or an ancestor only when Git proves that the manuscript, bibliography,
+and both figure blobs are identical to HEAD; PDF and source hashes are still
+checked. This permits recording the generated PDF without invalidating its
+build evidence. Without this option, the repository's shared ledger is used.
 
 The `release` stage is a project acceptance check over the exact source. It
 does not prove scientific validity or submission eligibility. The `submission`

@@ -52,6 +52,48 @@ def _valid_payload() -> dict[str, object]:
     }
 
 
+def _git(repo: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return completed.stdout.strip()
+
+
+def _init_paper_source_repo(repo: Path) -> tuple[str, str]:
+    repo.mkdir()
+    _git(repo, "init", "--quiet")
+    _git(repo, "config", "user.name", "Readiness Test")
+    _git(repo, "config", "user.email", "readiness-test@example.invalid")
+    for relative_path in READINESS.PAPER_SOURCE_PATHS:
+        path = repo / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(f"fixture content for {relative_path}\n".encode("utf-8"))
+    (repo / "notes.txt").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "--all")
+    _git(repo, "commit", "--quiet", "-m", "paper sources")
+    return _git(repo, "rev-parse", "HEAD"), _git(repo, "branch", "--show-current")
+
+
+def _confirmed_submission(remote_ci_commit: str, official_build_commit: str) -> dict[str, object]:
+    values: dict[str, object] = {name: True for name in READINESS.SUBMISSION_CONFIRMATIONS}
+    values.update(
+        {
+            "remote_ci_url": "https://github.com/D-sudoasd/DiffractScout/actions/runs/1",
+            "remote_ci_commit": remote_ci_commit,
+            "official_joss_build_url": "https://github.com/openjournals/joss-papers/actions/runs/1",
+            "official_joss_build_commit": official_build_commit,
+            "paper_source_sha256": "",
+            "paper_pdf_sha256": "",
+            "note": "confirmed for test",
+        }
+    )
+    return values
+
+
 def test_add_calendar_months_handles_month_end_and_leap_year() -> None:
     assert READINESS.add_calendar_months(date(2026, 8, 12), 6) == date(2027, 2, 12)
     assert READINESS.add_calendar_months(date(2023, 8, 31), 6) == date(2024, 2, 29)
@@ -155,6 +197,130 @@ def test_missing_or_non_utf8_evidence_file_is_blocked_without_default_fallback(
         errors = READINESS.validate_evidence_payload(payload)
         assert "Unknown or missing evidence schema." in errors
         assert payload != READINESS._load_evidence()
+
+
+def test_official_build_at_current_head_is_accepted(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "same-head"
+    head, _ = _init_paper_source_repo(repo)
+    monkeypatch.setattr(READINESS, "ROOT", repo)
+
+    assert READINESS._official_build_sources_match(head, head) is True
+    metadata = READINESS._submission_metadata(
+        {"submission_metadata": _confirmed_submission(head, head)},
+        current_head=head,
+    )
+    assert metadata["ok"] is True
+
+
+def test_ancestor_build_is_accepted_only_when_source_blobs_match_current_head(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "same-paper-inputs"
+    build_commit, _ = _init_paper_source_repo(repo)
+    monkeypatch.setattr(READINESS, "ROOT", repo)
+    (repo / "paper/paper.pdf").write_bytes(b"PDF artifact created after source commit")
+    _git(repo, "add", "paper/paper.pdf")
+    _git(repo, "commit", "--quiet", "-m", "record official PDF")
+    current_head = _git(repo, "rev-parse", "HEAD")
+
+    assert build_commit != current_head
+    assert READINESS._official_build_sources_match(build_commit, current_head) is True
+    accepted = READINESS._submission_metadata(
+        {"submission_metadata": _confirmed_submission(current_head, build_commit)},
+        current_head=current_head,
+    )
+    assert accepted["ok"] is True
+
+    stale_ci = READINESS._submission_metadata(
+        {"submission_metadata": _confirmed_submission(build_commit, build_commit)},
+        current_head=current_head,
+    )
+    assert stale_ci["ok"] is False
+    assert stale_ci["invalid_or_mismatched_commits"] == ["remote_ci_commit"]
+
+
+def test_ancestor_build_is_rejected_when_any_paper_source_blob_changed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "changed-paper-inputs"
+    build_commit, _ = _init_paper_source_repo(repo)
+    monkeypatch.setattr(READINESS, "ROOT", repo)
+
+    for relative_path in READINESS.PAPER_SOURCE_PATHS:
+        _git(repo, "reset", "--hard", build_commit)
+        source = repo / relative_path
+        source.write_bytes(source.read_bytes() + b"changed\n")
+        _git(repo, "add", relative_path)
+        _git(repo, "commit", "--quiet", "-m", f"change {relative_path}")
+        current_head = _git(repo, "rev-parse", "HEAD")
+        assert READINESS._official_build_sources_match(build_commit, current_head) is False
+        metadata = READINESS._submission_metadata(
+            {"submission_metadata": _confirmed_submission(current_head, build_commit)},
+            current_head=current_head,
+        )
+        assert metadata["ok"] is False
+        assert metadata["invalid_or_mismatched_commits"] == ["official_joss_build_commit"]
+
+
+def test_official_build_is_rejected_when_a_paper_source_blob_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "missing-paper-input"
+    build_commit, _ = _init_paper_source_repo(repo)
+    monkeypatch.setattr(READINESS, "ROOT", repo)
+    missing_path = repo / "paper/paper.bib"
+    missing_path.unlink()
+    _git(repo, "add", "--all")
+    _git(repo, "commit", "--quiet", "-m", "remove paper bibliography")
+    current_head = _git(repo, "rev-parse", "HEAD")
+
+    assert READINESS._official_build_sources_match(build_commit, current_head) is False
+    metadata = READINESS._submission_metadata(
+        {"submission_metadata": _confirmed_submission(current_head, build_commit)},
+        current_head=current_head,
+    )
+    assert metadata["invalid_or_mismatched_commits"] == ["official_joss_build_commit"]
+
+
+def test_official_build_commit_must_exist_and_be_an_ancestor(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "commit-ancestry"
+    base_commit, base_branch = _init_paper_source_repo(repo)
+    monkeypatch.setattr(READINESS, "ROOT", repo)
+
+    _git(repo, "checkout", "--quiet", "-b", "side-history")
+    (repo / "notes.txt").write_text("side branch\n", encoding="utf-8")
+    _git(repo, "add", "notes.txt")
+    _git(repo, "commit", "--quiet", "-m", "side branch")
+    side_commit = _git(repo, "rev-parse", "HEAD")
+
+    _git(repo, "checkout", "--quiet", base_branch)
+    (repo / "notes.txt").write_text("main history\n", encoding="utf-8")
+    _git(repo, "add", "notes.txt")
+    _git(repo, "commit", "--quiet", "-m", "main branch")
+    current_head = _git(repo, "rev-parse", "HEAD")
+
+    unknown_commit = "0" * 40
+    assert READINESS._official_build_sources_match(unknown_commit, current_head) is False
+    unknown_metadata = READINESS._submission_metadata(
+        {"submission_metadata": _confirmed_submission(current_head, unknown_commit)},
+        current_head=current_head,
+    )
+    assert unknown_metadata["invalid_or_mismatched_commits"] == [
+        "official_joss_build_commit"
+    ]
+
+    assert READINESS._official_build_sources_match(side_commit, current_head) is False
+    nonancestor_metadata = READINESS._submission_metadata(
+        {"submission_metadata": _confirmed_submission(current_head, side_commit)},
+        current_head=current_head,
+    )
+    assert nonancestor_metadata["invalid_or_mismatched_commits"] == [
+        "official_joss_build_commit"
+    ]
+    assert READINESS._official_build_sources_match(base_commit, current_head) is True
 
 
 def test_evidence_payload_validation_rejects_untraceable_and_duplicate_records() -> None:
