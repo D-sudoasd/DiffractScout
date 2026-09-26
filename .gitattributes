@@ -1,0 +1,11 @@
+# Keep hashed scientific fixtures, evidence, and manuscript sources identical
+# when a Windows checkout has core.autocrlf enabled.
+validation_cases/**/*.md text eol=lf
+validation_cases/**/*.json text eol=lf
+validation_cases/**/*.csv text eol=lf
+validation_cases/**/*.cif text eol=lf
+src/diffractscout/benchmark_data/*.cif text eol=lf
+src/diffractscout/benchmark_data/*.json text eol=lf
+scripts/compare_reference_engines.py text eol=lf
+paper/*.md text eol=lf
+paper/*.bib text eol=lf
