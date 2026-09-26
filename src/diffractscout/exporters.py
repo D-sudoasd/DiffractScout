@@ -13,10 +13,10 @@ from typing import Any
 
 import numpy as np
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
 
 from .diffraction import SCIENTIFIC_BOUNDARY
+from .excel_overview import add_overview_sheet
+from .excel_styles import style_data_sheet, style_guide_sheet
 from .export_views import (
     ANALYSIS_PEAK_COLUMNS,
     BEGINNER_PEAK_HEADERS_ZH,
@@ -633,26 +633,7 @@ def _add_sheet(
             )
     else:
         sheet.append(["no rows", *([""] * (len(headers) - 1))])
-    # Frozen header + autofilter: required for analysis-ready long tables.
-    sheet.freeze_panes = "A2"
-    last_col = get_column_letter(max(len(headers), 1))
-    last_row = max(sheet.max_row, 1)
-    sheet.auto_filter.ref = f"A1:{last_col}{last_row}"
-    header_fill = PatternFill("solid", fgColor="16324F")
-    for cell in sheet[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    for column_index, header in enumerate(headers, start=1):
-        sampled = [str(header)] + [
-            str(_cell_value(row.get(header), bundle_root)) for row in rows[:200]
-        ]
-        # Slightly wider for analysis headers with units in the name.
-        width = min(max(max(len(value) for value in sampled) + 2, 10), 48)
-        sheet.column_dimensions[get_column_letter(column_index)].width = width
-    for row in sheet.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    style_data_sheet(sheet, headers)
 
 
 def _add_guide_sheet(workbook: Workbook, title: str, rows: list[list[str]]) -> None:
@@ -662,22 +643,7 @@ def _add_guide_sheet(workbook: Workbook, title: str, rows: list[list[str]]) -> N
     else:
         for row in rows:
             sheet.append([_cell_value(cell) for cell in row])
-    sheet.freeze_panes = "A2"
-    header_fill = PatternFill("solid", fgColor="16324F")
-    for cell in sheet[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    for column_index in range(1, 3):
-        sampled = [
-            str(_cell_value(row[column_index - 1]) if column_index - 1 < len(row) else "")
-            for row in rows[:200]
-        ] or [""]
-        width = min(max(max(len(value) for value in sampled) + 2, 12), 72)
-        sheet.column_dimensions[get_column_letter(column_index)].width = width
-    for row in sheet.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    style_guide_sheet(sheet, rows)
 
 
 def write_excel_workbook(
@@ -698,7 +664,7 @@ def write_excel_workbook(
 ) -> Path:
     workbook = Workbook()
     workbook.remove(workbook.active)
-    # Lab-first when enabled: guide → Chinese long table → full Peaks, then metadata sheets.
+    # Lab-first when enabled: guide and Chinese analysis view accompany canonical tables.
     if export_lab_views:
         _add_guide_sheet(workbook, "使用说明", user_guide_rows())
         zh_headers = list(BEGINNER_PEAK_HEADERS_ZH.keys())
@@ -723,11 +689,14 @@ def write_excel_workbook(
     if export_lab_views:
         analysis_list = analyses or []
         if 0 < len(analysis_list) <= 20:
+            peaks_by_phase: dict[str, list[dict[str, Any]]] = {}
+            for row in peaks:
+                peaks_by_phase.setdefault(str(row.get("phase_name") or ""), []).append(row)
             used_titles: set[str] = set(workbook.sheetnames)
             for analysis in analysis_list:
                 if not analysis.reflections:
                     continue
-                phase_peaks = [row for row in peaks if row.get("phase_name") == analysis.phase_name]
+                phase_peaks = peaks_by_phase.get(analysis.phase_name, [])
                 if not phase_peaks:
                     continue
                 title = safe_excel_sheet_title(f"峰_{analysis.phase_name}", used=used_titles)
@@ -738,9 +707,18 @@ def write_excel_workbook(
                     PEAK_HEADERS,
                     bundle_root=bundle_root,
                 )
-        # Open on the Chinese analysis long table when present.
-        if "推荐峰表" in workbook.sheetnames:
-            workbook.active = workbook["推荐峰表"]
+    overview_sheet = add_overview_sheet(
+        workbook,
+        summary=summary,
+        phases=phases,
+        diagnostics=diagnostics,
+        lab_views=export_lab_views,
+    )
+    workbook.move_sheet(
+        overview_sheet,
+        offset=-workbook.sheetnames.index(overview_sheet.title),
+    )
+    workbook.active = overview_sheet
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
@@ -1074,7 +1052,7 @@ def export_result_bundle(
             ),
             "elastic_modulus": "E(n) = 1 / (q(n)^T S q(n)) under engineering-shear Voigt convention",
             "lab_views_schema": (
-                "When effective_export_lab_views is true, the emitted results.xlsx opens on 推荐峰表 after 使用说明: "
+                "When effective_export_lab_views is true, the emitted results.xlsx opens on 结果概览, followed by the lab guide and analysis sheets: "
                 "analysis-first Chinese long table (BEGINNER_PEAK_HEADERS_ZH) with freeze+autofilter, "
                 "optional per-phase peak sheets (≤20 phases). Peaks/CSV remain the English machine schema "
                 "with the same peak_rows values; R_hkl names are volume-normalized J aliases, not residuals."

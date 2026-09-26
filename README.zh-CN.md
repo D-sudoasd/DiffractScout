@@ -8,7 +8,7 @@
 
 **DiffractScout 将合金/化学体系候选相检索、本地 CIF 检查、理论粉末衍射计算、可选晶面法向弹性分析和可验证结果导出连接为一个流程。** 每项结果均可追溯到数据库记录或本地文件、CIF 哈希、辐射条件、计算定义、软件版本和结构化诊断。
 
-[英文主页](README.md) · [API](docs/API.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [发布流程](docs/RELEASE.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
+[英文主页](README.md) · [CLI 使用说明](docs/CLI.md) · [API](docs/API.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [发布流程](docs/RELEASE.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
 
 ## 两类工作流
 
@@ -51,6 +51,18 @@ DiffractScout 在可追溯结果包中重实现了 CIF2Peaks 的主要桌面工�
 | 可选 2θ 图件生成 | CLI `--figures`；基础安装可写 SVG/PNG 结果包图件，`.[figures]` 启用 matplotlib 渲染路径和论文制图工具 |
 
 列名与强度通道别名见 [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md)；与 CIF2Peaks/pymatgen 引擎差异见 [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md)。
+
+Excel 提供结果概览和工作表导航，按列的含义区分表头颜色，统一科学数值显示格式，冻结物相标识列，并用数据条辅助查看相内相对强度。界面支持保存、加载常用分析参数，以及独立的 Excel 预览、永久副本另存和结果文件夹入口。完整用法见 [Excel 结果使用说明](docs/EXCEL.md)。
+
+CLI 同样可以保存、复用参数，并校验和查看已有结果包：
+
+```powershell
+diffractscout preset save -o presets/energy-30.json --energy-keV 30
+diffractscout analyze path/to/cifs -o outputs/run --preset presets/energy-30.json
+diffractscout inspect outputs/run --json
+```
+
+命令行显式参数优先于预设。批处理退出码、辐射条件覆盖和参数文件用法见 [CLI 使用说明](docs/CLI.md)。
 
 启用 *d* 间距过滤时，程序会单独记录包含端点的 Bragg 求交结果。
 `provenance.json` 和物相元数据区分用户请求的
@@ -170,6 +182,8 @@ diffractscout benchmark -o outputs/analytic_benchmark
 
 该命令对简单立方、BCC、FCC、NaCl 和立方晶体方向弹性执行 45 项闭式解检查，并输出固定输入、预期值、容差、软件版本、运行环境、报告和 SHA-256 清单。成功结果为 `45/45 passed`。详见 [docs/ANALYTIC_BENCHMARKS.md](docs/ANALYTIC_BENCHMARKS.md)。
 
+另有可复现的 [pymatgen 独立数值对照](validation_cases/independent_engines/README.md)，比较相同合成 CIF 的峰位和立方晶体方向模量，并在 CI 中保留数值报告和依赖版本。
+
 ## 本地 CIF 分析
 
 ```powershell
@@ -250,7 +264,7 @@ J_no_LP   = I_no_LP / V_cell²
 
 当前离线 pytest 套件覆盖成分解析、子体系枚举及组合数量上限、大小写 CIF 扫描、同名文件防覆盖、CIF 数据块和空间群解析、特殊位置占位转换、系统消光、解析结构因子、Bragg 几何、边界反射、刚度单位换算、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全、确定性证据归档、严格清单校验和投稿准备检查。测试收集数由 pytest/CI 报告，不再复制到静态文档；另有稳定的 45 项解析科学基准。GitHub Actions 还配置了多 Python 版本、Windows/macOS、Linux 无头 GUI、wheel 安装、解析基准、发布制品、月度复现审计、依赖更新和 JOSS 论文构建。月度定时运行只记录某一公开提交的可复现状态；只有由真实缺陷、依赖更新、验证、文档改进或用户反馈形成的公开提交、Issue、Pull Request 或 Release 才构成开发活动证据。
 
-JOSS 正式投稿仍需要真实且分布式的六个月公开开发记录、真实材料用例、独立衍射与弹性验证、外部互动、人工确认的元数据，以及通过官方 Open Journals 构建并逐页检查的稿件。先执行 `python scripts/check_release.py` 生成与当前源码绑定的发布验收收据，再用 `python scripts/joss_readiness.py --stage submission --output build/joss-readiness` 生成投稿阻塞项报告。不可变软件归档 DOI 属于 JOSS 审稿完成后的 `publication` 阶段，不是初次投稿的前置条件；工作计划见 [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md)。
+作者已确认软件用于其已发表研究，代表论文及具体使用情况将在投稿记录中补充。项目自 2026 年 8 月 12 日开始公开开发，目前尚未满足 JOSS 超过六个月的持续公开开发要求。项目自定的科学验证、社区参与要求与 JOSS 官方门槛分别列于 [投稿准备状态](docs/JOSS_READINESS.md)。先执行 `python scripts/check_release.py` 验收当前软件，再用 `python scripts/joss_readiness.py --stage submission --output build/joss-readiness` 检查待补的投稿证据和作者确认事项。最终软件归档 DOI 在审稿完成后的 `publication` 阶段补入；工作计划见 [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md)。
 
 ## 来源与许可
 

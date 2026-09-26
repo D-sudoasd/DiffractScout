@@ -6,8 +6,10 @@ import shutil
 import pytest
 from openpyxl import load_workbook
 
+from diffractscout.cli import main as cli_main
+import diffractscout.quick_export as quick_export_module
 from diffractscout.elasticity_input import parse_cubic_cij
-from diffractscout.models import AnalysisSettings
+from diffractscout.models import AnalysisSettings, PipelineResult
 from diffractscout.pipeline import analyze_cifs
 from diffractscout.quick_export import build_parser as build_quick_export_parser
 from diffractscout.quick_export import main as quick_export_main
@@ -199,6 +201,128 @@ def test_quick_export_directory_mode(demo_inputs: Path, tmp_path: Path) -> None:
     assert result.output_dir == output.resolve()
     assert (output / "results.xlsx").is_file()
     assert result.analyses[0].metadata.get("export_lab_views") is True
+
+
+def test_quick_export_rejects_no_excel_for_xlsx_api_output(
+    demo_inputs: Path, tmp_path: Path
+) -> None:
+    excel = tmp_path / "no-excel.xlsx"
+
+    with pytest.raises(ValueError, match="include_excel=False.*incompatible"):
+        quick_export([demo_inputs], excel, include_excel=False)
+
+    assert not excel.exists()
+    assert not (tmp_path / "no-excel_bundle").exists()
+
+
+@pytest.mark.parametrize("entrypoint", ["standalone", "subcommand"])
+def test_quick_export_clis_reject_no_excel_for_xlsx_output(
+    demo_inputs: Path, tmp_path: Path, capsys, entrypoint: str
+) -> None:
+    excel = tmp_path / f"no-excel-{entrypoint}.xlsx"
+    if entrypoint == "standalone":
+        args = [str(demo_inputs), "-o", str(excel), "--no-excel"]
+        code = quick_export_main(args)
+    else:
+        args = ["quick-export", str(demo_inputs), "-o", str(excel), "--no-excel"]
+        code = cli_main(args)
+
+    assert code == 2
+    assert "An .xlsx output path requires Excel output" in capsys.readouterr().err
+    assert not excel.exists()
+    assert not (tmp_path / f"no-excel-{entrypoint}_bundle").exists()
+
+
+@pytest.mark.parametrize("failure", ["permission", "runtime"])
+def test_quick_export_reports_bundle_recovery_after_external_excel_failure(
+    demo_inputs: Path, tmp_path: Path, monkeypatch, failure: str
+) -> None:
+    excel = tmp_path / f"locked-{failure}.xlsx"
+    excel.write_bytes(b"existing workbook")
+
+    def fail_publish(_source: Path, target: Path, *, overwrite: bool) -> None:
+        assert overwrite is True
+        if failure == "permission":
+            raise PermissionError(errno.EACCES, "workbook is open", str(target))
+        raise RuntimeError("simulated source integrity failure")
+
+    monkeypatch.setattr("diffractscout.quick_export._copy_excel_atomic", fail_publish)
+    error_type = PermissionError if failure == "permission" else RuntimeError
+    with pytest.raises(error_type) as exc_info:
+        quick_export([demo_inputs], excel, overwrite=True)
+
+    bundle = tmp_path / f"locked-{failure}_bundle"
+    recovery_error = str(exc_info.value)
+    source_workbook = bundle / "results.xlsx"
+    assert "bundle remains at" in recovery_error
+    assert str(bundle) in recovery_error
+    assert "diffractscout verify" in recovery_error
+    assert str(source_workbook) in recovery_error
+    assert excel.read_bytes() == b"existing workbook"
+    assert source_workbook.is_file()
+    assert verify_bundle(bundle)["ok"]
+    if failure == "permission":
+        assert exc_info.value.errno == errno.EACCES
+        assert exc_info.value.filename == str(excel.resolve())
+
+
+@pytest.mark.parametrize("entrypoint", ["standalone", "subcommand"])
+def test_quick_export_cli_prints_bundle_recovery_after_publish_failure(
+    demo_inputs: Path, tmp_path: Path, monkeypatch, capsys, entrypoint: str
+) -> None:
+    excel = tmp_path / f"failed-{entrypoint}.xlsx"
+
+    def fail_publish(_source: Path, _target: Path, *, overwrite: bool) -> None:
+        assert overwrite is True
+        raise RuntimeError("simulated workbook verification failure")
+
+    monkeypatch.setattr("diffractscout.quick_export._copy_excel_atomic", fail_publish)
+    if entrypoint == "standalone":
+        code = quick_export_main(
+            [str(demo_inputs), "-o", str(excel), "--overwrite"]
+        )
+    else:
+        code = cli_main(
+            ["quick-export", str(demo_inputs), "-o", str(excel), "--overwrite"]
+        )
+
+    bundle = tmp_path / f"failed-{entrypoint}_bundle"
+    error = capsys.readouterr().err
+    assert code == 2
+    assert "simulated workbook verification failure" in error
+    assert str(bundle) in error
+    assert "diffractscout verify" in error
+    assert str(bundle / "results.xlsx") in error
+    assert (bundle / "results.xlsx").is_file()
+
+
+def test_quick_export_missing_bundle_workbook_error_gives_safe_recovery_guidance(
+    tmp_path: Path, monkeypatch
+) -> None:
+    excel = tmp_path / "missing-source.xlsx"
+    bundle = tmp_path / "missing-source_bundle"
+    bundle.mkdir()
+    result = PipelineResult(
+        output_dir=bundle,
+        discovery=None,
+        downloads=[],
+        analyses=[],
+        manifest_path=bundle / "manifest.json",
+    )
+    monkeypatch.setattr(
+        "diffractscout.quick_export.analyze_cifs",
+        lambda *_args, **_kwargs: result,
+    )
+
+    with pytest.raises(RuntimeError, match="Expected results.xlsx") as exc_info:
+        quick_export([tmp_path / "unused.cif"], excel)
+
+    error = str(exc_info.value)
+    assert str(bundle) in error
+    assert str(bundle / "results.xlsx") in error
+    assert "is missing" in error
+    assert "recover the workbook" not in error
+    assert not excel.exists()
 
 
 def test_quick_export_keyword_overrides_apply_to_explicit_settings(
@@ -646,6 +770,91 @@ def test_standalone_quick_export_help_is_legacy_windows_console_safe() -> None:
     assert "--max-profile-points" in help_text
     assert "--max-reflection-estimate" in help_text
     help_text.encode("cp936")
+
+
+def test_standalone_parser_explicit_tracking_is_per_parse() -> None:
+    parser = build_quick_export_parser()
+    explicit = parser.parse_args(["sample.cif", "-o", "first", "--no-excel"])
+    defaults = parser.parse_args(["sample.cif", "-o", "second"])
+
+    assert explicit._diffractscout_explicit == {"no_excel"}
+    assert not getattr(defaults, "_diffractscout_explicit", set())
+
+
+def test_cli_and_standalone_quick_export_apply_same_preset_overrides(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    preset = tmp_path / "quick-preset.json"
+    assert cli_main(
+        [
+            "preset",
+            "save",
+            "-o",
+            str(preset),
+            "--energy-keV",
+            "31",
+            "--two-theta-max",
+            "70",
+            "--no-patterns",
+            "--no-excel",
+            "--no-recursive",
+        ]
+    ) == 0
+    capsys.readouterr()
+
+    captured: list[dict[str, object]] = []
+
+    def fake_quick_export(inputs, output, **kwargs):
+        captured.append({"inputs": inputs, "output": output, **kwargs})
+        output_dir = Path(output)
+        return PipelineResult(
+            output_dir=output_dir,
+            discovery=None,
+            downloads=[],
+            analyses=[],
+            manifest_path=output_dir / "manifest.json",
+        )
+
+    monkeypatch.setattr(quick_export_module, "quick_export", fake_quick_export)
+    cli_args = [
+        "sample.cif",
+        "-o",
+        str(tmp_path / "cli-bundle"),
+        "--preset",
+        str(preset),
+        "--excel",
+        "--patterns",
+        "--recursive",
+        "--two-theta-max",
+        "75",
+    ]
+    assert cli_main(["quick-export", *cli_args]) == 2
+    assert quick_export_main(cli_args) == 2
+    capsys.readouterr()
+
+    assert len(captured) == 2
+    for call in captured:
+        settings = call["settings"]
+        assert settings.input_mode == "energy"
+        assert settings.energy_keV == pytest.approx(31)
+        assert settings.two_theta_max_deg == pytest.approx(75)
+        assert settings.include_patterns is True
+        assert call["include_excel"] is True
+        assert call["recursive"] is True
+
+
+def test_standalone_quick_export_invalid_preset_fails_before_output(
+    demo_inputs: Path, tmp_path: Path, capsys
+) -> None:
+    preset = tmp_path / "invalid-preset.json"
+    preset.write_text("{}", encoding="utf-8")
+    output = tmp_path / "should-not-exist"
+
+    assert quick_export_main(
+        [str(demo_inputs), "-o", str(output), "--preset", str(preset)]
+    ) == 2
+    assert not output.exists()
+    assert "Invalid analysis preset" in capsys.readouterr().err
 
 
 def test_elastic_override_replaces_sidecar(demo_inputs: Path, tmp_path: Path) -> None:

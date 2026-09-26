@@ -10,8 +10,15 @@ from typing import Sequence
 
 from . import __version__
 from .benchmark import run_reference_benchmarks, verify_benchmark_bundle
+from .cli_presets import (
+    add_analysis_options,
+    resolve_cli_analysis,
+    save_cli_preset,
+    show_cli_preset,
+)
 from .demo import write_demo_inputs
-from .models import AnalysisSettings, DiscoverySettings
+from .inspection import format_inspection, inspect_bundle
+from .models import AnalysisSettings, DiscoverySettings, PipelineResult
 from .pipeline import analyze_cifs, export_discovery, run_pipeline
 from .providers.materials_project import MaterialsProjectProvider
 from .utils import to_jsonable
@@ -19,34 +26,7 @@ from .validation import verify_bundle
 
 
 def _analysis_settings(args: argparse.Namespace) -> AnalysisSettings:
-    if args.energy_keV is not None:
-        mode = "energy"
-    elif args.wavelength_A is not None:
-        mode = "wavelength"
-    else:
-        mode = "source"
-    return AnalysisSettings(
-        input_mode=mode,  # type: ignore[arg-type]
-        source_preset=args.source,
-        wavelength_A=args.wavelength_A,
-        energy_keV=args.energy_keV,
-        two_theta_min_deg=args.two_theta_min,
-        two_theta_max_deg=args.two_theta_max,
-        step_deg=args.step,
-        fwhm_deg=args.fwhm,
-        profile_eta=args.eta,
-        include_elasticity=not args.no_elasticity,
-        max_profile_points=args.max_profile_points,
-        max_reflection_estimate=args.max_reflection_estimate,
-        d_min_A=args.d_min,
-        d_max_A=args.d_max,
-        profile_model=args.profile_model,
-        pattern_axis=args.pattern_axis,
-        include_figures=bool(args.figures),
-        figure_preset=args.figure_preset,
-        export_lab_views=not args.no_lab_views,
-        include_patterns=not args.no_patterns,
-    )
+    return resolve_cli_analysis(args).settings
 
 
 def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
@@ -68,24 +48,81 @@ def _api_key(args: argparse.Namespace) -> str:
     return value
 
 
-def _print_result(result: object, *, as_json: bool = False) -> None:
-    payload = to_jsonable(result)
+def _diagnostic_lines(result: PipelineResult) -> list[tuple[str, str]]:
+    """Render diagnostics with their recorded severity, retaining legacy warnings."""
+
+    lines: list[tuple[str, str]] = []
+    represented_messages: set[str] = set()
+    seen: set[tuple[str, str, str]] = set()
+    for item in result.diagnostics:
+        level = item.level.lower()
+        if level not in {"warning", "error"}:
+            continue
+        name = item.item or ""
+        message = item.message
+        key = (level, name, message)
+        if key not in seen:
+            seen.add(key)
+            lines.append((level.upper(), f"{name}: {message}" if name else message))
+        represented_messages.add(f"{name}: {message}" if name else message)
+
+    for warning in result.warnings:
+        message = str(warning)
+        if message not in represented_messages:
+            key = ("warning", "", message)
+            if key not in seen:
+                seen.add(key)
+                lines.append(("WARNING", message))
+            represented_messages.add(message)
+    return lines
+
+
+def _result_artifact_paths(
+    result: PipelineResult, *, excel_path: str | Path | None = None
+) -> dict[str, str]:
+    output_dir = result.output_dir
+    artifacts: dict[str, str] = {}
+    artifacts["manifest"] = str(result.manifest_path)
+    diagnostics_path = output_dir / "diagnostics.csv"
+    if diagnostics_path.is_file():
+        artifacts["diagnostics"] = str(diagnostics_path)
+    workbook = Path(excel_path).expanduser() if excel_path is not None else output_dir / "results.xlsx"
+    if workbook.is_file():
+        artifacts["excel"] = str(workbook.resolve())
+    return artifacts
+
+
+def _print_result(
+    result: PipelineResult,
+    *,
+    as_json: bool = False,
+    excel_path: str | Path | None = None,
+) -> None:
     if as_json:
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        print(json.dumps(to_jsonable(result), indent=2, ensure_ascii=False))
         return
-    if hasattr(result, "output_dir"):
-        print(f"Output: {result.output_dir}")
-        print(f"Manifest: {result.manifest_path}")
-        print(f"Analyzed phases: {len(result.analyses)}")
-        if result.discovery is not None:
-            print(f"Discovered candidates: {len(result.discovery.candidates)}")
-        if result.downloads:
-            successful = sum(1 for item in result.downloads if item.status == "ok")
-            print(f"Downloads: {successful}/{len(result.downloads)} successful")
-        for warning in result.warnings:
-            print(f"WARNING: {warning}", file=sys.stderr)
-    else:
-        print(payload)
+    artifact_paths = _result_artifact_paths(result, excel_path=excel_path)
+    diagnostic_lines = _diagnostic_lines(result)
+    warning_count = sum(1 for level, _ in diagnostic_lines if level == "WARNING")
+    error_count = sum(1 for level, _ in diagnostic_lines if level == "ERROR")
+    reflection_count = sum(len(item.reflections) for item in result.analyses)
+    print(f"Output: {result.output_dir}")
+    print(f"Manifest: {result.manifest_path}")
+    if "excel" in artifact_paths:
+        print(f"Excel: {artifact_paths['excel']}")
+    if "diagnostics" in artifact_paths:
+        print(f"Diagnostics: {artifact_paths['diagnostics']}")
+    print(f"Analyzed phases: {len(result.analyses)}")
+    print(f"Reflections: {reflection_count}")
+    print(f"Warnings: {warning_count}")
+    print(f"Errors: {error_count}")
+    if result.discovery is not None:
+        print(f"Discovered candidates: {len(result.discovery.candidates)}")
+    if result.downloads:
+        successful = sum(1 for item in result.downloads if item.status == "ok")
+        print(f"Downloads: {successful}/{len(result.downloads)} successful")
+    for level, message in diagnostic_lines:
+        print(f"{level}: {message}", file=sys.stderr)
 
 
 def _pipeline_exit_code(result: object) -> int:
@@ -103,70 +140,21 @@ def _pipeline_exit_code(result: object) -> int:
     return 3 if any(item.level == "error" for item in diagnostics) else 0
 
 
-def _add_analysis_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--source", default="Cu Ka", choices=("Cu Ka", "Co Ka", "Fe Ka", "Mo Ka", "Ag Ka", "Custom"))
-    radiation = parser.add_mutually_exclusive_group()
-    radiation.add_argument("--energy-keV", type=float, default=None, help="Custom X-ray energy in keV.")
-    radiation.add_argument("--wavelength-A", type=float, default=None, help="Custom wavelength in Angstrom.")
-    parser.add_argument("--two-theta-min", type=float, default=5.0)
-    parser.add_argument("--two-theta-max", type=float, default=120.0)
-    parser.add_argument("--step", type=float, default=0.02, help="Display-profile grid spacing in degrees.")
-    parser.add_argument("--fwhm", type=float, default=0.15, help="Display-profile FWHM in degrees.")
-    parser.add_argument("--eta", type=float, default=0.5, help="Pseudo-Voigt Lorentzian fraction in [0, 1].")
-    parser.add_argument("--no-elasticity", action="store_true", help="Do not discover, copy, or calculate paired elastic data.")
-    parser.add_argument("--max-profile-points", type=int, default=1_000_000, help="Safety limit for the generated display-profile grid.")
-    parser.add_argument("--max-reflection-estimate", type=int, default=2_000_000, help="Safety limit for reciprocal-lattice candidate generation.")
-    # Keep command help encodable by legacy Windows consoles (for example
-    # CP936/GBK).  Scientific exports retain the Å symbol; terminal help uses
-    # the unambiguous ASCII spelling so ``--help`` cannot fail before parsing.
-    parser.add_argument(
-        "--d-min",
-        type=float,
-        default=None,
-        dest="d_min",
-        help="Minimum d-spacing filter in Angstrom.",
+def _add_analysis_options(
+    parser: argparse.ArgumentParser,
+    *,
+    include_preset: bool = True,
+    include_output_controls: bool = True,
+    include_json: bool = True,
+    include_recursive: bool = True,
+) -> None:
+    add_analysis_options(
+        parser,
+        include_preset=include_preset,
+        include_output_controls=include_output_controls,
+        include_json=include_json,
+        include_recursive=include_recursive,
     )
-    parser.add_argument(
-        "--d-max",
-        type=float,
-        default=None,
-        dest="d_max",
-        help="Maximum d-spacing filter in Angstrom.",
-    )
-    parser.add_argument(
-        "--profile-model",
-        choices=("pseudo_voigt", "gaussian", "lorentzian"),
-        default="pseudo_voigt",
-        help="Display-profile lineshape model.",
-    )
-    parser.add_argument(
-        "--pattern-axis",
-        choices=("two_theta", "d_spacing", "q", "g"),
-        default="two_theta",
-        help=(
-            "Selected x coordinate in pattern_profiles.csv and Excel. "
-            "Figures remain on 2theta in v0.4.0."
-        ),
-    )
-    parser.add_argument(
-        "--figures",
-        action="store_true",
-        help="Write 2theta figures (SVG and PNG in result bundles).",
-    )
-    parser.add_argument("--figure-preset", default="publication", help="Named figure style preset.")
-    parser.add_argument(
-        "--no-lab-views",
-        action="store_true",
-        help="Skip laboratory convenience views in the result bundle.",
-    )
-    parser.add_argument(
-        "--no-patterns",
-        action="store_true",
-        help="Skip continuous powder-pattern series in exports.",
-    )
-    parser.add_argument("--no-excel", action="store_true", help="Skip results.xlsx; CSV and JSON remain enabled.")
-    parser.add_argument("--overwrite", action="store_true", help="Replace only an existing DiffractScout output bundle.")
-    parser.add_argument("--json", action="store_true", help="Print the final summary as JSON.")
 
 
 def _add_discovery_options(parser: argparse.ArgumentParser) -> None:
@@ -200,7 +188,6 @@ def build_parser() -> argparse.ArgumentParser:
     analyze = subparsers.add_parser("analyze", help="Analyze local CIF files or directories.")
     analyze.add_argument("inputs", nargs="+", help="CIF files or directories.")
     analyze.add_argument("-o", "--output", required=True)
-    analyze.add_argument("--no-recursive", action="store_true")
     _add_analysis_options(analyze)
 
     discover = subparsers.add_parser("discover", help="Query candidate phases without downloading structures.")
@@ -215,7 +202,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("composition", help="Alloy grade, formula, chemical system, or mp-IDs.")
     run.add_argument("-o", "--output", required=True)
     _add_discovery_options(run)
-    _add_analysis_options(run)
+    _add_analysis_options(run, include_recursive=False)
     run.add_argument(
         "--primitive",
         action="store_true",
@@ -248,8 +235,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     quick.add_argument("inputs", nargs="+", help="CIF files or directories.")
     quick.add_argument("-o", "--output", required=True, help="Bundle directory or .xlsx path.")
-    quick.add_argument("--no-recursive", action="store_true")
     _add_analysis_options(quick)
+
+    inspect = subparsers.add_parser("inspect", help="Verify a result bundle and summarize its contents.")
+    inspect.add_argument("bundle", help="Result bundle directory to inspect.")
+    inspect.add_argument("--json", action="store_true", help="Print the inspection report as JSON.")
+
+    preset = subparsers.add_parser("preset", help="Create or inspect reusable analysis presets.")
+    preset_commands = preset.add_subparsers(dest="preset_command", required=True)
+    preset_save = preset_commands.add_parser("save", help="Save merged analysis options without running an analysis.")
+    preset_save.add_argument("-o", "--output", required=True, help="Preset JSON file to create.")
+    _add_analysis_options(preset_save, include_output_controls=False, include_json=False)
+    preset_save.add_argument("--overwrite", action="store_true", help="Replace an existing preset file.")
+    preset_show = preset_commands.add_parser("show", help="Validate and display a preset file.")
+    preset_show.add_argument("file", help="Preset JSON file.")
+    preset_show.add_argument("--json", action="store_true", help="Print the normalized preset values as JSON.")
 
     subparsers.add_parser("gui", help="Launch the optional Tk desktop interface.")
     return parser
@@ -260,12 +260,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "analyze":
+            analysis = resolve_cli_analysis(args)
             result = analyze_cifs(
                 args.inputs,
                 args.output,
-                settings=_analysis_settings(args),
-                recursive=not args.no_recursive,
-                include_excel=not args.no_excel,
+                settings=analysis.settings,
+                recursive=analysis.recursive,
+                include_excel=analysis.include_excel,
                 overwrite=args.overwrite,
             )
             _print_result(result, as_json=args.json)
@@ -285,16 +286,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0 if result.discovery and result.discovery.candidates else 2
 
         if args.command == "run":
+            analysis = resolve_cli_analysis(args)
             provider = MaterialsProjectProvider(_api_key(args))
             result = run_pipeline(
                 args.composition,
                 provider,
                 args.output,
                 discovery_settings=_discovery_settings(args),
-                analysis_settings=_analysis_settings(args),
+                analysis_settings=analysis.settings,
                 conventional_unit_cell=not args.primitive,
-                include_elasticity=not args.no_elasticity,
-                include_excel=not args.no_excel,
+                include_elasticity=analysis.settings.include_elasticity,
+                include_excel=analysis.include_excel,
                 overwrite=args.overwrite,
                 confirm_above=args.confirm_above,
                 authorize_large_download=args.yes,
@@ -325,6 +327,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"ERROR: {error}", file=sys.stderr)
             return 0 if report["ok"] else 2
 
+        if args.command == "inspect":
+            report = inspect_bundle(args.bundle)
+            if args.json:
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+            else:
+                print(format_inspection(report))
+            return 0 if report.get("ok") else 2
+
         if args.command == "benchmark":
             report = run_reference_benchmarks(
                 args.output,
@@ -343,16 +353,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "quick-export":
             from .quick_export import quick_export
 
+            excel_path = args.output if Path(args.output).suffix.lower() == ".xlsx" else None
+            analysis = resolve_cli_analysis(args)
             result = quick_export(
                 args.inputs,
                 args.output,
-                settings=_analysis_settings(args),
-                recursive=not args.no_recursive,
-                include_excel=not args.no_excel,
+                settings=analysis.settings,
+                recursive=analysis.recursive,
+                include_excel=analysis.include_excel,
                 overwrite=args.overwrite,
             )
-            _print_result(result, as_json=args.json)
+            _print_result(result, as_json=args.json, excel_path=excel_path)
             return _pipeline_exit_code(result)
+
+        if args.command == "preset":
+            if args.preset_command == "save":
+                analysis = resolve_cli_analysis(args)
+                target = save_cli_preset(
+                    args.output,
+                    analysis.preset_values,
+                    overwrite=args.overwrite,
+                )
+                print(f"Preset saved: {target}")
+                return 0
+            if args.preset_command == "show":
+                values = show_cli_preset(args.file)
+                if args.json:
+                    print(json.dumps(values, indent=2, ensure_ascii=False))
+                else:
+                    print(f"Preset: {Path(args.file).expanduser()}")
+                    for key, value in sorted(values.items()):
+                        print(f"{key}: {value}")
+                return 0
 
         if args.command == "gui":
             from .gui import main as gui_main

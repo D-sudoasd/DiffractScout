@@ -83,6 +83,20 @@ Plane-normal elasticity always uses the three-index plane
 
 ## Validation guidance
 
+The optional [independent-engine comparison](../validation_cases/independent_engines/README.md)
+runs the packaged synthetic CIFs through both DiffractScout and pymatgen at the
+same wavelength and cell setting. It compares coincident peak groups by
+spacing, checks reflection selection rules, and compares cubic directional
+moduli with pymatgen's tensor implementation. Versioned reports record input
+hashes, tolerances, software versions, and normalized-intensity differences.
+Intensity differences are reported separately from the peak-position and
+elasticity acceptance checks because the two scattering-factor models differ.
+
+```bash
+python -m pip install -e ".[mp]"
+python scripts/compare_reference_engines.py --output outputs/reference_engines
+```
+
 1. **Contract tests**: \(J = I / V^2\), ranks consistent with channels, LP ratio
    \(I_{\mathrm{with\,LP}} / I_{\mathrm{no\,LP}}\).
 2. **Analytic fixtures**: known monoatomic cells and expected \(\lvert F\rvert^2\).

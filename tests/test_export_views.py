@@ -6,6 +6,7 @@ import csv
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from diffractscout.demo import write_demo_inputs
 from diffractscout.export_views import (
@@ -33,8 +34,12 @@ def test_demo_analyze_writes_lab_view_sheets(tmp_path: Path) -> None:
     assert "推荐峰表" in workbook.sheetnames
     assert "使用说明" in workbook.sheetnames
     assert "Peaks" in workbook.sheetnames
-    # Lab-first workbook opens on the Chinese analysis long table.
-    assert workbook.active.title == "推荐峰表"
+    assert workbook.sheetnames[0] == "结果概览"
+    assert workbook.active.title == "结果概览"
+    overview = workbook["结果概览"]
+    assert overview["A1"].value
+    assert "物相数" in [overview.cell(row, 1).value for row in range(1, overview.max_row + 1)]
+    assert any(cell.hyperlink for row in overview.iter_rows() for cell in row)
     recommend = workbook["推荐峰表"]
     headers = [cell.value for cell in next(recommend.iter_rows(min_row=1, max_row=1))]
     assert headers[0] == "物相名称"
@@ -63,12 +68,14 @@ def test_peak_and_recommend_sheets_have_freeze_and_autofilter(tmp_path: Path) ->
     workbook = load_workbook(result.output_dir / "results.xlsx", data_only=False)
     for sheet_name in ("Peaks", "推荐峰表"):
         sheet = workbook[sheet_name]
-        assert sheet.freeze_panes == "A2"
+        assert sheet.freeze_panes == "C2"
         assert sheet.auto_filter.ref
         assert sheet.auto_filter.ref.startswith("A1:")
         headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
         assert headers[0] in {"phase_name", "物相名称"}
         assert sheet.max_row >= 2
+        assert sheet.row_dimensions[1].height >= 36
+        assert sheet.page_setup.orientation == "landscape"
 
 
 def test_analysis_peak_columns_present_in_peaks_and_csv(tmp_path: Path) -> None:
@@ -78,10 +85,12 @@ def test_analysis_peak_columns_present_in_peaks_and_csv(tmp_path: Path) -> None:
         assert col in PEAK_HEADERS
     workbook = load_workbook(result.output_dir / "results.xlsx", data_only=False)
     peak_headers = [cell.value for cell in next(workbook["Peaks"].iter_rows(min_row=1, max_row=1))]
+    assert peak_headers == PEAK_HEADERS
     for col in ANALYSIS_PEAK_COLUMNS:
         assert col in peak_headers
     with (result.output_dir / "peak_reference.csv").open(encoding="utf-8-sig", newline="") as handle:
         fieldnames = list(csv.DictReader(handle).fieldnames or [])
+    assert fieldnames == PEAK_HEADERS
     for col in ANALYSIS_PEAK_COLUMNS:
         assert col in fieldnames
     # Analysis-first ordering: identity and geometry before deep SF extras.
@@ -138,7 +147,9 @@ def test_include_patterns_false_skips_profile_export(tmp_path: Path) -> None:
         include_excel=True,
     )
     assert not (result.output_dir / "pattern_profiles.csv").exists()
-    workbook = load_workbook(result.output_dir / "results.xlsx", read_only=True)
+    workbook = load_workbook(result.output_dir / "results.xlsx", read_only=False)
+    assert workbook.sheetnames[0] == "结果概览"
+    assert workbook.active.title == "结果概览"
     assert "Patterns" not in workbook.sheetnames
     assert "Peaks" in workbook.sheetnames
 
@@ -152,6 +163,8 @@ def test_export_lab_views_false_omits_chinese_sheets(tmp_path: Path) -> None:
         include_excel=True,
     )
     workbook = load_workbook(result.output_dir / "results.xlsx", read_only=True)
+    assert workbook.sheetnames[0] == "Overview"
+    assert workbook.active.title == "Overview"
     assert "推荐峰表" not in workbook.sheetnames
     assert "使用说明" not in workbook.sheetnames
     assert "Peaks" in workbook.sheetnames
@@ -247,5 +260,99 @@ def test_write_excel_workbook_freeze_filter_on_empty_peaks(tmp_path: Path) -> No
     )
     workbook = load_workbook(path)
     peaks = workbook["Peaks"]
-    assert peaks.freeze_panes == "A2"
+    assert peaks.freeze_panes == "C2"
     assert peaks.auto_filter.ref
+
+
+def test_workbook_styles_preserve_values_and_fold_only_details(tmp_path: Path) -> None:
+    inputs = write_demo_inputs(tmp_path / "inputs")
+    result = analyze_cifs(
+        [inputs],
+        tmp_path / "bundle",
+        settings=AnalysisSettings(export_lab_views=True),
+        include_excel=True,
+    )
+    workbook = load_workbook(result.output_dir / "results.xlsx", data_only=False)
+    peaks = workbook["Peaks"]
+    headers = [cell.value for cell in peaks[1]]
+    normalized_column = headers.index("normalized_intensity") + 1
+    spacing_column = headers.index("d_spacing_A") + 1
+    sf_column = headers.index("structure_factor_sq") + 1
+    hash_column = headers.index("cif_sha256") + 1
+
+    assert peaks.cell(2, normalized_column).value == result.analyses[0].reflections[0].normalized_intensity
+    assert peaks.cell(2, normalized_column).number_format == "0.00"
+    assert peaks.cell(2, spacing_column).number_format == "0.0000"
+    assert peaks.column_dimensions[get_column_letter(sf_column)].hidden
+    assert peaks.column_dimensions[get_column_letter(sf_column)].outlineLevel == 1
+    assert not peaks.column_dimensions[get_column_letter(normalized_column)].hidden
+    assert peaks.column_dimensions[get_column_letter(hash_column)].hidden
+    assert peaks.cell(2, hash_column).value
+    assert peaks.print_area == f"'Peaks'!$A$1:${get_column_letter(normalized_column)}${peaks.max_row}"
+
+    chinese = workbook["推荐峰表"]
+    chinese_headers = [cell.value for cell in chinese[1]]
+    chinese_d_column = chinese_headers.index("d间距_Å") + 1
+    chinese_intensity_column = chinese_headers.index("相对强度_相内max100") + 1
+    assert chinese.cell(2, chinese_d_column).number_format == "0.0000"
+    assert chinese.cell(2, chinese_intensity_column).number_format == "0.00"
+    assert chinese.print_area == f"'推荐峰表'!$A$1:${get_column_letter(chinese_intensity_column)}${chinese.max_row}"
+
+    diagnostics = workbook["Diagnostics"]
+    diagnostic_headers = [cell.value for cell in diagnostics[1]]
+    message_column = diagnostic_headers.index("message") + 1
+    assert not diagnostics.column_dimensions[get_column_letter(message_column)].hidden
+
+    # Data bars use a fixed 0–100 range rather than cross-sheet autoscaling.
+    bars = [
+        rule.dataBar
+        for area, rules in peaks.conditional_formatting._cf_rules.items()
+        for rule in rules
+        if rule.type == "dataBar"
+        and str(area.sqref)
+        == f"{get_column_letter(normalized_column)}2:{get_column_letter(normalized_column)}{peaks.max_row}"
+    ]
+    assert bars
+    assert [(bound.type, bound.val) for bound in bars[0].cfvo] == [("num", 0), ("num", 100)]
+
+
+def test_number_formats_keep_small_nonzero_values_visible() -> None:
+    from diffractscout.excel_styles import cjk_display_width, number_format_for_value
+
+    assert cjk_display_width("晶胞") == 4
+    assert number_format_for_value("d_spacing_A", 0.000001) == "0.000E+00"
+    assert number_format_for_value("d_spacing_A", 0.0) == "0.0000"
+    assert number_format_for_value("phase_relative_R_hkl_pct", 0.000001) == '0.000E+00"%"'
+    assert number_format_for_value("相内相对J_含LP_%", 0.0) == '0.00"%"'
+
+
+def test_diagnostics_message_and_item_wrap_without_exceeding_excel_height_limit(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "diagnostics.xlsx"
+    write_excel_workbook(
+        path,
+        summary=[],
+        phases=[],
+        peaks=[],
+        elasticity=[],
+        candidates=[],
+        downloads=[],
+        diagnostics=[
+            {
+                "stage": "parse",
+                "item": "phase-name-with-context-" * 8,
+                "level": "warning",
+                "message": "This diagnostic message explains a concrete input issue. " * 20,
+            }
+        ],
+        patterns=[],
+        export_lab_views=False,
+        include_patterns=False,
+    )
+    diagnostics = load_workbook(path)["Diagnostics"]
+    assert diagnostics.column_dimensions["B"].width == 32
+    assert diagnostics.column_dimensions["D"].width == 80
+    assert diagnostics["B2"].alignment.wrap_text
+    assert diagnostics["D2"].alignment.wrap_text
+    assert 19 < diagnostics.row_dimensions[2].height <= 409.5

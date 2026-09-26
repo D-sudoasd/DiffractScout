@@ -243,6 +243,7 @@ def _clean_wheel_smoke(wheel: Path) -> dict[str, str]:
         run_installed("diffractscout", "--version")
         run_installed("diffractscout", "demo", "-o", str(demo), "--no-excel")
         run_installed("diffractscout", "verify", str(demo))
+        run_installed("diffractscout", "inspect", str(demo), "--json")
         run_installed("diffractscout", "benchmark", "-o", str(benchmark))
         packaged_cif = (
             "import diffractscout,pathlib; "
@@ -258,15 +259,19 @@ def _clean_wheel_smoke(wheel: Path) -> dict[str, str]:
         ).stdout.strip()
         if not Path(located).is_file():
             raise SystemExit(f"Installed benchmark CIF is missing: {located}")
-        run_installed("diffractscout-quick-export", located, "-o", str(quick))
+        preset = root / "analysis-preset.json"
+        run_installed("diffractscout", "preset", "save", "-o", str(preset), "--no-patterns")
+        run_installed("diffractscout", "preset", "show", str(preset), "--json")
+        run_installed("diffractscout-quick-export", located, "-o", str(quick), "--preset", str(preset))
         run_installed("diffractscout", "verify", str(root / "quick_bundle"))
+        run_installed("diffractscout", "inspect", str(root / "quick_bundle"), "--json")
         return {
             "mode": "system-site-packages" if reuse_dependencies else "isolated-dependencies",
             "package": str(wheel.resolve()),
             "source_tree_import": "rejected",
             "commands": (
                 "pip-check,entrypoint-launchers,entrypoint-metadata,installed-entrypoints,"
-                "version,demo,verify,benchmark,quick-export,verify"
+                "version,demo,verify,inspect,benchmark,preset-save,preset-show,quick-export,verify,inspect"
             ),
         }
 

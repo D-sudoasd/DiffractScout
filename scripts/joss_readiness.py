@@ -78,6 +78,13 @@ REQUIRED_PAPER_SECTIONS = (
     "References",
 )
 
+PAPER_SOURCE_PATHS = (
+    "paper/paper.md",
+    "paper/paper.bib",
+    "paper/fig_workflow.png",
+    "paper/fig_validation.png",
+)
+
 REQUIRED_REPOSITORY_FILES = (
     "LICENSE",
     "README.md",
@@ -333,10 +340,11 @@ def _release_acceptance(version: str | None) -> dict[str, Any]:
     }
 
 
-def _load_evidence() -> dict[str, Any]:
+def _load_evidence(path: Path | None = None) -> dict[str, Any]:
+    evidence_path = path if path is not None else EVIDENCE_PATH
     try:
-        payload = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return {"schema": "invalid", "error": str(exc)}
     return payload if isinstance(payload, dict) else {"schema": "invalid"}
 
@@ -718,14 +726,42 @@ def _paper_source_sha256(source_paths: list[Path]) -> str:
     return digest.hexdigest()
 
 
+def _official_build_sources_match(
+    build_commit: str,
+    current_head: str,
+) -> bool:
+    """Require the official PDF build commit to contain the current paper source blobs."""
+
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", build_commit) or not re.fullmatch(
+        r"[0-9a-fA-F]{40}", current_head
+    ):
+        return False
+    build_commit = build_commit.lower()
+    current_head = current_head.lower()
+    try:
+        _run_git("merge-base", "--is-ancestor", build_commit, current_head)
+        for relative_path in PAPER_SOURCE_PATHS:
+            build_blob = _run_git(
+                "rev-parse", "--verify", f"{build_commit}:{relative_path}"
+            )
+            head_blob = _run_git(
+                "rev-parse", "--verify", f"{current_head}:{relative_path}"
+            )
+            if (
+                _run_git("cat-file", "-t", str(build_blob)) != "blob"
+                or _run_git("cat-file", "-t", str(head_blob)) != "blob"
+            ):
+                return False
+            if build_blob != head_blob:
+                return False
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
 def _paper_pdf_metadata(evidence: dict[str, Any]) -> dict[str, Any]:
     path = ROOT / "paper/paper.pdf"
-    source_paths = [
-        ROOT / "paper/paper.md",
-        ROOT / "paper/paper.bib",
-        ROOT / "paper/fig_workflow.png",
-        ROOT / "paper/fig_validation.png",
-    ]
+    source_paths = [ROOT / relative_path for relative_path in PAPER_SOURCE_PATHS]
     raw_submission = evidence.get("submission_metadata")
     submission = raw_submission if isinstance(raw_submission, dict) else {}
     try:
@@ -775,12 +811,16 @@ def _submission_metadata(evidence: dict[str, Any], *, current_head: str) -> dict
         for name in ("remote_ci_url", "official_joss_build_url")
         if not _is_public_https_url(values.get(name))
     ]
-    invalid_commits = [
-        name
-        for name in ("remote_ci_commit", "official_joss_build_commit")
-        if not re.fullmatch(r"[0-9a-fA-F]{40}", str(values.get(name, "")))
-        or str(values.get(name, "")).lower() != current_head.lower()
-    ]
+    remote_ci_commit = str(values.get("remote_ci_commit", ""))
+    official_build_commit = str(values.get("official_joss_build_commit", ""))
+    invalid_commits: list[str] = []
+    if (
+        not re.fullmatch(r"[0-9a-fA-F]{40}", remote_ci_commit)
+        or remote_ci_commit.lower() != current_head.lower()
+    ):
+        invalid_commits.append("remote_ci_commit")
+    if not _official_build_sources_match(official_build_commit, current_head):
+        invalid_commits.append("official_joss_build_commit")
     return {
         "ok": not missing_or_false and not invalid_urls and not invalid_commits,
         "required_confirmations": list(SUBMISSION_CONFIRMATIONS),
@@ -796,6 +836,7 @@ def _public_development_snapshot(
     *,
     public_since: date | None,
     as_of: date,
+    evidence_path: Path = EVIDENCE_PATH,
 ) -> dict[str, Any]:
     """Count only ledger-linked public repository activity, never local timestamps."""
 
@@ -816,11 +857,15 @@ def _public_development_snapshot(
             continue
         accepted.append(record)
     active_months = Counter(str(record["date"])[:7] for record in accepted)
+    try:
+        evidence_source = evidence_path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        evidence_source = str(evidence_path.resolve())
     return {
         "entries": len(accepted),
         "active_months": dict(sorted(active_months.items())),
         "active_month_count": len(active_months),
-        "source": "docs/evidence/impact_evidence.json public_development_activity",
+        "source": f"{evidence_source} public_development_activity",
         "limitation": (
             "Each ledger URL remains subject to human review; local commit dates are context only."
         ),
@@ -928,11 +973,20 @@ def build_report(
     public_since: date | None,
     as_of: date,
     stage: str = "submission",
+    evidence_file: Path | None = None,
 ) -> dict[str, Any]:
     if stage not in STAGES:
         raise ValueError(f"Unknown readiness stage: {stage!r}.")
-    evidence = _load_evidence()
+    selected_evidence_path = (
+        evidence_file.expanduser().resolve() if evidence_file is not None else EVIDENCE_PATH
+    )
+    evidence = _load_evidence(selected_evidence_path)
     evidence_errors = validate_evidence_payload(evidence)
+    evidence_load_error = (
+        str(evidence["error"])
+        if evidence.get("schema") == "invalid" and isinstance(evidence.get("error"), str)
+        else None
+    )
     citation = _citation_metadata()
     remote = _git_remote()
     version = _version_metadata()
@@ -1080,6 +1134,7 @@ def build_report(
         evidence,
         public_since=public_since,
         as_of=as_of,
+        evidence_path=selected_evidence_path,
     )
     active_month_count = int(public_development["active_month_count"])
     _check(
@@ -1160,7 +1215,10 @@ def build_report(
         "pass" if submission_source["ok"] else "block",
         submission_source,
         gate="project",
-        reason="Submission and publication must use a clean checkout whose HEAD matches the recorded remote CI and official paper builds.",
+        reason=(
+            "Submission and publication must use a clean checkout whose HEAD matches remote CI; "
+            "the official paper build must match the current paper input blobs."
+        ),
         required_from="submission",
     )
 
@@ -1242,6 +1300,8 @@ def build_report(
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "as_of": as_of.isoformat(),
         "stage": stage,
+        "evidence_file": str(selected_evidence_path),
+        "evidence_load_error": evidence_load_error,
         "public_since": public_since.isoformat() if public_since else None,
         "earliest_calendar_eligibility": eligible_on.isoformat() if eligible_on else None,
         "ready": selected_status["ready"],
@@ -1283,6 +1343,7 @@ def report_markdown(report: dict[str, Any]) -> str:
         "",
         f"- As of: `{report['as_of']}`",
         f"- Selected stage: `{report['stage']}`",
+        f"- Evidence ledger: `{report['evidence_file']}`",
         f"- Public since: `{report['public_since'] or 'not recorded'}`",
         f"- Earliest six-month date: `{report['earliest_calendar_eligibility'] or 'not calculable'}`",
         f"- Status: **{'READY' if report['ready'] else 'BLOCKED'}**",
@@ -1332,11 +1393,24 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--stage", choices=STAGES, default="submission")
+    parser.add_argument(
+        "--evidence-file",
+        metavar="PATH",
+        help=(
+            "Read a separate JSON evidence ledger (default: "
+            "docs/evidence/impact_evidence.json). The selected file is read-only."
+        ),
+    )
     args = parser.parse_args()
 
     public_since = date.fromisoformat(args.public_since) if args.public_since else None
     as_of = date.fromisoformat(args.as_of)
-    report = build_report(public_since=public_since, as_of=as_of, stage=args.stage)
+    report = build_report(
+        public_since=public_since,
+        as_of=as_of,
+        stage=args.stage,
+        evidence_file=Path(args.evidence_file) if args.evidence_file else None,
+    )
     if args.output:
         output = Path(args.output).expanduser().resolve()
         output.mkdir(parents=True, exist_ok=True)

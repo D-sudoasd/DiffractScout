@@ -6,6 +6,22 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Added
 
+- Reusable CLI/desktop analysis presets and read-only inspection of verified
+  result bundles, with explicit command-line override semantics. Presets exclude
+  credentials, paths, overwrite authorization, and manual tensor overrides.
+- Reproducible comparisons with pymatgen for synthetic diffraction peak
+  positions and cubic directional moduli, with numerical reports retained by CI.
+- Revised JOSS manuscript, software-comparison references, and evidence-based
+  submission documentation.
+- Separate evidence-file input for JOSS readiness checks, so final verification
+  records can reference a committed source without changing its Git identity.
+- Excel result overview and worksheet navigation, semantic header colors,
+  consistent scientific number formats, frozen phase columns, expandable
+  detail columns, and phase-relative intensity bars without changing canonical
+  data-sheet headers or stored scientific values.
+- Separate Excel preview, permanent workbook-copy, and result-folder actions,
+  with phase/reflection/diagnostic counts in completion feedback.
+
 - Windows launchers: `启动DiffractScout.bat` (GUI) and `quick_export_diffractscout.bat` (drag-and-drop quick-export with Excel next to the first input).
 - Packaging stub `scripts/package_windows_portable.py` documenting a future PyInstaller portable layout (`--help` / `--print-recipe`; no freeze yet).
 - Optional dependencies `figures` (matplotlib) and `gui-dnd` (tkinterdnd2); `paper` remains as a matplotlib alias.
@@ -21,6 +37,15 @@ All notable changes are recorded here. The project follows semantic versioning a
   scaffold for the required real multiphase-alloy research case.
 
 ### Fixed
+
+- Preserved saved changes in temporary Excel previews when closing the GUI.
+- Rejected `.xlsx` quick-export targets combined with disabled Excel output
+  before writing, and reported the retained bundle workbook if publishing its
+  separate Excel copy fails.
+- Prevented concurrent preset saves from replacing a newly created target
+  without explicit overwrite authorization.
+- Reported CLI error diagnostics with their actual severity and exposed the
+  generated result files in completion summaries.
 
 - Windows `quick_export_diffractscout.bat` now uses `scripts/diffractscout_entry.py`
   and the same checkout interpreter order as the GUI launcher (repository

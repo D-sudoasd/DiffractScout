@@ -7,6 +7,7 @@ import math
 import queue
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,7 @@ from .models import AnalysisSettings, DiscoverySettings, ElasticTensor, Pipeline
 from .pipeline import analyze_cifs, run_pipeline
 from .providers.materials_project import MaterialsProjectProvider
 from .selection import validate_discovery_settings
+from .utils import sha256_file
 
 try:  # Tk remains optional on minimal/headless Python installations.
     import tkinter as tk
@@ -64,6 +66,28 @@ _SHORTCUT_30 = "30 keV"
 _SHORTCUT_83 = "83 keV"
 _SHORTCUT_CUSTOM = "Custom"
 _ENERGY_SHORTCUTS = (_SHORTCUT_CU, _SHORTCUT_30, _SHORTCUT_83, _SHORTCUT_CUSTOM)
+_ANALYSIS_PRESET_FIELDS = (
+    "input_mode",
+    "source_preset",
+    "radiation_value",
+    "two_theta_min",
+    "two_theta_max",
+    "step",
+    "fwhm",
+    "eta",
+    "d_min_A",
+    "d_max_A",
+    "profile_model",
+    "pattern_axis",
+    "max_profile_points",
+    "max_reflection_estimate",
+    "include_excel",
+    "include_elasticity",
+    "export_lab_views",
+    "include_patterns",
+    "include_figures",
+    "local_recursive",
+)
 
 
 def canonical_input_identity(path: str | Path) -> str:
@@ -75,6 +99,20 @@ def canonical_input_identity(path: str | Path) -> str:
     """
 
     return str(Path(path).expanduser().resolve(strict=False))
+
+
+def _local_input_problem(path: Path) -> str | None:
+    """Return a concise input error without walking the contents of folders."""
+
+    try:
+        mode = path.stat().st_mode
+    except OSError:
+        return "unavailable"
+    if stat.S_ISDIR(mode):
+        return None
+    if stat.S_ISREG(mode):
+        return None if path.suffix.lower() == ".cif" else "not_cif"
+    return "unsupported"
 
 
 def _required_float(value: object, field: str) -> float:
@@ -241,11 +279,15 @@ if tk is not None:
             self.events: queue.Queue[tuple[str, object]] = queue.Queue()
             self.running = False
             self._worker_thread: threading.Thread | None = None
-            self._preview_dirs: list[Path] = []
+            # Each preview records its directory, workbook path, and SHA-256
+            # at creation. Changed previews are retained when the GUI closes.
+            self._preview_dirs: list[tuple[Path, Path, str]] = []
             self.last_output: Path | None = None
             self.local_inputs: list[Path] = []
             self.elastic_overrides: dict[str, ElasticTensor] = {}
             self._run_buttons: list[ttk.Button] = []
+            self._result_buttons: list[ttk.Button] = []
+            self._preset_buttons: list[ttk.Button] = []
             self._radiation_source_widgets: list[ttk.Combobox] = []
             self._radiation_value_widgets: list[ttk.Entry] = []
             self._cij_widgets: list[Any] = []
@@ -960,6 +1002,28 @@ if tk is not None:
             # remains vertically scrollable and the run action stays pinned.
             box.columnconfigure(1, weight=1)
 
+            preset_actions = ttk.Frame(box, style="Card.TFrame")
+            preset_actions.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 3))
+            preset_actions.columnconfigure((0, 1), weight=1)
+            load_button = ttk.Button(
+                preset_actions,
+                text=self._t("load_parameters"),
+                style="Secondary.TButton",
+                command=self._load_analysis_preset,
+            )
+            load_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+            self._register_text(load_button, "load_parameters")
+            save_button = ttk.Button(
+                preset_actions,
+                text=self._t("save_parameters"),
+                style="Secondary.TButton",
+                command=self._save_analysis_preset,
+            )
+            save_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
+            self._register_text(save_button, "save_parameters")
+            self._preset_buttons.extend((load_button, save_button))
+            row_offset = 1
+
             def add_label_field(row: int, key: str, variable: Any, *, values: tuple[str, ...] | None = None) -> Any:
                 label = ttk.Label(box, text=self._t(key), style="Card.TLabel")
                 label.grid(row=row, column=0, sticky="w", pady=4)
@@ -979,15 +1043,15 @@ if tk is not None:
                     self._add_hover_help(field, "help_pattern_axis")
                 return field
 
-            add_label_field(0, "energy_shortcut", self.energy_shortcut, values=_ENERGY_SHORTCUTS)
-            add_label_field(1, "input_mode", self.input_mode, values=("source", "energy", "wavelength"))
+            add_label_field(row_offset + 0, "energy_shortcut", self.energy_shortcut, values=_ENERGY_SHORTCUTS)
+            add_label_field(row_offset + 1, "input_mode", self.input_mode, values=("source", "energy", "wavelength"))
             source = add_label_field(
-                2,
+                row_offset + 2,
                 "source_preset",
                 self.source_preset,
                 values=("Cu Ka", "Co Ka", "Fe Ka", "Mo Ka", "Ag Ka", "Custom"),
             )
-            value = add_label_field(3, "radiation_value", self.radiation_value)
+            value = add_label_field(row_offset + 3, "radiation_value", self.radiation_value)
             self._radiation_source_widgets.append(source)
             self._radiation_value_widgets.append(value)
 
@@ -1000,10 +1064,10 @@ if tk is not None:
                 ("d_min", self.d_min_A),
                 ("d_max", self.d_max_A),
             )
-            for row, (key, variable) in enumerate(labels, start=4):
+            for row, (key, variable) in enumerate(labels, start=row_offset + 4):
                 add_label_field(row, key, variable)
-            add_label_field(4 + len(labels), "profile_model", self.profile_model, values=_PROFILE_MODELS)
-            add_label_field(5 + len(labels), "pattern_axis", self.pattern_axis, values=_PATTERN_AXES)
+            add_label_field(row_offset + 4 + len(labels), "profile_model", self.profile_model, values=_PROFILE_MODELS)
+            add_label_field(row_offset + 5 + len(labels), "pattern_axis", self.pattern_axis, values=_PATTERN_AXES)
 
             limits = self._labeled_frame(parent, "resource_guards", padding=10)
             limits.pack(fill="x", pady=(8, 0))
@@ -1020,6 +1084,97 @@ if tk is not None:
                 row=1, column=1, sticky="ew", padx=(12, 0), pady=4
             )
             limits.columnconfigure(1, weight=1)
+
+        def _analysis_preset_values(self) -> dict[str, object]:
+            values = {
+                field: getattr(self, field).get()
+                for field in _ANALYSIS_PRESET_FIELDS
+            }
+            # When Excel is switched off, the checkbox is disabled and forced
+            # false. Save the user's independent lab-view preference instead.
+            if self._lab_views_forced_off:
+                values["export_lab_views"] = self._lab_views_preference
+            return values
+
+        def _save_analysis_preset(self) -> None:
+            if getattr(self, "running", False):
+                return
+            selected = filedialog.asksaveasfilename(
+                title=self._t("dialog_save_parameters"),
+                initialfile="diffractscout-analysis.json",
+                defaultextension=".json",
+                filetypes=((self._t("filetype_preset"), "*.json"), (self._t("filetype_all"), "*.*")),
+                confirmoverwrite=False,
+            )
+            if not selected:
+                return
+            target = Path(selected).expanduser()
+            if target.exists() and not messagebox.askyesno(
+                self._t("dialog_overwrite_preset_title"),
+                self._t("dialog_overwrite_preset_message", path=target),
+            ):
+                return
+            try:
+                from .gui_settings import save_analysis_preset
+
+                save_analysis_preset(target, self._analysis_preset_values())
+                self._set_status("status_parameters_saved")
+                self._log(self._t("log_parameters_saved", path=target), "success")
+            except Exception as exc:
+                messagebox.showerror(self._t("err_save_parameters"), str(exc))
+
+        def _load_analysis_preset(self) -> None:
+            if getattr(self, "running", False):
+                return
+            selected = filedialog.askopenfilename(
+                title=self._t("dialog_load_parameters"),
+                filetypes=((self._t("filetype_preset"), "*.json"), (self._t("filetype_all"), "*.*")),
+            )
+            if not selected:
+                return
+            try:
+                from .gui_settings import load_analysis_preset
+
+                values = load_analysis_preset(Path(selected).expanduser())
+                expected = set(_ANALYSIS_PRESET_FIELDS)
+                if set(values) != expected:
+                    missing = sorted(expected - set(values))
+                    extra = sorted(set(values) - expected)
+                    raise ValueError(
+                        self._t(
+                            "err_preset_fields",
+                            missing=", ".join(missing) or "—",
+                            extra=", ".join(extra) or "—",
+                        )
+                    )
+                # Validate the complete loaded form before changing any Tk
+                # variable, so a rejected preset cannot be partly applied.
+                analysis_settings_from_form(values)
+
+                was_syncing_radiation = self._syncing_radiation
+                was_syncing_outputs = self._syncing_output_dependencies
+                self._syncing_radiation = True
+                self._syncing_output_dependencies = True
+                try:
+                    for field in _ANALYSIS_PRESET_FIELDS:
+                        getattr(self, field).set(values[field])
+                    self._previous_radiation_mode = self.input_mode.get()
+                    self._previous_source_preset = self.source_preset.get()
+                    self._previous_radiation_value = self.radiation_value.get()
+                    self._radiation_initialized = True
+                    self._lab_views_preference = bool(values["export_lab_views"])
+                    self._lab_views_forced_off = not bool(values["include_excel"])
+                finally:
+                    self._syncing_radiation = was_syncing_radiation
+                    self._syncing_output_dependencies = was_syncing_outputs
+                self._sync_radiation_controls()
+                self._sync_output_dependencies()
+                self._set_status("status_parameters_loaded")
+                self._log(
+                    self._t("log_parameters_loaded", path=selected), "success"
+                )
+            except Exception as exc:
+                messagebox.showerror(self._t("err_load_parameters"), str(exc))
 
         def _build_cij_panel(self, parent: ttk.Frame) -> None:
             box = self._labeled_frame(parent, "cij_panel", padding=8)
@@ -1170,23 +1325,58 @@ if tk is not None:
             # Keep the button's requested height inside the bar at the
             # minimum window size; otherwise vertical pack padding clips its
             # native glyph area before the user can resize the window.
-            bar = tk.Frame(self, bg="#E5EDF3", height=42)
+            bar = tk.Frame(self, bg="#E5EDF3", height=48)
             bar.pack(fill="x", side="bottom")
             bar.pack_propagate(False)
-            ttk.Label(bar, textvariable=self.status_text, background="#E5EDF3", foreground=NAVY).pack(
-                side="left", padx=14
-            )
-            self.progress = ttk.Progressbar(bar, mode="indeterminate", length=140)
-            self.progress.pack(side="right", padx=(8, 14), pady=7)
-            self.open_button = ttk.Button(
+            self.status_label = ttk.Label(
                 bar,
-                text=self._t("open_result"),
+                textvariable=self.status_text,
+                background="#E5EDF3",
+                foreground=NAVY,
+                width=30,
+                wraplength=230,
+                anchor="w",
+                justify="left",
+            )
+            self.progress = ttk.Progressbar(bar, mode="indeterminate", length=100)
+            self.progress.pack(side="right", padx=(6, 12), pady=8)
+            result_actions = ttk.Frame(bar)
+            result_actions.pack(side="right", padx=(4, 0), pady=4)
+            self.preview_button = ttk.Button(
+                result_actions,
+                text=self._t("preview_excel"),
                 style="Secondary.TButton",
-                command=self._open_last_output,
+                command=self._preview_last_workbook,
                 state="disabled",
             )
-            self.open_button.pack(side="right", pady=4)
-            self._register_text(self.open_button, "open_result")
+            self.preview_button.grid(row=0, column=0, padx=(0, 3))
+            self._register_text(self.preview_button, "preview_excel")
+            self._add_hover_help(self.preview_button, "help_preview_excel")
+            self.save_excel_button = ttk.Button(
+                result_actions,
+                text=self._t("save_excel_as"),
+                style="Secondary.TButton",
+                command=self._save_excel_copy,
+                state="disabled",
+            )
+            self.save_excel_button.grid(row=0, column=1, padx=3)
+            self._register_text(self.save_excel_button, "save_excel_as")
+            self.open_folder_button = ttk.Button(
+                result_actions,
+                text=self._t("open_result_folder"),
+                style="Secondary.TButton",
+                command=self._open_last_output_folder,
+                state="disabled",
+            )
+            self.open_folder_button.grid(row=0, column=2, padx=(3, 0))
+            self._register_text(self.open_folder_button, "open_result_folder")
+            self._result_buttons.extend(
+                (self.preview_button, self.save_excel_button, self.open_folder_button)
+            )
+            self.status_label.pack(side="left", fill="both", expand=True, padx=(14, 4))
+            # Keep this alias for code and downstream tests that referred to
+            # the former single result action.
+            self.open_button = self.preview_button
 
         def _enable_dnd(self, widget: Any) -> None:
             if not _HAS_DND or DND_FILES is None:
@@ -1437,11 +1627,18 @@ if tk is not None:
                     label.configure(text=self._t(unit_key))
                 if not self._syncing_shortcut:
                     # Keep shortcut label coherent when mode is edited manually.
+                    energy_value = self._valid_radiation_value(
+                        self.radiation_value.get()
+                    )
                     if mode == "source" and source == "Cu Ka":
                         expected = _SHORTCUT_CU
-                    elif mode == "energy" and self.radiation_value.get().strip() == "30":
+                    elif mode == "energy" and energy_value is not None and math.isclose(
+                        energy_value, 30.0, rel_tol=0.0, abs_tol=1e-9
+                    ):
                         expected = _SHORTCUT_30
-                    elif mode == "energy" and self.radiation_value.get().strip() == "83":
+                    elif mode == "energy" and energy_value is not None and math.isclose(
+                        energy_value, 83.0, rel_tol=0.0, abs_tol=1e-9
+                    ):
                         expected = _SHORTCUT_83
                     else:
                         expected = _SHORTCUT_CUSTOM
@@ -1602,12 +1799,41 @@ if tk is not None:
 
         def _add_input_paths(self, paths: Any) -> None:
             existing = {path.resolve() for path in self.local_inputs}
+            invalid: list[tuple[Path, str]] = []
             for path in paths:
                 resolved = Path(path).expanduser().resolve()
+                problem = _local_input_problem(resolved)
+                if problem is not None:
+                    invalid.append((resolved, problem))
+                    continue
                 if resolved not in existing:
                     self.local_inputs.append(resolved)
                     existing.add(resolved)
             self._refresh_inputs()
+            if invalid:
+                details = self._format_input_problems(invalid)
+                title = self._t("err_invalid_local_inputs_title")
+                message = self._t("err_invalid_local_inputs", details=details)
+                if self.local_inputs:
+                    messagebox.showwarning(title, message)
+                else:
+                    messagebox.showerror(title, message)
+
+        def _format_input_problems(self, problems: list[tuple[Path, str]]) -> str:
+            shown = problems[:5]
+            details = "\n".join(
+                self._t(
+                    "invalid_input_item",
+                    path=path,
+                    reason=self._t(f"input_problem_{reason}"),
+                )
+                for path, reason in shown
+            )
+            if len(problems) > len(shown):
+                details += "\n" + self._t(
+                    "invalid_input_more", n=len(problems) - len(shown)
+                )
+            return details
 
         def _remove_inputs(self) -> None:
             selected = set(self.input_list.curselection())
@@ -1711,6 +1937,10 @@ if tk is not None:
 
             if "2theta range must satisfy" in lowered or "2θ range must satisfy" in lowered:
                 return self._t("validation_range")
+            if "no cif files were found in the supplied inputs" in lowered:
+                return self._t("err_no_cif_found")
+            if lowered.startswith("input path does not exist:"):
+                return self._t("err_input_disappeared", path=detail.split(":", 1)[-1].strip())
             if "diffraction settings must be finite numbers" in lowered:
                 return self._t("validation_finite")
             if "step_deg and fwhm_deg must be positive" in lowered:
@@ -1785,7 +2015,30 @@ if tk is not None:
             except ValueError as exc:
                 messagebox.showerror(self._t("err_title_settings"), self._validation_message(exc))
                 return
-            inputs = [str(path) for path in self.local_inputs]
+            valid_inputs: list[Path] = []
+            invalid_inputs: list[tuple[Path, str]] = []
+            for path in self.local_inputs:
+                problem = _local_input_problem(path)
+                if problem is None:
+                    valid_inputs.append(path)
+                else:
+                    invalid_inputs.append((path, problem))
+            if invalid_inputs:
+                details = self._format_input_problems(invalid_inputs)
+                title = self._t("err_invalid_local_inputs_title")
+                message = self._t("err_invalid_local_inputs", details=details)
+                messagebox.showerror(title, message)
+                return
+            if not valid_inputs:
+                messagebox.showerror(
+                    self._t("err_title_missing"), self._t("err_no_cif_found")
+                )
+                return
+
+            # Folder contents are deliberately not scanned here. The pipeline
+            # walks selected folders in its worker thread, so empty folders
+            # are reported without freezing Tk's event loop.
+            inputs = [str(path) for path in valid_inputs]
             overrides = dict(self.elastic_overrides) if self.elastic_overrides else None
             recursive = bool(self.local_recursive.get())
             include_excel = bool(self.include_excel.get())
@@ -1864,6 +2117,8 @@ if tk is not None:
             for button in self._run_buttons:
                 button.configure(state="disabled")
             self._log(self._t("log_started", label=label), "info")
+            for button in self._result_buttons + self._preset_buttons:
+                button.configure(state="disabled")
             self._worker_thread = threading.Thread(target=self._worker, args=(function,), daemon=False)
             self._worker_thread.start()
 
@@ -1879,20 +2134,27 @@ if tk is not None:
             for button in self._run_buttons:
                 button.configure(state="normal")
             DiffractScoutApp._update_open_button_state(self)
+            for button in self._preset_buttons:
+                button.configure(state="normal")
 
         def _update_open_button_state(self) -> None:
-            if getattr(self, "running", False):
-                self.open_button.configure(state="disabled")
-                return
+            busy = bool(getattr(self, "running", False))
             target = getattr(self, "last_output", None)
-            usable = False
+            folder_exists = False
+            workbook_exists = False
             if target is not None:
                 path = Path(target)
-                usable = path.is_dir() and (
-                    (path / "manifest.json").is_file()
-                    or (path / "results.xlsx").is_file()
-                )
-            self.open_button.configure(state="normal" if usable else "disabled")
+                folder_exists = path.is_dir()
+                workbook_exists = folder_exists and (path / "results.xlsx").is_file()
+            self.preview_button.configure(
+                state="normal" if workbook_exists and not busy else "disabled"
+            )
+            self.save_excel_button.configure(
+                state="normal" if workbook_exists and not busy else "disabled"
+            )
+            self.open_folder_button.configure(
+                state="normal" if folder_exists and not busy else "disabled"
+            )
 
         def _log(self, text: str, level: str = "info") -> None:
             timestamp = datetime.now().strftime("%H:%M:%S")
@@ -1914,6 +2176,12 @@ if tk is not None:
                     assert isinstance(result, PipelineResult)
                     self.last_output = result.output_dir
                     error_count = sum(item.level == "error" for item in result.diagnostics)
+                    warning_count = sum(
+                        item.level == "warning" for item in result.diagnostics
+                    )
+                    peak_count = sum(
+                        len(analysis.reflections) for analysis in result.analyses
+                    )
                     if not result.analyses:
                         completion_key = "status_completed_empty"
                         log_level = "warning"
@@ -1952,10 +2220,21 @@ if tk is not None:
                             if diagnostic.level == "warning"
                             else "info",
                         )
-                    dialog = messagebox.showwarning if (not result.analyses or error_count) else messagebox.showinfo
+                    dialog = (
+                        messagebox.showwarning
+                        if (not result.analyses or error_count or warning_count)
+                        else messagebox.showinfo
+                    )
                     dialog(
                         self._t("dialog_result_title"),
-                        self._t("dialog_result_message", path=result.output_dir),
+                        self._t(
+                            "dialog_result_message",
+                            path=result.output_dir,
+                            phases=len(result.analyses),
+                            peaks=peak_count,
+                            warnings=warning_count,
+                            errors=error_count,
+                        ),
                     )
                 else:
                     exc, details = payload
@@ -1964,7 +2243,7 @@ if tk is not None:
                     self._log(str(details), "error")
                     messagebox.showerror(
                         self._t("dialog_failed_title"),
-                        self._t("dialog_failed_message", error=str(exc)),
+                        self._t("dialog_failed_message", error=self._validation_message(exc)),
                     )
             try:
                 self._poll_after_id = self.after(120, self._poll)
@@ -1982,50 +2261,135 @@ if tk is not None:
             self.log.configure(state="disabled")
 
         def _preview_workbook(self, workbook: Path) -> Path:
-            """Copy a result workbook outside its bundle before opening it.
-
-            Excel creates ``~$results.xlsx`` beside an opened workbook.  The
-            bundle is immutable evidence, so opening a preview copy keeps
-            verifier inputs unchanged while retaining the user's workbook.
-            """
+            """Open a temporary copy and retain it if Excel changed its contents."""
 
             preview_dir = Path(tempfile.mkdtemp(prefix="diffractscout-preview-"))
             preview_path = preview_dir / workbook.name
             try:
                 shutil.copy2(workbook, preview_path)
+                original_hash = sha256_file(preview_path)
             except Exception:
                 shutil.rmtree(preview_dir, ignore_errors=True)
                 raise
-            self._preview_dirs.append(preview_dir)
+            self._preview_dirs.append((preview_dir, preview_path, original_hash))
             return preview_path
 
-        def _cleanup_preview_dirs(self) -> None:
-            remaining: list[Path] = []
-            for preview_dir in list(self._preview_dirs):
-                try:
-                    if preview_dir.is_dir():
-                        shutil.rmtree(preview_dir)
-                except OSError:
-                    # Excel may still hold a preview open; leaving a temp
-                    # directory is safer than touching any user bundle.
-                    remaining.append(preview_dir)
-                    continue
-            self._preview_dirs = remaining
+        def _cleanup_preview_dirs(self) -> list[Path]:
+            """Delete unchanged previews; report changed or still-locked copies."""
 
-        def _open_last_output(self) -> None:
-            if self.last_output is None:
+            remaining: list[tuple[Path, Path, str]] = []
+            retained: list[Path] = []
+            for preview_dir, preview_path, original_hash in list(self._preview_dirs):
+                try:
+                    if not preview_dir.is_dir():
+                        continue
+                    if preview_path.is_file() and sha256_file(preview_path) != original_hash:
+                        remaining.append((preview_dir, preview_path, original_hash))
+                        retained.append(preview_path)
+                        continue
+                    children = list(preview_dir.iterdir())
+                    if not children:
+                        preview_dir.rmdir()
+                        continue
+                    if (
+                        len(children) != 1
+                        or children[0] != preview_path
+                        or not children[0].is_file()
+                        or children[0].is_symlink()
+                    ):
+                        remaining.append((preview_dir, preview_path, original_hash))
+                        retained.append(preview_dir)
+                        continue
+                    # Remove only the unchanged workbook that the app created.
+                    # Any lock or extra file means a user may still be working
+                    # in this directory, so preserve the whole directory.
+                    children[0].unlink()
+                    preview_dir.rmdir()
+                except OSError:
+                    # Excel may still hold the file open. Keep it and show the
+                    # path to the user instead of losing saved workbook edits.
+                    remaining.append((preview_dir, preview_path, original_hash))
+                    retained.append(
+                        preview_path if preview_path.exists() else preview_dir
+                    )
+            self._preview_dirs = remaining
+            return retained
+
+        def _preview_last_workbook(self) -> None:
+            if getattr(self, "running", False) or self.last_output is None:
                 return
-            target: Path = Path(self.last_output)
-            if not target.is_dir():
+            bundle = Path(self.last_output)
+            workbook = bundle / "results.xlsx"
+            if not workbook.is_file():
                 self._update_open_button_state()
                 return
-            xlsx = target / "results.xlsx"
             try:
-                if xlsx.is_file():
-                    target = self._preview_workbook(xlsx)
-                open_path(target)
+                preview = self._preview_workbook(workbook)
+                open_path(preview)
+                self._log(self._t("log_excel_preview", path=preview), "info")
             except Exception as exc:
                 messagebox.showerror(self._t("err_open_result"), str(exc))
+
+        def _open_last_output_folder(self) -> None:
+            if getattr(self, "running", False) or self.last_output is None:
+                return
+            folder = Path(self.last_output)
+            if not folder.is_dir():
+                self._update_open_button_state()
+                return
+            try:
+                open_path(folder)
+            except Exception as exc:
+                messagebox.showerror(self._t("err_open_result"), str(exc))
+
+        def _save_excel_copy(self) -> None:
+            if getattr(self, "running", False) or self.last_output is None:
+                return
+            bundle = Path(self.last_output).resolve()
+            workbook = bundle / "results.xlsx"
+            if not workbook.is_file():
+                self._update_open_button_state()
+                return
+            try:
+                selected = filedialog.asksaveasfilename(
+                    title=self._t("dialog_save_excel"),
+                    initialdir=str(bundle.parent),
+                    initialfile=f"{bundle.name}_results.xlsx",
+                    defaultextension=".xlsx",
+                    filetypes=((self._t("filetype_excel"), "*.xlsx"), (self._t("filetype_all"), "*.*")),
+                    # Use one explicit, localized confirmation below on all
+                    # platforms instead of relying on native dialog defaults.
+                    confirmoverwrite=False,
+                )
+                if not selected:
+                    return
+                requested = Path(selected).expanduser()
+                if requested.is_symlink():
+                    raise ValueError(self._t("err_excel_copy_symlink"))
+                target = requested.parent.resolve(strict=False) / requested.name
+                try:
+                    target.relative_to(bundle)
+                except ValueError:
+                    pass
+                else:
+                    raise ValueError(self._t("err_excel_copy_in_bundle"))
+                if target.suffix.lower() != ".xlsx":
+                    raise ValueError(self._t("err_excel_copy_extension"))
+                exists = target.exists()
+                if exists and not target.is_file():
+                    raise ValueError(self._t("err_excel_copy_not_file"))
+                if exists and not messagebox.askyesno(
+                    self._t("dialog_overwrite_excel_title"),
+                    self._t("dialog_overwrite_excel_message", path=target),
+                ):
+                    return
+                from .quick_export import _copy_excel_atomic
+
+                _copy_excel_atomic(workbook, target, overwrite=exists)
+                self._set_status("status_excel_saved")
+                self._log(self._t("log_excel_saved", path=target), "success")
+            except Exception as exc:
+                messagebox.showerror(self._t("err_save_excel"), str(exc))
 
         def _on_close(self) -> None:
             if self.running or (self._worker_thread is not None and self._worker_thread.is_alive()):
@@ -2037,7 +2401,13 @@ if tk is not None:
                     self._t("msg_close_running"),
                 )
                 return
-            self._cleanup_preview_dirs()
+            retained = self._cleanup_preview_dirs()
+            if retained:
+                paths = "\n".join(str(path) for path in retained)
+                messagebox.showinfo(
+                    self._t("msg_preview_retained_title"),
+                    self._t("msg_preview_retained", paths=paths),
+                )
             self.destroy()
 
         def destroy(self) -> None:

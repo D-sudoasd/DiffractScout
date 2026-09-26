@@ -14,7 +14,7 @@ from diffractscout.gui import (
     discovery_settings_from_form,
 )
 from diffractscout.gui_i18n import REQUIRED_KEYS, STRINGS, assert_language_parity, t
-from diffractscout.models import AnalysisSettings
+from diffractscout.models import AnalysisSettings, DiagnosticRecord, PipelineResult
 from diffractscout.diffraction import ENERGY_WAVELENGTH_KEV_A, resolve_wavelength
 from diffractscout.validation import verify_bundle
 
@@ -199,19 +199,38 @@ def test_gui_open_result_survives_failed_retry_only_when_bundle_exists(tmp_path)
     controller = type("Controller", (), {})()
     controller.last_output = good
     controller.running = True
-    controller.open_button = Widget()
+    controller.preview_button = Widget()
+    controller.save_excel_button = Widget()
+    controller.open_folder_button = Widget()
     controller.progress = Progress()
     controller._run_buttons = []
+    controller._preset_buttons = []
+    controller._finish_task = gui_module.DiffractScoutApp._finish_task.__get__(controller)
     gui_module.DiffractScoutApp._update_open_button_state(controller)
-    assert controller.open_button.states[-1]["state"] == "disabled"
+    assert controller.open_folder_button.states[-1]["state"] == "disabled"
+    assert controller.preview_button.states[-1]["state"] == "disabled"
+    assert controller.save_excel_button.states[-1]["state"] == "disabled"
 
     controller.running = False
     gui_module.DiffractScoutApp._finish_task(controller)
-    assert controller.open_button.states[-1]["state"] == "normal"
+    assert controller.open_folder_button.states[-1]["state"] == "normal"
+    assert controller.preview_button.states[-1]["state"] == "disabled"
+    assert controller.save_excel_button.states[-1]["state"] == "disabled"
+
+    workbook = good / "results.xlsx"
+    workbook.write_bytes(b"workbook")
+    gui_module.DiffractScoutApp._update_open_button_state(controller)
+    assert controller.preview_button.states[-1]["state"] == "normal"
+    assert controller.save_excel_button.states[-1]["state"] == "normal"
 
     (good / "manifest.json").unlink()
-    gui_module.DiffractScoutApp._finish_task(controller)
-    assert controller.open_button.states[-1]["state"] == "disabled"
+    workbook.unlink()
+    payload.unlink()
+    good.rmdir()
+    gui_module.DiffractScoutApp._update_open_button_state(controller)
+    assert controller.open_folder_button.states[-1]["state"] == "disabled"
+    assert controller.preview_button.states[-1]["state"] == "disabled"
+    assert controller.save_excel_button.states[-1]["state"] == "disabled"
 
 
 def test_analysis_form_rejects_unknown_profile_model() -> None:
@@ -418,6 +437,119 @@ def test_cif_file_dialog_accepts_mixed_case_suffixes() -> None:
     assert en_types[0] == t("en", "filetype_cif")
 
 
+def test_local_input_add_rejects_bad_paths_without_scanning_folders(tmp_path, monkeypatch) -> None:
+    valid = tmp_path / "valid.cif"
+    valid.write_text("data_valid\n", encoding="utf-8")
+    folder = tmp_path / "empty-folder"
+    folder.mkdir()
+    non_cif = tmp_path / "notes.txt"
+    non_cif.write_text("not a CIF\n", encoding="utf-8")
+    missing = tmp_path / "missing.cif"
+
+    class InputList:
+        def __init__(self):
+            self.items = []
+
+        def delete(self, *_args):
+            self.items.clear()
+
+        def insert(self, _index, item):
+            self.items.append(item)
+
+    class Variable:
+        def __init__(self):
+            self.value = ""
+
+        def set(self, value):
+            self.value = value
+
+    controller = type("Controller", (), {})()
+    controller.local_inputs = []
+    controller.input_list = InputList()
+    controller.input_count_text = Variable()
+    controller.lang = "en"
+    controller._t = lambda key, **fmt: t(controller.lang, key, **fmt)
+    controller._refresh_inputs = gui_module.DiffractScoutApp._refresh_inputs.__get__(controller)
+    controller._format_input_problems = (
+        gui_module.DiffractScoutApp._format_input_problems.__get__(controller)
+    )
+    warnings = []
+    errors = []
+    monkeypatch.setattr(gui_module.messagebox, "showwarning", lambda *args: warnings.append(args))
+    monkeypatch.setattr(gui_module.messagebox, "showerror", lambda *args: errors.append(args))
+
+    def unexpected_walk(_path, *_args, **_kwargs):
+        raise AssertionError("the Tk thread must not walk folder contents")
+
+    monkeypatch.setattr(Path, "iterdir", unexpected_walk)
+    monkeypatch.setattr(Path, "rglob", unexpected_walk)
+    gui_module.DiffractScoutApp._add_input_paths(
+        controller, [valid, folder, non_cif, missing]
+    )
+
+    assert controller.local_inputs == [valid.resolve(), folder.resolve()]
+    assert len(warnings) == 1
+    assert "not a CIF file" in warnings[0][1]
+    assert str(missing) in warnings[0][1]
+    assert errors == []
+    assert len(controller.input_list.items) == 2
+
+
+def test_local_run_blocks_stale_input_and_does_not_walk_folder_on_tk_thread(
+    tmp_path, monkeypatch
+) -> None:
+    valid = tmp_path / "valid.cif"
+    valid.write_text("data_valid\n", encoding="utf-8")
+    folder = tmp_path / "empty-folder"
+    folder.mkdir()
+    missing = tmp_path / "missing.cif"
+
+    class Variable:
+        def __init__(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+        def set(self, value):
+            self.value = value
+
+    controller = type("Controller", (), {})()
+    controller.running = False
+    controller.local_inputs = [valid, missing]
+    controller.local_output = Variable(str(tmp_path / "bundle"))
+    controller.elastic_overrides = {}
+    controller.local_recursive = Variable(True)
+    controller.include_excel = Variable(False)
+    controller.overwrite = Variable(False)
+    controller.lang = "en"
+    controller._t = lambda key, **fmt: t(controller.lang, key, **fmt)
+    controller._form_analysis_settings = lambda: AnalysisSettings()
+    scheduled = []
+    errors = []
+    warnings = []
+    controller._start_task = lambda label, function: scheduled.append((label, function))
+    controller._format_input_problems = (
+        gui_module.DiffractScoutApp._format_input_problems.__get__(controller)
+    )
+    monkeypatch.setattr(gui_module.messagebox, "showerror", lambda *args: errors.append(args))
+    monkeypatch.setattr(gui_module.messagebox, "showwarning", lambda *args: warnings.append(args))
+    gui_module.DiffractScoutApp._run_local(controller)
+    assert scheduled == []
+    assert errors and "does not exist" in errors[0][1]
+
+    controller.local_inputs = [valid, folder]
+
+    def unexpected_walk(_path, *_args, **_kwargs):
+        raise AssertionError("the Tk thread must not walk folder contents")
+
+    monkeypatch.setattr(Path, "iterdir", unexpected_walk)
+    monkeypatch.setattr(Path, "rglob", unexpected_walk)
+    gui_module.DiffractScoutApp._run_local(controller)
+    assert len(scheduled) == 1
+    assert warnings == []
+
+
 def test_status_text_rerenders_in_the_selected_language() -> None:
     """Language switches must retranslate busy/completed/failed status, not only Ready."""
 
@@ -468,6 +600,64 @@ def test_status_text_rerenders_in_the_selected_language() -> None:
     assert controller.status_text.get() == t("zh", "status_failed")
 
 
+def test_completion_dialog_reports_phase_peak_warning_and_error_counts(
+    tmp_path, monkeypatch
+) -> None:
+    class Widget:
+        def configure(self, **_kwargs):
+            return None
+
+    class Progress:
+        def stop(self):
+            return None
+
+    result = PipelineResult(
+        output_dir=tmp_path / "bundle",
+        discovery=None,
+        downloads=[],
+        analyses=[
+            type("Analysis", (), {"reflections": [1, 2]})(),
+            type("Analysis", (), {"reflections": [1]})(),
+        ],
+        manifest_path=tmp_path / "bundle" / "manifest.json",
+        diagnostics=[
+            DiagnosticRecord("analysis", "phase-a", "warning", "warning text"),
+            DiagnosticRecord("analysis", "phase-b", "error", "error text"),
+        ],
+    )
+    controller = type("Controller", (), {})()
+    controller.running = True
+    controller.events = gui_module.queue.Queue()
+    controller.events.put(("done", result))
+    controller.progress = Progress()
+    controller._run_buttons = []
+    controller._preset_buttons = []
+    controller._finish_task = gui_module.DiffractScoutApp._finish_task.__get__(controller)
+    controller._poll = gui_module.DiffractScoutApp._poll.__get__(controller)
+    controller.preview_button = Widget()
+    controller.save_excel_button = Widget()
+    controller.open_folder_button = Widget()
+    controller.lang = "en"
+    controller._t = lambda key, **fmt: t(controller.lang, key, **fmt)
+    controller._set_status = lambda *_args, **_kwargs: None
+    controller._log = lambda *_args, **_kwargs: None
+    controller.after = lambda *_args: "poll-id"
+    dialogs = []
+    monkeypatch.setattr(
+        gui_module.messagebox,
+        "showwarning",
+        lambda title, message: dialogs.append((title, message)),
+    )
+
+    gui_module.DiffractScoutApp._poll(controller)
+
+    assert len(dialogs) == 1
+    assert "Phases: 2" in dialogs[0][1]
+    assert "indexed peaks: 3" in dialogs[0][1]
+    assert "warnings: 1" in dialogs[0][1]
+    assert "errors: 1" in dialogs[0][1]
+
+
 def test_create_app_language_switch_rerenders_completion_status() -> None:
     app = _create_test_app()
     try:
@@ -488,6 +678,87 @@ def test_create_app_language_switch_rerenders_completion_status() -> None:
         app.update_idletasks()
         assert "已完成" in app.status_text.get()
         assert "Completed" not in app.status_text.get()
+    finally:
+        app.destroy()
+
+
+@pytest.mark.parametrize(
+    ("energy", "shortcut"),
+    [(30.0, "30 keV"), (83.0, "83 keV")],
+)
+def test_analysis_preset_roundtrip_preserves_shortcuts_and_lab_preference(
+    tmp_path, monkeypatch, energy, shortcut
+) -> None:
+    app = _create_test_app()
+    try:
+        preset = tmp_path / "analysis.json"
+        app.input_mode.set("energy")
+        app.radiation_value.set(str(int(energy)))
+        app.energy_shortcut.set(shortcut)
+        app.two_theta_min.set("7")
+        app.local_recursive.set(False)
+        app.include_excel.set(False)
+        app.update_idletasks()
+        assert app._lab_views_preference is True
+
+        monkeypatch.setattr(
+            gui_module.filedialog,
+            "asksaveasfilename",
+            lambda **_kwargs: str(preset),
+        )
+        app._save_analysis_preset()
+        serialized = json.loads(preset.read_text(encoding="utf-8"))
+        assert "api_key" not in serialized["values"]
+        assert "mp_key" not in serialized["values"]
+        assert "local_output" not in serialized["values"]
+        assert serialized["values"]["export_lab_views"] is True
+
+        app.input_mode.set("source")
+        app.radiation_value.set("1.5406")
+        app.two_theta_min.set("5")
+        app.local_recursive.set(True)
+        monkeypatch.setattr(
+            gui_module.filedialog,
+            "askopenfilename",
+            lambda **_kwargs: str(preset),
+        )
+        app._load_analysis_preset()
+        app.update_idletasks()
+
+        assert app.input_mode.get() == "energy"
+        assert float(app.radiation_value.get()) == energy
+        assert app.energy_shortcut.get() == shortcut
+        assert app.two_theta_min.get() == "7.0"
+        assert app.local_recursive.get() is False
+        assert app.include_excel.get() is False
+        assert app.export_lab_views.get() is False
+        assert app._lab_views_preference is True
+        app.include_excel.set(True)
+        app.update_idletasks()
+        assert app.export_lab_views.get() is True
+    finally:
+        app.destroy()
+
+
+def test_invalid_preset_is_rejected_before_changing_form(tmp_path, monkeypatch) -> None:
+    app = _create_test_app()
+    try:
+        app.input_mode.set("energy")
+        app.radiation_value.set("40")
+        before = (app.input_mode.get(), app.radiation_value.get(), app.two_theta_min.get())
+        errors = []
+        monkeypatch.setattr(
+            gui_module.filedialog,
+            "askopenfilename",
+            lambda **_kwargs: str(tmp_path / "invalid.json"),
+        )
+        monkeypatch.setattr(
+            gui_module.messagebox, "showerror", lambda *args: errors.append(args)
+        )
+        app._load_analysis_preset()
+        after = (app.input_mode.get(), app.radiation_value.get(), app.two_theta_min.get())
+        assert after == before
+        assert errors
     finally:
         app.destroy()
 
@@ -573,31 +844,146 @@ def test_preview_workbook_is_copied_outside_bundle(tmp_path, monkeypatch) -> Non
     assert preview.parent != workbook.parent
     assert preview.read_bytes() == workbook.read_bytes()
     assert not list(bundle.glob("~$*"))
-    gui_module.DiffractScoutApp._cleanup_preview_dirs(controller)
+    assert gui_module.DiffractScoutApp._cleanup_preview_dirs(controller) == []
     assert not preview.parent.exists()
+
+
+def test_preview_cleanup_preserves_saved_edits_and_extra_files(tmp_path) -> None:
+    source = tmp_path / "results.xlsx"
+    source.write_bytes(b"original workbook")
+    controller = type("Controller", (), {"_preview_dirs": []})()
+    preview = gui_module.DiffractScoutApp._preview_workbook(controller, source)
+    preview.write_bytes(b"edited workbook")
+
+    assert gui_module.DiffractScoutApp._cleanup_preview_dirs(controller) == [preview]
+    assert preview.read_bytes() == b"edited workbook"
+    assert preview.parent.is_dir()
+
+    unchanged = gui_module.DiffractScoutApp._preview_workbook(controller, source)
+    extra_file = unchanged.parent / "saved-copy.xlsx"
+    extra_file.write_bytes(b"user saved copy")
+    assert gui_module.DiffractScoutApp._cleanup_preview_dirs(controller) == [
+        preview,
+        unchanged.parent,
+    ]
+    assert unchanged.read_bytes() == b"original workbook"
+    assert extra_file.read_bytes() == b"user saved copy"
 
 
 def test_preview_cleanup_retains_busy_directory_for_retry(tmp_path, monkeypatch) -> None:
     preview_dir = tmp_path / "preview"
     preview_dir.mkdir()
-    controller = type("Controller", (), {"_preview_dirs": [preview_dir]})()
-    real_rmtree = gui_module.shutil.rmtree
+    preview = preview_dir / "results.xlsx"
+    preview.write_bytes(b"unchanged workbook")
+    from diffractscout.utils import sha256_file
+
+    original_hash = sha256_file(preview)
+    controller = type(
+        "Controller", (), {"_preview_dirs": [(preview_dir, preview, original_hash)]}
+    )()
+    real_unlink = Path.unlink
     calls: list[Path] = []
 
     def fail_once(path, *args, **kwargs):
         calls.append(Path(path))
         if len(calls) == 1:
             raise OSError("preview is still open")
-        return real_rmtree(path, *args, **kwargs)
+        return real_unlink(path, *args, **kwargs)
 
-    monkeypatch.setattr(gui_module.shutil, "rmtree", fail_once)
-    gui_module.DiffractScoutApp._cleanup_preview_dirs(controller)
-    assert controller._preview_dirs == [preview_dir]
+    monkeypatch.setattr(Path, "unlink", fail_once)
+    assert gui_module.DiffractScoutApp._cleanup_preview_dirs(controller) == [preview]
+    assert controller._preview_dirs == [(preview_dir, preview, original_hash)]
     assert preview_dir.is_dir()
 
-    gui_module.DiffractScoutApp._cleanup_preview_dirs(controller)
+    assert gui_module.DiffractScoutApp._cleanup_preview_dirs(controller) == []
     assert controller._preview_dirs == []
     assert not preview_dir.exists()
+
+
+def test_preview_and_folder_actions_open_distinct_targets(tmp_path, monkeypatch) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    workbook = bundle / "results.xlsx"
+    workbook.write_bytes(b"workbook bytes")
+    controller = type("Controller", (), {})()
+    controller.running = False
+    controller.last_output = bundle
+    controller._preview_dirs = []
+    controller._t = lambda key, **fmt: t("en", key, **fmt)
+    controller._log = lambda *_args: None
+    controller._update_open_button_state = lambda: None
+    controller._preview_workbook = gui_module.DiffractScoutApp._preview_workbook.__get__(controller)
+    opened = []
+    monkeypatch.setattr(gui_module, "open_path", lambda path: opened.append(Path(path)))
+
+    gui_module.DiffractScoutApp._preview_last_workbook(controller)
+    assert opened[0] != workbook
+    assert opened[0].parent != bundle
+    assert opened[0].read_bytes() == workbook.read_bytes()
+
+    gui_module.DiffractScoutApp._open_last_output_folder(controller)
+    assert opened[1] == bundle
+    gui_module.DiffractScoutApp._cleanup_preview_dirs(controller)
+
+
+def test_save_excel_copy_uses_explicit_overwrite_and_rejects_bundle_targets(
+    tmp_path, monkeypatch
+) -> None:
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    workbook = bundle / "results.xlsx"
+    workbook.write_bytes(b"source workbook")
+    destination = tmp_path / "saved.xlsx"
+    selected = [str(destination)]
+    dialog_options = {}
+    monkeypatch.setattr(
+        gui_module.filedialog,
+        "asksaveasfilename",
+        lambda **kwargs: (dialog_options.update(kwargs), selected[-1])[1],
+    )
+    confirmations = []
+    answers = [False, True]
+
+    def confirm(*args):
+        confirmations.append(args)
+        return answers.pop(0)
+
+    monkeypatch.setattr(gui_module.messagebox, "askyesno", confirm)
+    errors = []
+    monkeypatch.setattr(gui_module.messagebox, "showerror", lambda *args: errors.append(args))
+    controller = type("Controller", (), {})()
+    controller.running = False
+    controller.last_output = bundle
+    controller.lang = "en"
+    controller._t = lambda key, **fmt: t("en", key, **fmt)
+    controller._set_status = lambda *_args, **_kwargs: None
+    controller._log = lambda *_args: None
+    controller._update_open_button_state = lambda: None
+
+    gui_module.DiffractScoutApp._save_excel_copy(controller)
+    assert destination.read_bytes() == workbook.read_bytes()
+    assert dialog_options["confirmoverwrite"] is False
+    assert dialog_options["defaultextension"] == ".xlsx"
+    assert confirmations == []
+
+    destination.write_bytes(b"prior file")
+    gui_module.DiffractScoutApp._save_excel_copy(controller)
+    assert destination.read_bytes() == b"prior file"
+    assert len(confirmations) == 1
+
+    gui_module.DiffractScoutApp._save_excel_copy(controller)
+    assert destination.read_bytes() == workbook.read_bytes()
+    assert len(confirmations) == 2
+
+    selected.append(str(bundle / "inside.xlsx"))
+    gui_module.DiffractScoutApp._save_excel_copy(controller)
+    assert errors[-1][1] == t("en", "err_excel_copy_in_bundle")
+    assert not (bundle / "inside.xlsx").exists()
+
+    selected.append(str(tmp_path / "wrong.csv"))
+    gui_module.DiffractScoutApp._save_excel_copy(controller)
+    assert errors[-1][1] == t("en", "err_excel_copy_extension")
+    assert not (tmp_path / "wrong.csv").exists()
 
 
 def test_i18n_required_keys_zh_en_parity() -> None:
@@ -638,6 +1024,19 @@ def test_validation_message_localizes_known_range_in_zh_and_en() -> None:
     assert "范围" in zh
     assert "2θ range" in en
     assert "minimum" in en and "maximum" in en
+
+
+def test_local_input_pipeline_errors_are_localized() -> None:
+    for lang in ("zh", "en"):
+        controller = _validation_controller(lang)
+        no_cif = gui_module.DiffractScoutApp._validation_message(
+            controller, FileNotFoundError("No CIF files were found in the supplied inputs.")
+        )
+        assert no_cif == t(lang, "err_no_cif_found")
+        disappeared = gui_module.DiffractScoutApp._validation_message(
+            controller, FileNotFoundError("Input path does not exist: C:/data/a.cif")
+        )
+        assert "C:/data/a.cif" in disappeared
 
 
 def test_validation_message_keeps_unknown_detail_with_localized_fallback() -> None:
@@ -839,8 +1238,15 @@ def test_action_button_geometry_has_no_clipped_glyph_area(geometry: str, lang: s
         app._set_language(lang)
         app.update_idletasks()
         app.update()
-        buttons = [app.open_button, app.btn_apply_cubic]
+        buttons = [
+            app.preview_button,
+            app.save_excel_button,
+            app.open_folder_button,
+            app.btn_apply_cubic,
+        ]
         buttons.extend(button for button in app._run_buttons if button.winfo_ismapped())
+        buttons.extend(button for button in app._preset_buttons if button.winfo_ismapped())
+        assert app.status_label.winfo_width() > 0
         for button in buttons:
             assert button.winfo_width() >= button.winfo_reqwidth(), str(button)
             assert button.winfo_height() >= button.winfo_reqheight(), str(button)
@@ -927,7 +1333,9 @@ def test_local_worker_uses_ui_state_snapshot(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(gui_module, "analyze_cifs", fake_analyze)
     controller.running = False
-    controller.local_inputs = [tmp_path / "input.cif"]
+    input_cif = tmp_path / "input.cif"
+    input_cif.write_text("data_input\n", encoding="utf-8")
+    controller.local_inputs = [input_cif]
     controller.local_output = Variable(str(tmp_path / "bundle"))
     controller.elastic_overrides = {}
     controller.local_recursive = Variable(True)

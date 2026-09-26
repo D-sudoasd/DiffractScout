@@ -48,6 +48,18 @@ Dense forms (radiation, Cij, export options) live in **vertically scrollable** c
 
 Duplicate input paths are removed. Only readable files with the `.cif` extension enter the calculation. Selecting `Replace an existing verified DiffractScout bundle` authorizes replacement only when the existing directory contains a supported manifest and currently passes the bundle-integrity check.
 
+## Reuse analysis settings
+
+Use **Save parameters** to store the current analysis and export options in a
+JSON preset, and **Load parameters** to reuse them for another input set. Presets
+include radiation, angular and d-spacing ranges, profile parameters, resource
+limits, optional outputs, and the local recursive-scan option. The complete
+preset is validated before it changes the form.
+
+Presets do not contain API keys, input or output paths, overwrite authorization,
+or manually entered elastic tensors. Loading one therefore leaves those
+choices with the current run. Save/load actions are disabled during a task.
+
 ## Materials Project pipeline
 
 ![Materials Project pipeline interface](assets/gui-materials-project.png)
@@ -110,7 +122,7 @@ settings are available through the CLI and Python `AnalysisSettings`:
 | Continuous pattern series | on | `--no-patterns` |
 | 2θ figure generation | off | `--figures`, `--figure-preset`; v0.4.0 figures remain on 2θ regardless of `--pattern-axis`; SVG/PNG bundle output works in the base install and `.[figures]` enables the matplotlib path |
 
-Laboratory views add bilingual convenience sheets to `results.xlsx` without changing the English canonical CSV columns. See [SCHEMA_ALIASES.md](SCHEMA_ALIASES.md) and [ENGINE_PARITY.md](ENGINE_PARITY.md).
+Laboratory views add bilingual convenience sheets to `results.xlsx` without changing the English canonical CSV columns. The workbook also provides a result overview, worksheet links, column-group colors, consistent number formats, and intensity bars. See the [Excel guide](EXCEL.md), [SCHEMA_ALIASES.md](SCHEMA_ALIASES.md), and [ENGINE_PARITY.md](ENGINE_PARITY.md).
 
 The desktop label intentionally says “CSV/Excel pattern coordinate.” For the
 reciprocal choices, `q=2π/d` and `g=1/d` in Å⁻¹. These choices affect only
@@ -161,11 +173,18 @@ The Activity panel reports timestamps and separates informational, warning, and 
 - completion with one or more error diagnostics;
 - completion with no analyzable phases, where a diagnostic-only bundle is still available.
 
-The `Open result` action is enabled after a valid result bundle has been
-written. It previews `results.xlsx` when that workbook exists; otherwise it
-opens the result directory. A later failed retry preserves this action only
-while the previous bundle still exists. `Copy` places the current Activity log
-on the clipboard; `Clear` affects only the displayed log.
+Completion reports the phase, reflection, warning, and error counts. **Preview
+Excel**, **Save Excel as**, and **Result folder** provide separate result
+actions. Excel actions require an existing workbook; the folder action also
+works for runs without Excel. These actions are disabled during a task, and a
+failed retry retains access to the previous result while its files still exist.
+
+Preview opens a temporary copy outside the verified bundle. Use **Save Excel
+as** for a permanent editable copy. Saved changes in a preview are retained on
+exit, with their location reported, instead of being discarded. See the
+[Excel guide](EXCEL.md) for the workbook layout and editing workflow. `Copy`
+places the current Activity log on the clipboard; `Clear` affects only the
+displayed log.
 
 ## Threading and window closure
 

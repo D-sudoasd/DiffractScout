@@ -73,8 +73,11 @@ and source mode follows its preset semantics (built-in sources clear both;
 `Custom` keeps its wavelength and clears `energy_keV`). Contradictory explicit
 radiation overrides still raise; normalization does not loosen conflict
 validation.
-The existing `.xlsx` shortcut remains atomic and does not replace an existing
-workbook unless `overwrite=True` is explicit.
+The `.xlsx` shortcut remains atomic and does not replace an existing workbook
+unless `overwrite=True` is explicit. Combining an `.xlsx` target with
+`include_excel=False` raises before output is created; use a directory target
+for a CSV-only bundle. If publishing the separate workbook fails after the
+bundle is generated, the error identifies the retained bundle workbook.
 
 Bundle Summary retains `two_theta_range_deg` as the requested settings range,
 adds the explicit alias `requested_two_theta_range_deg`, and separately records
