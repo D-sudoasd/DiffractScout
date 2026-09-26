@@ -260,8 +260,17 @@ def _target_path(path: str | Path) -> Path:
     return Path(raw).expanduser()
 
 
-def save_analysis_preset(path: str | Path, values: Mapping[str, object]) -> Path:
-    """Validate and atomically save a complete local analysis preset."""
+def save_analysis_preset(
+    path: str | Path,
+    values: Mapping[str, object],
+    *,
+    overwrite: bool = True,
+) -> Path:
+    """Validate and atomically save a complete local analysis preset.
+
+    With ``overwrite=False``, publish via an atomic same-directory hard link,
+    which fails if another process has already created the target.
+    """
 
     target = _target_path(path)
     normalized = _normalize_values(values, from_form=True)
@@ -290,8 +299,28 @@ def save_analysis_preset(path: str | Path, values: Mapping[str, object]) -> Path
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary_path, target)
-        temporary_path = None
+        if overwrite:
+            os.replace(temporary_path, target)
+            temporary_path = None
+        else:
+            try:
+                os.link(temporary_path, target)
+            except FileExistsError as exc:
+                raise FileExistsError(
+                    f"Preset already exists: {target}. Pass --overwrite to replace it."
+                ) from exc
+            except OSError as exc:
+                raise OSError(
+                    "Could not atomically publish the preset without overwriting "
+                    f"the target; the target was left unchanged: {exc}"
+                ) from exc
+            try:
+                temporary_path.unlink()
+            except OSError:
+                # Publication succeeded; the final cleanup below retries.
+                pass
+            else:
+                temporary_path = None
     finally:
         if temporary_path is not None:
             try:

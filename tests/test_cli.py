@@ -13,6 +13,7 @@ from diffractscout.cli import (
     main,
 )
 from diffractscout.models import DiagnosticRecord, PipelineResult
+import diffractscout.cli_presets as cli_presets
 from diffractscout.cli_presets import resolve_cli_analysis, save_cli_preset
 from diffractscout.validation import verify_bundle
 
@@ -380,6 +381,35 @@ def test_preset_save_refuses_existing_files_and_result_bundles(
             ["analyze", "sample.cif", "-o", "unused"]
         )).preset_values)
     assert "Pass --overwrite" in capsys.readouterr().err
+
+
+def test_preset_save_no_clobber_is_atomic_against_competing_creator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "racing-preset.json"
+    analysis = resolve_cli_analysis(
+        build_parser().parse_args(["analyze", "sample.cif", "-o", "unused"])
+    )
+    save_impl = cli_presets.save_analysis_preset
+
+    def create_competing_target(
+        path: str | Path,
+        values: dict[str, object],
+        *,
+        overwrite: bool = True,
+    ) -> Path:
+        # This executes after save_cli_preset's existence check and before its
+        # atomic publication attempt.
+        target.write_text("created by competing process", encoding="utf-8")
+        return save_impl(path, values, overwrite=overwrite)
+
+    monkeypatch.setattr(cli_presets, "save_analysis_preset", create_competing_target)
+
+    with pytest.raises(FileExistsError, match="Pass --overwrite"):
+        save_cli_preset(target, analysis.preset_values)
+
+    assert target.read_text(encoding="utf-8") == "created by competing process"
+    assert list(tmp_path.glob(".diffractscout-preset-*.tmp")) == []
 
 
 def test_invalid_preset_fails_before_analysis_or_output_creation(

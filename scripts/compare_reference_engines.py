@@ -656,19 +656,33 @@ def run_comparison(output_dir: str | Path = DEFAULT_OUTPUT) -> dict[str, Any]:
     if str(REPOSITORY_ROOT / "src") not in sys.path:
         sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
     try:
-        from diffractscout import __version__ as diffractscout_version
-        from diffractscout.diffraction import simulate_powder_pattern
-        from diffractscout.elasticity import validate_elastic_tensor, young_modulus_hkl_normal_GPa
-        from diffractscout.models import AnalysisSettings
-        from diffractscout.structure import load_structure
         from pymatgen.analysis.diffraction.xrd import XRDCalculator
         from pymatgen.core import Structure
-        from pymatgen.core.elasticity import ElasticTensor
     except ImportError as exc:
         raise RuntimeError(
             "The independent comparison needs pymatgen. Install the project's optional "
             "Materials Project dependencies with `pip install -e '.[mp]'`."
         ) from exc
+    try:
+        from pymatgen.core.elasticity import ElasticTensor
+    except ModuleNotFoundError as exc:
+        if exc.name != "pymatgen.core.elasticity":
+            raise
+        # pymatgen through 2025.10 exposes ElasticTensor under analysis; the
+        # 2026 core split moved it to pymatgen.core.elasticity.
+        try:
+            from pymatgen.analysis.elasticity.elastic import ElasticTensor
+        except ImportError as fallback_exc:
+            raise RuntimeError(
+                "The installed pymatgen does not expose ElasticTensor from either "
+                "the current core path or the legacy analysis path."
+            ) from fallback_exc
+
+    from diffractscout import __version__ as diffractscout_version
+    from diffractscout.diffraction import simulate_powder_pattern
+    from diffractscout.elasticity import validate_elastic_tensor, young_modulus_hkl_normal_GPa
+    from diffractscout.models import AnalysisSettings
+    from diffractscout.structure import load_structure
 
     expectations_path = BENCHMARK_ROOT / "expectations.json"
     expectations = json.loads(expectations_path.read_text(encoding="utf-8"))
@@ -753,8 +767,12 @@ def run_comparison(output_dir: str | Path = DEFAULT_OUTPUT) -> dict[str, Any]:
         if markdown_path.is_relative_to(REPOSITORY_ROOT)
         else markdown_path.name,
     ]
-    json_path.write_text(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
-    markdown_path.write_text(_markdown_report(report), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    markdown_path.write_text(_markdown_report(report), encoding="utf-8", newline="\n")
     return report
 
 

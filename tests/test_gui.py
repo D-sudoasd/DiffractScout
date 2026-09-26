@@ -1333,7 +1333,9 @@ def test_local_worker_uses_ui_state_snapshot(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(gui_module, "analyze_cifs", fake_analyze)
     controller.running = False
-    controller.local_inputs = [tmp_path / "input.cif"]
+    input_cif = tmp_path / "input.cif"
+    input_cif.write_text("data_input\n", encoding="utf-8")
+    controller.local_inputs = [input_cif]
     controller.local_output = Variable(str(tmp_path / "bundle"))
     controller.elastic_overrides = {}
     controller.local_recursive = Variable(True)

@@ -1,6 +1,6 @@
 # Independent pymatgen reference comparison
 
-Generated: `2026-09-26T12:27:03+00:00`
+Generated: `2026-09-26T12:37:13+00:00`
 
 Overall acceptance: **PASS**
 
@@ -9,7 +9,7 @@ This receipt records independent software comparisons on explicitly synthetic be
 ## Software and settings
 
 - Python: `3.12.10`
-- Comparison script SHA-256: `4727c2e20b603aa8e4c29ea158e3231dabce62f7be999e0a3754fd82dcaf0f8b`
+- Comparison script SHA-256: `e8a8bd9e7742d120347ad543faaa278c0e33b9fb1556e9e2cb0b63fbf2e985b3`
 - Gemmi: `0.7.5`
 - pymatgen: `2026.5.4`
 - Radiation: Cu Kα effective wavelength `1.5406 Å`

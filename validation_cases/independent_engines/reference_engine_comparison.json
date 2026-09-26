@@ -1381,7 +1381,7 @@
     "path": "src/diffractscout/benchmark_data/expectations.json",
     "sha256": "7ea211d475382584984748514cc3218b0f6f707f2e81a35b0f1dee98a9780ce0"
   },
-  "generated_at_utc": "2026-09-26T12:27:03+00:00",
+  "generated_at_utc": "2026-09-26T12:37:13+00:00",
   "output_files": [
     "validation_cases/independent_engines/reference_engine_comparison.json",
     "validation_cases/independent_engines/reference_engine_comparison.md"
@@ -1399,7 +1399,7 @@
     "wavelength_A": 1.5406
   },
   "software": {
-    "comparison_script_sha256": "4727c2e20b603aa8e4c29ea158e3231dabce62f7be999e0a3754fd82dcaf0f8b",
+    "comparison_script_sha256": "e8a8bd9e7742d120347ad543faaa278c0e33b9fb1556e9e2cb0b63fbf2e985b3",
     "diffractscout": "0.4.0",
     "gemmi": "0.7.5",
     "pymatgen": "2026.5.4",

@@ -427,7 +427,7 @@ def save_cli_preset(
     for field in ("radiation_value", "d_min_A", "d_max_A"):
         if form_values[field] is None:
             form_values[field] = ""
-    return save_analysis_preset(target, form_values)
+    return save_analysis_preset(target, form_values, overwrite=overwrite)
 
 
 def show_cli_preset(path: str | Path) -> dict[str, object]:
