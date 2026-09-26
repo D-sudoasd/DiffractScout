@@ -36,6 +36,16 @@ validation.py — strict independent bundle verification
 
 The GUI contains no separate numerical implementation. It creates `AnalysisSettings` and `DiscoverySettings`, calls the pipeline API, and renders returned diagnostics.
 
+`gui_settings.py` validates and persists a versioned, explicit allowlist of
+analysis controls. Presets exclude credentials, paths, overwrite authorization,
+and structure-specific elastic tensors. Excel presentation is separate from
+row construction: `excel_styles.py` formats the existing canonical tables and
+`excel_overview.py` builds a navigable summary from those exported records.
+The CLI preset adapter uses that same validated parameter format and tracks
+explicit command-line options before merging them. `inspection.py` verifies an
+existing bundle and streams its tables to produce a compact report without
+running calculations or changing the bundle.
+
 ## Provider boundary
 
 The discovery layer depends on the `PhaseProvider` protocol. Materials Project is one optional implementation. A provider supplies:

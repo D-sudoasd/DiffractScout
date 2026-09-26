@@ -3,10 +3,101 @@
   "public_repository": {
     "url": "https://github.com/D-sudoasd/DiffractScout",
     "public_since": "2026-08-12",
-    "note": "GitHub reports that the public repository was created on 2026-08-12. This date starts the project-side public-development clock."
+    "note": "GitHub repository metadata checked 2026-09-26 reports creation at 2026-08-12T10:02:29Z. This timestamp starts the public-development clock; private history before it is excluded."
   },
   "archived_releases": [],
-  "public_development_activity": [],
+  "public_development_activity": [
+    {
+      "date": "2026-08-12",
+      "title": "Publish the v0.3.0 GitHub release",
+      "url": "https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0",
+      "software_version": "v0.3.0",
+      "claim_supported": "The public repository had a tagged software release at the start of its public-development period.",
+      "activity_type": "release",
+      "outcome": "Published GitHub release v0.3.0 at the public repository; this is not an immutable archive DOI."
+    },
+    {
+      "date": "2026-08-12",
+      "title": "Repair CI lint and release reruns",
+      "url": "https://github.com/D-sudoasd/DiffractScout/pull/3",
+      "software_version": "commit:99f0fa6ef8ea09d0814c4e92f34bebbfde71bb6f",
+      "claim_supported": "The maintainer publicly corrected CI and release-workflow behavior.",
+      "activity_type": "pull_request",
+      "outcome": "Merged CI and release-rerun fixes."
+    },
+    {
+      "date": "2026-08-12",
+      "title": "Restore CIF-to-peaks workflow and laboratory exports",
+      "url": "https://github.com/D-sudoasd/DiffractScout/pull/5",
+      "software_version": "commit:14ad9f1788296b7637d3ccb1a769591205751995",
+      "claim_supported": "The maintainer publicly integrated CIF analysis, spreadsheet lab views, figures, and bilingual GUI workflow changes.",
+      "activity_type": "pull_request",
+      "outcome": "Merged the CIF2Peaks product-surface workflow, lab Excel views, figures, and bilingual GUI."
+    },
+    {
+      "date": "2026-08-12",
+      "title": "Improve GUI layout and long-table Excel analysis",
+      "url": "https://github.com/D-sudoasd/DiffractScout/pull/6",
+      "software_version": "commit:fbcddef4f05de9cccebb2ad01ee764679bb45f97",
+      "claim_supported": "The maintainer publicly improved long-running GUI usability and spreadsheet access to long tables.",
+      "activity_type": "pull_request",
+      "outcome": "Merged a scrollable GUI layout and Excel tables for long analyses."
+    },
+    {
+      "date": "2026-08-12",
+      "title": "Prevent concurrent quick-export workbook overwrite",
+      "url": "https://github.com/D-sudoasd/DiffractScout/pull/7",
+      "software_version": "commit:3eac2470835df8483011ac6ea1c60710cb263a77",
+      "claim_supported": "The maintainer publicly fixed a quick-export race that could overwrite another workbook.",
+      "activity_type": "pull_request",
+      "outcome": "Merged a fix that preserves concurrent quick-export outputs without implicit overwrite."
+    },
+    {
+      "date": "2026-08-17",
+      "title": "Harden scientific analysis and desktop workflows",
+      "url": "https://github.com/D-sudoasd/DiffractScout/pull/8",
+      "software_version": "commit:0fa5ba5a0bc310824001aca8f7b00dbb64f6c851",
+      "claim_supported": "The maintainer publicly refined scientific checks and desktop workflows.",
+      "activity_type": "pull_request",
+      "outcome": "Merged scientific-analysis and desktop-workflow hardening."
+    },
+    {
+      "date": "2026-08-20",
+      "title": "Harden upgrade transactions and scientific guards",
+      "url": "https://github.com/D-sudoasd/DiffractScout/pull/9",
+      "software_version": "commit:312afcf5d8f5b830e58fe3362148e3af230f0f77",
+      "claim_supported": "The maintainer publicly strengthened transactional upgrades, scientific input checks, and desktop workflows.",
+      "activity_type": "pull_request",
+      "outcome": "Merged transaction, scientific-guard, and desktop-workflow changes."
+    },
+    {
+      "date": "2026-08-23",
+      "title": "Correct scientific units and desktop workflow gaps",
+      "url": "https://github.com/D-sudoasd/DiffractScout/pull/11",
+      "software_version": "commit:1ab397da34a3128312d1c846a8df9f0c127e230d",
+      "claim_supported": "The maintainer publicly corrected unit handling and desktop workflow behavior.",
+      "activity_type": "pull_request",
+      "outcome": "Merged scientific unit-handling and desktop-workflow fixes."
+    },
+    {
+      "date": "2026-08-27",
+      "title": "Harden scientific parsing and release workflows",
+      "url": "https://github.com/D-sudoasd/DiffractScout/pull/13",
+      "software_version": "commit:b1b799c747ffe1021b4a124529559b9d33f60eba",
+      "claim_supported": "The maintainer publicly strengthened scientific parsing and release checks.",
+      "activity_type": "pull_request",
+      "outcome": "Merged scientific-parsing and release-workflow hardening."
+    },
+    {
+      "date": "2026-09-12",
+      "title": "Fix checkout quick-export launch and GUI status/form mapping",
+      "url": "https://github.com/D-sudoasd/DiffractScout/commit/0d56f99e10abd7e32e87c6f0e5344fc29ba3c670",
+      "software_version": "commit:0d56f99e10abd7e32e87c6f0e5344fc29ba3c670",
+      "claim_supported": "The latest public main commit at the 2026-09-26 audit corrected quick-export launch and GUI status/form mapping.",
+      "activity_type": "commit",
+      "outcome": "Published the quick-export launch and GUI status/form-mapping fixes on main."
+    }
+  ],
   "research_use_cases": [],
   "independent_validations": [],
   "external_engagement": [],
@@ -27,6 +118,6 @@
     "official_joss_build_commit": "",
     "paper_source_sha256": "",
     "paper_pdf_sha256": "",
-    "note": "Set each field to true only after the submitting author completes that review."
+    "note": "As of 2026-09-26, the author confirmed the currently listed Delun Gong name, ORCID, and Institute of Metal Research affiliation. Keep confirmations false until the complete author list, any coauthor consent and affiliations, funding and sponsor role, contributors, related publications, and full human review of AI-assisted work are confirmed for the submission. Record CI, official-build URLs/commits, and paper hashes only for the same selected source."
   }
 }

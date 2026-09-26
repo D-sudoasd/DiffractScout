@@ -16,9 +16,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from .models import AnalysisSettings, PipelineResult, XrayInputMode
+from .cli_presets import add_analysis_options, resolve_cli_analysis
+from .models import AnalysisSettings, PipelineResult
 from .pipeline import _acquire_transaction_lock, _release_transaction_lock, analyze_cifs
-from .utils import sha256_file, to_jsonable
+from .utils import sha256_file
 
 # Keyword names accepted as AnalysisSettings fields when building defaults.
 _SETTINGS_KEYS = frozenset(AnalysisSettings.__dataclass_fields__)
@@ -190,6 +191,28 @@ def _copy_excel_atomic(source: Path, target: Path, *, overwrite: bool) -> None:
             except OSError:
                 # Cleanup must not replace the primary copy/publication error.
                 pass
+
+
+def _add_bundle_recovery_context(
+    error: OSError | RuntimeError, *, target: Path, bundle_dir: Path, workbook: Path
+) -> None:
+    """Explain bundle recovery without changing exception type or target metadata."""
+
+    context = f"Excel publication failed for target {target}. A bundle remains at {bundle_dir}. "
+    if workbook.is_file():
+        context += (
+            f"Run `diffractscout verify {bundle_dir}` before reusing it. If verification "
+            f"passes, recover the workbook from {workbook}."
+        )
+    else:
+        context += (
+            f"The expected workbook {workbook} is missing. Run `diffractscout verify "
+            f"{bundle_dir}` and rerun the export if needed."
+        )
+    if isinstance(error, OSError) and error.strerror:
+        error.strerror = f"{error.strerror}. {context}"
+    else:
+        error.args = (f"{error}. {context}", *error.args[1:])
 
 
 def _default_settings(**overrides: object) -> AnalysisSettings:
@@ -365,9 +388,13 @@ def quick_export(
     excel_target: Path | None = None
     if output_path.suffix.lower() == ".xlsx":
         excel_target = output_path if output_path.is_absolute() else output_path.resolve()
+        if not include_excel:
+            raise ValueError(
+                "An .xlsx output path requires Excel output; include_excel=False "
+                "(--no-excel) is incompatible. Choose a bundle directory to skip Excel."
+            )
         bundle_dir = excel_target.with_name(f"{excel_target.stem}_bundle")
         # Excel shortcut always materializes the workbook in the bundle first.
-        include_excel = True
     else:
         bundle_dir = output_path if output_path.is_absolute() else output_path.resolve()
 
@@ -388,11 +415,20 @@ def quick_export(
                 elastic_overrides=elastic_overrides,  # type: ignore[arg-type]
             )
             source_xlsx = result.output_dir / "results.xlsx"
-            if not source_xlsx.is_file():
-                raise RuntimeError(
-                    f"Expected results.xlsx in bundle {result.output_dir}, but it is missing."
+            try:
+                if not source_xlsx.is_file():
+                    raise RuntimeError(
+                        f"Expected results.xlsx in bundle {result.output_dir}, but it is missing."
+                    )
+                _copy_excel_atomic(source_xlsx, excel_target, overwrite=overwrite)
+            except (OSError, RuntimeError) as exc:
+                _add_bundle_recovery_context(
+                    exc,
+                    target=excel_target,
+                    bundle_dir=result.output_dir,
+                    workbook=source_xlsx,
                 )
-            _copy_excel_atomic(source_xlsx, excel_target, overwrite=overwrite)
+                raise
             return result
         finally:
             _release_transaction_lock(lock_path, warning_sink=warning_sink)
@@ -423,62 +459,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Bundle directory, or an .xlsx path (bundle becomes <stem>_bundle/).",
     )
-    parser.add_argument("--no-recursive", action="store_true")
-    parser.add_argument("--no-excel", action="store_true", help="Skip Excel (bundle dir mode only).")
-    parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--source", default="Cu Ka")
-    radiation = parser.add_mutually_exclusive_group()
-    radiation.add_argument(
-        "--wavelength-A",
-        type=float,
-        default=None,
-        help="Explicit X-ray wavelength in Angstrom (selects wavelength mode).",
-    )
-    radiation.add_argument(
-        "--energy-keV",
-        type=float,
-        default=None,
-        help="Explicit photon energy in keV (selects energy mode).",
-    )
-    parser.add_argument("--two-theta-min", type=float, default=5.0)
-    parser.add_argument("--two-theta-max", type=float, default=120.0)
-    parser.add_argument("--step", type=float, default=0.02)
-    parser.add_argument("--fwhm", type=float, default=0.15)
-    parser.add_argument("--eta", type=float, default=0.5)
-    parser.add_argument("--no-elasticity", action="store_true")
-    parser.add_argument(
-        "--max-profile-points",
-        type=int,
-        default=1_000_000,
-        help="Safety limit for the generated display-profile grid.",
-    )
-    parser.add_argument(
-        "--max-reflection-estimate",
-        type=int,
-        default=2_000_000,
-        help="Safety limit for reciprocal-lattice candidate generation.",
-    )
-    parser.add_argument("--d-min", type=float, default=None, dest="d_min")
-    parser.add_argument("--d-max", type=float, default=None, dest="d_max")
-    parser.add_argument(
-        "--profile-model",
-        choices=("pseudo_voigt", "gaussian", "lorentzian"),
-        default="pseudo_voigt",
-    )
-    parser.add_argument(
-        "--pattern-axis",
-        choices=("two_theta", "d_spacing", "q", "g"),
-        default="two_theta",
-        help=(
-            "Selected x coordinate in pattern_profiles.csv and Excel. "
-            "Figures remain on 2theta in v0.4.0."
-        ),
-    )
-    parser.add_argument("--figures", action="store_true")
-    parser.add_argument("--figure-preset", default="publication")
-    parser.add_argument("--no-lab-views", action="store_true")
-    parser.add_argument("--no-patterns", action="store_true")
+    add_analysis_options(parser)
     return parser
 
 
@@ -486,51 +467,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        input_mode: XrayInputMode
-        if args.wavelength_A is not None:
-            input_mode = "wavelength"
-            wavelength_A = args.wavelength_A
-            energy_keV = None
-        elif args.energy_keV is not None:
-            input_mode = "energy"
-            wavelength_A = None
-            energy_keV = args.energy_keV
-        else:
-            input_mode = "source"
-            wavelength_A = None
-            energy_keV = None
-            if args.source == "Custom":
-                raise ValueError(
-                    "Custom source requires --wavelength-A or --energy-keV."
-                )
-        settings = AnalysisSettings(
-            input_mode=input_mode,
-            source_preset=args.source,
-            wavelength_A=wavelength_A,
-            energy_keV=energy_keV,
-            two_theta_min_deg=args.two_theta_min,
-            two_theta_max_deg=args.two_theta_max,
-            step_deg=args.step,
-            fwhm_deg=args.fwhm,
-            profile_eta=args.eta,
-            include_elasticity=not args.no_elasticity,
-            max_profile_points=args.max_profile_points,
-            max_reflection_estimate=args.max_reflection_estimate,
-            d_min_A=args.d_min,
-            d_max_A=args.d_max,
-            profile_model=args.profile_model,
-            pattern_axis=args.pattern_axis,
-            include_figures=bool(args.figures),
-            figure_preset=args.figure_preset,
-            export_lab_views=not args.no_lab_views,
-            include_patterns=not args.no_patterns,
-        )
+        analysis = resolve_cli_analysis(args)
         result = quick_export(
             args.inputs,
             args.output,
-            settings=settings,
-            recursive=not args.no_recursive,
-            include_excel=not args.no_excel,
+            settings=analysis.settings,
+            recursive=analysis.recursive,
+            include_excel=analysis.include_excel,
             overwrite=args.overwrite,
         )
     except (
@@ -545,24 +488,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    if args.json:
-        import json
+    from .cli import _pipeline_exit_code, _print_result
 
-        print(json.dumps(to_jsonable(result), indent=2, ensure_ascii=False))
-    else:
-        print(f"Output: {result.output_dir}")
-        print(f"Manifest: {result.manifest_path}")
-        print(f"Analyzed phases: {len(result.analyses)}")
-        if str(args.output).lower().endswith(".xlsx"):
-            print(f"Excel: {Path(args.output).expanduser().resolve()}")
-        for warning in result.warnings:
-            print(f"WARNING: {warning}", file=sys.stderr)
-
-    if not result.analyses:
-        return 2
-    if any(item.level == "error" for item in result.diagnostics):
-        return 3
-    return 0
+    excel_path = args.output if Path(args.output).suffix.lower() == ".xlsx" else None
+    _print_result(result, as_json=args.json, excel_path=excel_path)
+    return _pipeline_exit_code(result)
 
 
 if __name__ == "__main__":

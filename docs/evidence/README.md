@@ -1,54 +1,64 @@
 # JOSS evidence ledger
 
-`impact_evidence.json` is the machine-readable index used by
-`scripts/joss_readiness.py`. Add an entry only after the underlying record is
-publicly accessible or retained in a stable institutional repository.
+`impact_evidence.json` is the machine-readable index checked by
+`scripts/joss_readiness.py`. The assessment and claim rules are in
+[`docs/ADOPTION_AND_IMPACT.md`](../ADOPTION_AND_IMPACT.md) and
+[`docs/JOSS_READINESS.md`](../JOSS_READINESS.md).
 
-Each entry should contain, where applicable:
+## Evidence rules
 
-- `date`: ISO date;
-- `title`: concise description;
-- `url`: public issue, pull request, release, DOI, dataset, protocol, preprint,
-  presentation, or archived report;
-- `software_version`: exact DiffractScout version or commit;
-- `people`: contributors or validators who consent to attribution;
-- `claim_supported`: the precise manuscript statement supported by the record;
-- `validation_type`: required for independent validations; use `diffraction`
-  or `elasticity` so both submission gates can be audited separately;
-- `notes`: limitations, unresolved discrepancies, or access restrictions.
+Add a record only after its source is publicly accessible or retained in a
+stable repository. Each record must have a source URL, date, title, exact
+software version or commit, and the precise claim it supports. Additional
+fields are defined by `impact_evidence.schema.json` and validated by
+`scripts/joss_readiness.py`.
 
-Completed research-use and independent-validation entries must also bind to a
-version-controlled report under `validation_cases/` through `report_path` and
-`report_sha256`. Research-use records require frozen input and result-manifest
-hashes, a lawful input license, the actual research decision, and limitations.
-Diffraction validations require the reference implementation/version,
-predeclared tolerance basis, frozen input hash, radiation and scan range;
-elasticity validations additionally require tensor source/frame, Voigt
-convention and `[100]`, `[110]`, `[111]` directions. External engagement must
-record the tested artifact, commands, verification result, concrete outcome,
-limitations, and whether attribution consent was obtained. Consent must be true
-when `people` names anyone; an unattributed public record may explicitly use
-false. A merely non-empty array cannot satisfy the submission gate.
+- Put papers and preprints in `publications_or_preprints`; include the DOI or
+  stable URL and explain the software's specific role. The author reported
+  published uses on 26 September 2026, but representative citations have not
+  yet been identified in this ledger.
+- Add a `research_use_cases` record only for a completed, versioned workflow
+  with a report under `validation_cases/`, its report hash, frozen input and
+  result-manifest hashes, lawful input license, research decision, and
+  limitations. The local gate intentionally requires this fuller case record;
+  a publication citation and a replayable case are distinct evidence types.
+- Add an `independent_validations` record only after completing its report
+  under `validation_cases/`. State the reference implementation/version and
+  tolerance basis before comparing results. Diffraction records include the
+  input hash, radiation, and scan range. Elasticity records include tensor
+  source/frame, Voigt convention, and `[100]`, `[110]`, `[111]` directions.
+- Add `external_engagement` only for a real external interaction or test.
+  Identify the tested artifact, commands, result, outcome, and limitations.
+  Set consent to true before naming a person; an unattributed record may set it
+  false.
+- Add `public_development_activity` for meaningful public commits, issues,
+  pull requests, and releases that document real work. Record the public URL
+  and outcome. Do not count private history, planned or empty issues, scheduled
+  CI, stars, views, download counts, or unmerged changes.
+- Add an `archived_releases` record only when the exact final tag is archived
+  with a persistent DOI. An ordinary GitHub Release does not satisfy that
+  post-review record.
 
-`public_development_activity` records only meaningful, publicly visible work in
-the canonical GitHub repository: commits, issues, pull requests, or releases
-that document real maintenance, validation, dependency, documentation, or user
-work. The submission gate counts distinct calendar months from these URLs. It
-does not treat local commit timestamps, empty issues, scheduled CI, stars, or
-download counts as proof of distributed public development.
+JOSS currently requires more than six months of active public development
+history and evidence of research use at least by the developers. External
+engagement is a strong positive signal. The local readiness tool adds stricter
+project gates for four active public months, a hashed research-use case, both
+diffraction and elasticity reports, and external engagement. The project
+should report these as local controls, not as verbatim JOSS requirements.
 
-Evidence must reflect real activity. Empty arrays are preferable to inferred,
-private, duplicated, or retrospective records. Personal correspondence may be
-summarized only with the other person's permission and should be replaced by a
-public issue or archived validation report when possible.
+## Submission metadata
 
-`submission_metadata` contains explicit human confirmations and public URLs for
-the selected remote CI run and official Open Journals paper build, plus the
-exact 40-character commit tested by each. Both commits must equal the current
-submission commit. Leave these
-values false or empty until the submitting author has checked them. After the
-official build and page review, record the SHA-256 values reported by readiness
-for the paper inputs and PDF; this prevents a stale tracked PDF from passing in
-a fresh checkout. An archived
-software release DOI belongs to the post-review `publication` stage, not the
-initial `submission` stage.
+Leave confirmation booleans false and URLs/hashes empty until the submitting
+author confirms them for the selected source. As of 26 September 2026, the
+author confirmed that the currently listed Delun Gong name, ORCID, and
+Institute of Metal Research affiliation are correct. The complete author
+list, any coauthor consent and affiliations, funding/sponsor role,
+contributor list, related publications, and human review of all AI-assisted
+work still need to be confirmed; a current identity confirmation does not
+complete that review.
+
+Record the public remote CI run and official Open Journals build only when
+they test the same exact 40-character commit selected for submission. After
+building and inspecting the final PDF, record the source and PDF SHA-256 values
+reported by readiness. Following successful JOSS review, create the final tag
+and software archive DOI and enter them for the `publication` stage.

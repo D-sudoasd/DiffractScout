@@ -1,0 +1,1409 @@
+{
+  "all_acceptance_checks_passed": true,
+  "diffraction_cases": {
+    "bcc_fe": {
+      "gemmi_d_spacing_group_count": 5,
+      "gemmi_reflection_family_count": 5,
+      "input_cif": "src/diffractscout/benchmark_data/bcc_fe.cif",
+      "input_sha256": "eb39f2b2e2a9a29cf8429b3b62da7f5dbea03cc765db8e8f1009c17043c15f6a",
+      "intensity_comparison": {
+        "interpretation": "diagnostic_only_no_acceptance_threshold",
+        "max_abs_delta_relative_intensity_percentage_points": 0.46572887223167214,
+        "peaks": [
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.0,
+            "abs_delta_two_theta_deg": 7.105427357601002e-15,
+            "d_A_gemmi": 2.022325394193526,
+            "d_A_pymatgen": 2.022325394193526,
+            "gemmi_hkl_families": [
+              [
+                1,
+                1,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 100.0,
+            "pymatgen_hkl_families": [
+              [
+                1,
+                1,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 100.0,
+            "two_theta_deg_gemmi": 44.77865438380817,
+            "two_theta_deg_pymatgen": 44.778654383808174
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.047089695925629727,
+            "abs_delta_two_theta_deg": 1.4210854715202004e-14,
+            "d_A_gemmi": 1.4300000000000002,
+            "d_A_pymatgen": 1.43,
+            "gemmi_hkl_families": [
+              [
+                2,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 14.630914795092721,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 14.678004491018351,
+            "two_theta_deg_gemmi": 65.18647232008216,
+            "two_theta_deg_pymatgen": 65.18647232008217
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.46572887223167214,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.1675901107266482,
+            "d_A_pymatgen": 1.1675901107266482,
+            "gemmi_hkl_families": [
+              [
+                2,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 28.021847796210363,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 28.487576668442035,
+            "two_theta_deg_gemmi": 82.55932297686478,
+            "two_theta_deg_pymatgen": 82.55932297686478
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.13577086051555654,
+            "abs_delta_two_theta_deg": 2.842170943040401e-14,
+            "d_A_gemmi": 1.011162697096763,
+            "d_A_pymatgen": 1.011162697096763,
+            "gemmi_hkl_families": [
+              [
+                2,
+                2,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 9.648279238460761,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                2,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 9.784050098976317,
+            "two_theta_deg_gemmi": 99.24562508220849,
+            "two_theta_deg_pymatgen": 99.24562508220852
+          },
+          {
+            "abs_delta_d_A": 3.3306690738754696e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.033953068601988434,
+            "abs_delta_two_theta_deg": 7.105427357601002e-14,
+            "d_A_gemmi": 0.9044114108081566,
+            "d_A_pymatgen": 0.9044114108081562,
+            "gemmi_hkl_families": [
+              [
+                3,
+                1,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 18.33027125737359,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                1,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 18.2963181887716,
+            "two_theta_deg_gemmi": 116.79720523036076,
+            "two_theta_deg_pymatgen": 116.79720523036083
+          }
+        ]
+      },
+      "matched_d_spacing_group_count": 5,
+      "position_max_abs_delta_d_A": 3.3306690738754696e-16,
+      "position_max_abs_delta_two_theta_deg": 7.105427357601002e-14,
+      "position_passed": true,
+      "pymatgen_d_spacing_group_count": 5,
+      "pymatgen_parse_warnings": [
+        "No _symmetry_equiv_pos_as_xyz type key found. Spacegroup from _space_group_name_H-M_alt used.",
+        "Issues encountered while parsing CIF: No _symmetry_equiv_pos_as_xyz type key found. Spacegroup from _space_group_name_H-M_alt used."
+      ],
+      "pymatgen_pattern_peak_count": 5,
+      "pymatgen_structure_site_count": 2,
+      "selection_rules": {
+        "expected_allowed_families": [
+          [
+            1,
+            1,
+            0
+          ],
+          [
+            2,
+            0,
+            0
+          ],
+          [
+            2,
+            1,
+            1
+          ]
+        ],
+        "expected_forbidden_families": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "gemmi_allowed_missing": [],
+        "gemmi_forbidden_present": [],
+        "gemmi_rule_violations": [],
+        "passed": true,
+        "pymatgen_allowed_missing": [],
+        "pymatgen_forbidden_present": [],
+        "pymatgen_rule_violations": []
+      },
+      "unmatched_gemmi_group_indices": [],
+      "unmatched_pymatgen_group_indices": []
+    },
+    "fcc_al": {
+      "gemmi_d_spacing_group_count": 8,
+      "gemmi_reflection_family_count": 8,
+      "input_cif": "src/diffractscout/benchmark_data/fcc_al.cif",
+      "input_sha256": "c82f082d2c1ed45c2219713cf972ffce67a7df78d00eb8b953541363c8f0ffdf",
+      "intensity_comparison": {
+        "interpretation": "diagnostic_only_no_acceptance_threshold",
+        "max_abs_delta_relative_intensity_percentage_points": 0.7898700632332449,
+        "peaks": [
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.0,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 2.3094010767585034,
+            "d_A_pymatgen": 2.3094010767585034,
+            "gemmi_hkl_families": [
+              [
+                1,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 100.0,
+            "pymatgen_hkl_families": [
+              [
+                1,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 100.0,
+            "two_theta_deg_gemmi": 38.96873821328758,
+            "two_theta_deg_pymatgen": 38.96873821328758
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.22428952770014376,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 2.0,
+            "d_A_pymatgen": 2.0,
+            "gemmi_hkl_families": [
+              [
+                2,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 48.29121673156484,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 48.066927203864694,
+            "two_theta_deg_gemmi": 45.306105520893105,
+            "two_theta_deg_pymatgen": 45.306105520893105
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.3999533907942343,
+            "abs_delta_two_theta_deg": 1.4210854715202004e-14,
+            "d_A_gemmi": 1.414213562373095,
+            "d_A_pymatgen": 1.4142135623730951,
+            "gemmi_hkl_families": [
+              [
+                2,
+                2,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 30.513892889111354,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                2,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 30.913846279905588,
+            "two_theta_deg_gemmi": 66.00619219591967,
+            "two_theta_deg_pymatgen": 66.00619219591965
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.7898700632332449,
+            "abs_delta_two_theta_deg": 2.842170943040401e-14,
+            "d_A_gemmi": 1.2060453783110545,
+            "d_A_pymatgen": 1.2060453783110547,
+            "gemmi_hkl_families": [
+              [
+                3,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 35.41251088669372,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 36.20238094992696,
+            "two_theta_deg_gemmi": 79.38975378111094,
+            "two_theta_deg_pymatgen": 79.38975378111091
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.21145693021524004,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.1547005383792517,
+            "d_A_pymatgen": 1.1547005383792517,
+            "gemmi_hkl_families": [
+              [
+                2,
+                2,
+                2
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 10.292082591118975,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                2,
+                2
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 10.503539521334215,
+            "two_theta_deg_gemmi": 83.68717096748962,
+            "two_theta_deg_pymatgen": 83.68717096748962
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.017875445143724633,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.0,
+            "d_A_pymatgen": 1.0,
+            "gemmi_hkl_families": [
+              [
+                4,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 5.47318794292648,
+            "pymatgen_hkl_families": [
+              [
+                4,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 5.455312497782756,
+            "two_theta_deg_gemmi": 100.76167247514275,
+            "two_theta_deg_pymatgen": 100.76167247514275
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.5485054328663317,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 0.917662935482247,
+            "d_A_pymatgen": 0.917662935482247,
+            "gemmi_hkl_families": [
+              [
+                3,
+                3,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 20.675078838275375,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                3,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 20.126573405409044,
+            "two_theta_deg_gemmi": 114.15678547727177,
+            "two_theta_deg_pymatgen": 114.15678547727177
+          },
+          {
+            "abs_delta_d_A": 1.1102230246251565e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.7037320782201917,
+            "abs_delta_two_theta_deg": 4.263256414560601e-14,
+            "d_A_gemmi": 0.8944271909999159,
+            "d_A_pymatgen": 0.894427190999916,
+            "gemmi_hkl_families": [
+              [
+                4,
+                2,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 21.038988672278386,
+            "pymatgen_hkl_families": [
+              [
+                4,
+                2,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 20.335256594058194,
+            "two_theta_deg_gemmi": 118.90803983023025,
+            "two_theta_deg_pymatgen": 118.90803983023021
+          }
+        ]
+      },
+      "matched_d_spacing_group_count": 8,
+      "position_max_abs_delta_d_A": 2.220446049250313e-16,
+      "position_max_abs_delta_two_theta_deg": 4.263256414560601e-14,
+      "position_passed": true,
+      "pymatgen_d_spacing_group_count": 8,
+      "pymatgen_parse_warnings": [
+        "No _symmetry_equiv_pos_as_xyz type key found. Spacegroup from _space_group_name_H-M_alt used.",
+        "Issues encountered while parsing CIF: No _symmetry_equiv_pos_as_xyz type key found. Spacegroup from _space_group_name_H-M_alt used."
+      ],
+      "pymatgen_pattern_peak_count": 8,
+      "pymatgen_structure_site_count": 4,
+      "selection_rules": {
+        "expected_allowed_families": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            2,
+            0,
+            0
+          ],
+          [
+            2,
+            2,
+            0
+          ]
+        ],
+        "expected_forbidden_families": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0
+          ]
+        ],
+        "gemmi_allowed_missing": [],
+        "gemmi_forbidden_present": [],
+        "gemmi_rule_violations": [],
+        "passed": true,
+        "pymatgen_allowed_missing": [],
+        "pymatgen_forbidden_present": [],
+        "pymatgen_rule_violations": []
+      },
+      "unmatched_gemmi_group_indices": [],
+      "unmatched_pymatgen_group_indices": []
+    },
+    "nacl": {
+      "gemmi_d_spacing_group_count": 14,
+      "gemmi_reflection_family_count": 16,
+      "input_cif": "src/diffractscout/benchmark_data/nacl.cif",
+      "input_sha256": "1f9eb32ede4720e3b96394f0145cac0a6ca23eabe52c37a6a76ea2131ce238bc",
+      "intensity_comparison": {
+        "interpretation": "diagnostic_only_no_acceptance_threshold",
+        "max_abs_delta_relative_intensity_percentage_points": 0.5716221965467092,
+        "peaks": [
+          {
+            "abs_delta_d_A": 1.3322676295501878e-15,
+            "abs_delta_relative_intensity_percentage_points": 0.06260894102152292,
+            "abs_delta_two_theta_deg": 1.7763568394002505e-14,
+            "d_A_gemmi": 3.2562555182294886,
+            "d_A_pymatgen": 3.25625551822949,
+            "gemmi_hkl_families": [
+              [
+                1,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 8.139645274047899,
+            "pymatgen_hkl_families": [
+              [
+                1,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 8.077036333026376,
+            "two_theta_deg_gemmi": 27.36720162580169,
+            "two_theta_deg_pymatgen": 27.367201625801673
+          },
+          {
+            "abs_delta_d_A": 4.440892098500626e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.0,
+            "abs_delta_two_theta_deg": 7.105427357601002e-15,
+            "d_A_gemmi": 2.8199999999999994,
+            "d_A_pymatgen": 2.82,
+            "gemmi_hkl_families": [
+              [
+                2,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 100.0,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 100.0,
+            "two_theta_deg_gemmi": 31.704311174001937,
+            "two_theta_deg_pymatgen": 31.70431117400193
+          },
+          {
+            "abs_delta_d_A": 8.881784197001252e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.20621766037753275,
+            "abs_delta_two_theta_deg": 2.1316282072803006e-14,
+            "d_A_gemmi": 1.9940411229460635,
+            "d_A_pymatgen": 1.9940411229460644,
+            "gemmi_hkl_families": [
+              [
+                2,
+                2,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 65.8425359724745,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                2,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 65.63631831209696,
+            "two_theta_deg_gemmi": 45.44905844251734,
+            "two_theta_deg_pymatgen": 45.44905844251732
+          },
+          {
+            "abs_delta_d_A": 6.661338147750939e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.03827179150902538,
+            "abs_delta_two_theta_deg": 2.842170943040401e-14,
+            "d_A_gemmi": 1.7005239834185863,
+            "d_A_pymatgen": 1.700523983418587,
+            "gemmi_hkl_families": [
+              [
+                3,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 1.9845099384969627,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 1.9462381469879373,
+            "two_theta_deg_gemmi": 53.869824509787506,
+            "two_theta_deg_pymatgen": 53.86982450978748
+          },
+          {
+            "abs_delta_d_A": 6.661338147750939e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.0011862680548802018,
+            "abs_delta_two_theta_deg": 2.842170943040401e-14,
+            "d_A_gemmi": 1.6281277591147443,
+            "d_A_pymatgen": 1.628127759114745,
+            "gemmi_hkl_families": [
+              [
+                2,
+                2,
+                2
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 21.228664702696925,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                2,
+                2
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 21.227478434642045,
+            "two_theta_deg_gemmi": 56.474043221505326,
+            "two_theta_deg_pymatgen": 56.4740432215053
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.0048705713917573945,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.4099999999999997,
+            "d_A_pymatgen": 1.41,
+            "gemmi_hkl_families": [
+              [
+                4,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 9.314534004648767,
+            "pymatgen_hkl_families": [
+              [
+                4,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 9.319404576040524,
+            "two_theta_deg_gemmi": 66.22874134790135,
+            "two_theta_deg_pymatgen": 66.22874134790135
+          },
+          {
+            "abs_delta_d_A": 4.440892098500626e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.09011295531453967,
+            "abs_delta_two_theta_deg": 4.263256414560601e-14,
+            "d_A_gemmi": 1.293904739029968,
+            "d_A_pymatgen": 1.2939047390299685,
+            "gemmi_hkl_families": [
+              [
+                3,
+                3,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 0.998200732612788,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                3,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 0.9080877772982483,
+            "two_theta_deg_gemmi": 73.07228727290374,
+            "two_theta_deg_pymatgen": 73.0722872729037
+          },
+          {
+            "abs_delta_d_A": 4.440892098500626e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.08886556058706319,
+            "abs_delta_two_theta_deg": 2.842170943040401e-14,
+            "d_A_gemmi": 1.261142339309881,
+            "d_A_pymatgen": 1.2611423393098815,
+            "gemmi_hkl_families": [
+              [
+                4,
+                2,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 24.834570201530664,
+            "pymatgen_hkl_families": [
+              [
+                4,
+                2,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 24.7457046409436,
+            "two_theta_deg_gemmi": 75.29408255035118,
+            "two_theta_deg_pymatgen": 75.29408255035115
+          },
+          {
+            "abs_delta_d_A": 4.440892098500626e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.1968619672090277,
+            "abs_delta_two_theta_deg": 2.842170943040401e-14,
+            "d_A_gemmi": 1.1512601791080934,
+            "d_A_pymatgen": 1.1512601791080939,
+            "gemmi_hkl_families": [
+              [
+                4,
+                2,
+                2
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 18.420438665205754,
+            "pymatgen_hkl_families": [
+              [
+                4,
+                2,
+                2
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 18.223576697996727,
+            "two_theta_deg_gemmi": 83.99418428895027,
+            "two_theta_deg_pymatgen": 83.99418428895024
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.06155686886091383,
+            "abs_delta_two_theta_deg": 2.842170943040401e-14,
+            "d_A_gemmi": 1.0854185060764963,
+            "d_A_pymatgen": 1.0854185060764965,
+            "gemmi_hkl_families": [
+              [
+                3,
+                3,
+                3
+              ],
+              [
+                5,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 1.1548722014134176,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                3,
+                3
+              ],
+              [
+                5,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 1.0933153325525038,
+            "two_theta_deg_gemmi": 90.41779958572545,
+            "two_theta_deg_pymatgen": 90.41779958572542
+          },
+          {
+            "abs_delta_d_A": 4.440892098500626e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.18253840224675866,
+            "abs_delta_two_theta_deg": 5.684341886080802e-14,
+            "d_A_gemmi": 0.9970205614730318,
+            "d_A_pymatgen": 0.9970205614730322,
+            "gemmi_hkl_families": [
+              [
+                4,
+                4,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 6.703592061468612,
+            "pymatgen_hkl_families": [
+              [
+                4,
+                4,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 6.521053659221853,
+            "two_theta_deg_gemmi": 101.1762348217296,
+            "two_theta_deg_pymatgen": 101.17623482172954
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.027403105282516327,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 0.9533339993337666,
+            "d_A_pymatgen": 0.9533339993337666,
+            "gemmi_hkl_families": [
+              [
+                5,
+                3,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 1.9757193200378447,
+            "pymatgen_hkl_families": [
+              [
+                5,
+                3,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 1.9483162147553283,
+            "two_theta_deg_gemmi": 107.80321779302274,
+            "two_theta_deg_pymatgen": 107.80321779302274
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.5680433547823025,
+            "abs_delta_two_theta_deg": 4.263256414560601e-14,
+            "d_A_gemmi": 0.9399999999999998,
+            "d_A_pymatgen": 0.9400000000000001,
+            "gemmi_hkl_families": [
+              [
+                4,
+                4,
+                2
+              ],
+              [
+                6,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 16.20785772195443,
+            "pymatgen_hkl_families": [
+              [
+                4,
+                4,
+                2
+              ],
+              [
+                6,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 15.639814367172127,
+            "two_theta_deg_gemmi": 110.06316485468736,
+            "two_theta_deg_pymatgen": 110.06316485468732
+          },
+          {
+            "abs_delta_d_A": 3.3306690738754696e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.5716221965467092,
+            "abs_delta_two_theta_deg": 7.105427357601002e-14,
+            "d_A_gemmi": 0.8917623001674827,
+            "d_A_pymatgen": 0.891762300167483,
+            "gemmi_hkl_families": [
+              [
+                6,
+                2,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 13.543001540901981,
+            "pymatgen_hkl_families": [
+              [
+                6,
+                2,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 12.971379344355272,
+            "two_theta_deg_gemmi": 119.49083397824339,
+            "two_theta_deg_pymatgen": 119.49083397824332
+          }
+        ]
+      },
+      "matched_d_spacing_group_count": 14,
+      "position_max_abs_delta_d_A": 1.3322676295501878e-15,
+      "position_max_abs_delta_two_theta_deg": 7.105427357601002e-14,
+      "position_passed": true,
+      "pymatgen_d_spacing_group_count": 14,
+      "pymatgen_parse_warnings": [
+        "No _symmetry_equiv_pos_as_xyz type key found. Spacegroup from _space_group_name_H-M_alt used.",
+        "Issues encountered while parsing CIF: No _symmetry_equiv_pos_as_xyz type key found. Spacegroup from _space_group_name_H-M_alt used."
+      ],
+      "pymatgen_pattern_peak_count": 14,
+      "pymatgen_structure_site_count": 8,
+      "selection_rules": {
+        "expected_allowed_families": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            2,
+            0,
+            0
+          ],
+          [
+            2,
+            2,
+            0
+          ]
+        ],
+        "expected_forbidden_families": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0
+          ]
+        ],
+        "gemmi_allowed_missing": [],
+        "gemmi_forbidden_present": [],
+        "gemmi_rule_violations": [],
+        "passed": true,
+        "pymatgen_allowed_missing": [],
+        "pymatgen_forbidden_present": [],
+        "pymatgen_rule_violations": []
+      },
+      "unmatched_gemmi_group_indices": [],
+      "unmatched_pymatgen_group_indices": []
+    },
+    "simple_cubic_al": {
+      "gemmi_d_spacing_group_count": 13,
+      "gemmi_reflection_family_count": 14,
+      "input_cif": "src/diffractscout/benchmark_data/simple_cubic_al.cif",
+      "input_sha256": "a7444474c5eee13163748b2946b8a5fe0f8fac5a57c4ef9b19fc7d56126e5b6a",
+      "intensity_comparison": {
+        "interpretation": "diagnostic_only_no_acceptance_threshold",
+        "max_abs_delta_relative_intensity_percentage_points": 0.4517144092258931,
+        "peaks": [
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 2.842170943040401e-14,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 3.5,
+            "d_A_pymatgen": 3.5,
+            "gemmi_hkl_families": [
+              [
+                1,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 100.00000000000001,
+            "pymatgen_hkl_families": [
+              [
+                1,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 99.99999999999999,
+            "two_theta_deg_gemmi": 25.42813490960536,
+            "two_theta_deg_pymatgen": 25.42813490960536
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.2563779708508491,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 2.4748737341529163,
+            "d_A_pymatgen": 2.4748737341529163,
+            "gemmi_hkl_families": [
+              [
+                1,
+                1,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 74.69005654200055,
+            "pymatgen_hkl_families": [
+              [
+                1,
+                1,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 74.4336785711497,
+            "two_theta_deg_gemmi": 36.26893808746654,
+            "two_theta_deg_pymatgen": 36.26893808746654
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.2775465128193808,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 2.0207259421636903,
+            "d_A_pymatgen": 2.0207259421636903,
+            "gemmi_hkl_families": [
+              [
+                1,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 26.95950878518283,
+            "pymatgen_hkl_families": [
+              [
+                1,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 26.68196227236345,
+            "two_theta_deg_gemmi": 44.816021759388924,
+            "two_theta_deg_pymatgen": 44.816021759388924
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.12425766304114205,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.75,
+            "d_A_pymatgen": 1.75,
+            "gemmi_hkl_families": [
+              [
+                2,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 12.759791203456631,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 12.635533540415489,
+            "two_theta_deg_gemmi": 52.22963892827337,
+            "two_theta_deg_pymatgen": 52.22963892827337
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.09600282069863653,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.565247584249853,
+            "d_A_pymatgen": 1.565247584249853,
+            "gemmi_hkl_families": [
+              [
+                2,
+                1,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 35.1223210103959,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                1,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 35.026318189697264,
+            "two_theta_deg_gemmi": 58.96090819680111,
+            "two_theta_deg_pymatgen": 58.96090819680111
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.15666235260220063,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.4288690166235207,
+            "d_A_pymatgen": 1.4288690166235207,
+            "gemmi_hkl_families": [
+              [
+                2,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 25.645664419073256,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 25.802326771675457,
+            "two_theta_deg_gemmi": 65.24447291294112,
+            "two_theta_deg_pymatgen": 65.24447291294112
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.12675886458547225,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.2374368670764582,
+            "d_A_pymatgen": 1.2374368670764582,
+            "gemmi_hkl_families": [
+              [
+                2,
+                2,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 7.812811839943226,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                2,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 7.939570704528698,
+            "two_theta_deg_gemmi": 76.99733036167903,
+            "two_theta_deg_pymatgen": 76.99733036167903
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.24499058609759672,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.1666666666666667,
+            "d_A_pymatgen": 1.166666666666667,
+            "gemmi_hkl_families": [
+              [
+                2,
+                2,
+                1
+              ],
+              [
+                3,
+                0,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 16.150152710111154,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                2,
+                1
+              ],
+              [
+                3,
+                0,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 16.39514329620875,
+            "two_theta_deg_gemmi": 82.63897383118324,
+            "two_theta_deg_pymatgen": 82.63897383118324
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.11491686292123227,
+            "abs_delta_two_theta_deg": 1.4210854715202004e-14,
+            "d_A_gemmi": 1.1067971810589328,
+            "d_A_pymatgen": 1.106797181058933,
+            "gemmi_hkl_families": [
+              [
+                3,
+                1,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 11.073631912154664,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                1,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 11.188548775075896,
+            "two_theta_deg_gemmi": 88.2094694370667,
+            "two_theta_deg_pymatgen": 88.20946943706669
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.02717140666040052,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.0552897060221729,
+            "d_A_pymatgen": 1.0552897060221729,
+            "gemmi_hkl_families": [
+              [
+                3,
+                1,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 9.827681516868578,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                1,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 9.854852923528979,
+            "two_theta_deg_gemmi": 93.76301960107875,
+            "two_theta_deg_pymatgen": 93.76301960107875
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.019938155420592185,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 1.0103629710818451,
+            "d_A_pymatgen": 1.0103629710818451,
+            "gemmi_hkl_families": [
+              [
+                2,
+                2,
+                2
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 3.007147570433699,
+            "pymatgen_hkl_families": [
+              [
+                2,
+                2,
+                2
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 2.987209415013107,
+            "two_theta_deg_gemmi": 99.35234392983573,
+            "two_theta_deg_pymatgen": 99.35234392983573
+          },
+          {
+            "abs_delta_d_A": 0.0,
+            "abs_delta_relative_intensity_percentage_points": 0.14393761869152044,
+            "abs_delta_two_theta_deg": 0.0,
+            "d_A_gemmi": 0.9707253433941511,
+            "d_A_pymatgen": 0.9707253433941511,
+            "gemmi_hkl_families": [
+              [
+                3,
+                2,
+                0
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 8.555197994407527,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                2,
+                0
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 8.411260375716006,
+            "two_theta_deg_gemmi": 105.03332196120854,
+            "two_theta_deg_pymatgen": 105.03332196120854
+          },
+          {
+            "abs_delta_d_A": 2.220446049250313e-16,
+            "abs_delta_relative_intensity_percentage_points": 0.4517144092258931,
+            "abs_delta_two_theta_deg": 4.263256414560601e-14,
+            "d_A_gemmi": 0.9354143466934853,
+            "d_A_pymatgen": 0.9354143466934856,
+            "gemmi_hkl_families": [
+              [
+                3,
+                2,
+                1
+              ]
+            ],
+            "gemmi_relative_intensity_max_100": 16.743824651662965,
+            "pymatgen_hkl_families": [
+              [
+                3,
+                2,
+                1
+              ]
+            ],
+            "pymatgen_relative_intensity_max_100": 16.292110242437072,
+            "two_theta_deg_gemmi": 110.8704539803576,
+            "two_theta_deg_pymatgen": 110.87045398035755
+          }
+        ]
+      },
+      "matched_d_spacing_group_count": 13,
+      "position_max_abs_delta_d_A": 2.220446049250313e-16,
+      "position_max_abs_delta_two_theta_deg": 4.263256414560601e-14,
+      "position_passed": true,
+      "pymatgen_d_spacing_group_count": 13,
+      "pymatgen_parse_warnings": [
+        "No _symmetry_equiv_pos_as_xyz type key found. Spacegroup from _space_group_name_H-M_alt used.",
+        "Issues encountered while parsing CIF: No _symmetry_equiv_pos_as_xyz type key found. Spacegroup from _space_group_name_H-M_alt used."
+      ],
+      "pymatgen_pattern_peak_count": 13,
+      "pymatgen_structure_site_count": 1,
+      "selection_rules": {
+        "expected_allowed_families": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "expected_forbidden_families": [],
+        "gemmi_allowed_missing": [],
+        "gemmi_forbidden_present": [],
+        "gemmi_rule_violations": [],
+        "passed": true,
+        "pymatgen_allowed_missing": [],
+        "pymatgen_forbidden_present": [],
+        "pymatgen_rule_violations": []
+      },
+      "unmatched_gemmi_group_indices": [],
+      "unmatched_pymatgen_group_indices": []
+    }
+  },
+  "elasticity": {
+    "comparison_tolerances": {
+      "absolute_GPa": 1e-08,
+      "acceptance": "abs(delta) <= max(absolute_GPa, relative * abs(pymatgen))",
+      "relative": 1e-10
+    },
+    "directions": [
+      {
+        "abs_delta_GPa": 0.0,
+        "gemmi_project_modulus_GPa": 137.49999999999997,
+        "hkl_normal": [
+          1,
+          0,
+          0
+        ],
+        "passed": true,
+        "pymatgen_modulus_GPa": 137.49999999999997
+      },
+      {
+        "abs_delta_GPa": 5.684341886080802e-14,
+        "gemmi_project_modulus_GPa": 209.52380952380963,
+        "hkl_normal": [
+          1,
+          1,
+          0
+        ],
+        "passed": true,
+        "pymatgen_modulus_GPa": 209.52380952380958
+      },
+      {
+        "abs_delta_GPa": 5.684341886080802e-14,
+        "gemmi_project_modulus_GPa": 253.84615384615367,
+        "hkl_normal": [
+          1,
+          1,
+          1
+        ],
+        "passed": true,
+        "pymatgen_modulus_GPa": 253.84615384615373
+      }
+    ],
+    "input_cif": "src/diffractscout/benchmark_data/fcc_al.cif",
+    "input_sha256": "c82f082d2c1ed45c2219713cf972ffce67a7df78d00eb8b953541363c8f0ffdf",
+    "passed": true,
+    "shear_convention": "engineering shear strain",
+    "synthetic_stiffness_GPa": [
+      [
+        250.0,
+        150.0,
+        150.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        150.0,
+        250.0,
+        150.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        150.0,
+        150.0,
+        250.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        100.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        100.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        100.0
+      ]
+    ],
+    "voigt_order": [
+      "11",
+      "22",
+      "33",
+      "23",
+      "13",
+      "12"
+    ]
+  },
+  "expectations": {
+    "path": "src/diffractscout/benchmark_data/expectations.json",
+    "sha256": "7ea211d475382584984748514cc3218b0f6f707f2e81a35b0f1dee98a9780ce0"
+  },
+  "generated_at_utc": "2026-09-26T12:27:03+00:00",
+  "output_files": [
+    "validation_cases/independent_engines/reference_engine_comparison.json",
+    "validation_cases/independent_engines/reference_engine_comparison.md"
+  ],
+  "schema": "diffractscout_independent_reference_engine_comparison_v1",
+  "settings": {
+    "d_spacing_merge_and_match_tolerance_A": 1e-06,
+    "intensity_comparison": "unscaled calculated peaks summed at coincident d then normalized per case to maximum 100; diagnostic only",
+    "radiation": "Cu Kα effective single wavelength",
+    "two_theta_acceptance_tolerance_deg": 1e-05,
+    "two_theta_range_deg": [
+      5.0,
+      120.0
+    ],
+    "wavelength_A": 1.5406
+  },
+  "software": {
+    "comparison_script_sha256": "4727c2e20b603aa8e4c29ea158e3231dabce62f7be999e0a3754fd82dcaf0f8b",
+    "diffractscout": "0.4.0",
+    "gemmi": "0.7.5",
+    "pymatgen": "2026.5.4",
+    "python": "3.12.10"
+  },
+  "synthetic_inputs_only": true
+}

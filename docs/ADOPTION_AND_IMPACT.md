@@ -1,53 +1,91 @@
 # Adoption and research-impact evidence
 
-The JOSS manuscript may state only claims supported by traceable records. The
-machine-readable index is `docs/evidence/impact_evidence.json`; this document
-defines the evidence standard and the claim ledger used during final editing.
+Assessment date: **26 September 2026**. The JOSS manuscript may make only
+claims supported by traceable records. The machine-readable index is
+`docs/evidence/impact_evidence.json`; this document defines what each record
+can support and distinguishes established evidence from author-reported leads.
+
+## Current evidence status
+
+The submitting author reports that DiffractScout has been used in multiple
+published papers. This report indicates actual research use and must not be
+rewritten as “no research use.” The specific papers, DOI/URLs, software
+version or commit, feature used, and research outcomes have not yet been
+mapped into the evidence ledger. Until representative sources are identified
+and checked, the manuscript should not claim a publication count or describe
+the contribution of those papers.
+
+The public repository contains a 45-check analytic benchmark and a synthetic
+FCC demonstration. These materials support reproducibility of selected
+calculation, software, and provenance contracts. They do not show experimental
+accuracy, external adoption, productivity gains, or research impact by
+themselves. A comparison with another implementation can support a numerical
+validation claim when the method and acceptance criteria were fixed in
+advance; it does not establish use by another research group or agreement with
+experiment.
 
 ## Evidence categories
 
-### Research use case
+### Research use
 
-A use case should identify a scientific question, exact software version,
-input provenance and license, settings, outputs, how the output affected a
-research decision, and the applicable limitations. A usage statement without
-an inspectable workflow supports awareness, not scientific impact.
+For a published use, record the paper's DOI or stable URL, exact software
+version/commit, operation used, and the result or research decision that the
+software informed. Cite the publication in the JOSS manuscript. If the
+workflow is not yet public, describe it only to the extent the author can
+document it and JOSS editors can inspect it; do not disclose restricted data.
 
-### Independent validation
+For the project's stricter public case record, include the scientific
+question, lawful input source, frozen input hashes, full settings, result
+bundle and manifest hashes, research decision, and limitations. A versioned
+report belongs under `validation_cases/`. A general statement that someone
+ran the software is not enough to substantiate a specific scientific claim.
+
+### Independent numerical comparison
 
 An independent comparison should use an analytic result, accepted standard,
-or separately implemented software path. Acceptance criteria must be fixed
-before the result is inspected. Record versions, conventions, units, absolute
-and relative differences, and unresolved discrepancies.
+or separately implemented reference. State the acceptance criteria before
+examining the DiffractScout result. Preserve implementation and version,
+conventions, units, frozen input/result hashes, absolute and relative
+differences, and unresolved discrepancies. For diffraction, state radiation
+and scan range. For elasticity, identify tensor source and coordinate frame,
+Voigt convention, transformations, and tested directions.
+
+These two public comparison reports are required by the local readiness
+script. They are useful internal scientific controls; current JOSS criteria do
+not list independent diffraction and elasticity reports as stand-alone
+reviewer-checklist gates.
 
 ### External engagement
 
-Suitable records include an external issue, pull request, code review,
-validation report, tutorial use, or documented user feedback. Attribution
-requires consent. GitHub stars, repository views, and download counts may be
-reported as reach metrics only; they do not establish scientific impact.
+Useful evidence includes a public issue or discussion from a user, an external
+installation or review report, a contribution, or a documented workflow with
+another group. Record the artifact and version tested, commands, verification
+result, concrete outcome, and limitations. Attribute a person only with
+consent. Stars, views, download counts, self-authored roadmap issues, and
+scheduled CI runs measure other things and do not demonstrate external
+research impact.
 
-### Archived release
+### Public development and releases
 
-The entry must link a Git tag and an immutable archive DOI or equivalent
-persistent identifier. The archived source must match the submission commit.
-For JOSS, this record is completed after successful review when the editor asks
-for the final tagged release and software archive. It is a `publication`-stage
-gate, not a reason to mislabel an ordinary pre-submission GitHub Release as an
-immutable archive.
+The ledger records meaningful public commits, issues, pull requests, and
+releases with their dates and outcomes. The public repository date is
+12 August 2026. Do not count commits predating that date, private changes,
+unmerged branches, or automatic CI. A tagged software release is not an
+immutable archive DOI. After successful review, tag and archive the reviewed
+source and record its DOI for the publication stage.
 
 ## Claim ledger
 
-Complete this table only as evidence becomes available.
+| Potential manuscript claim | Evidence now available | Status |
+|---|---|---|
+| The software has been used in published research | Submitting-author report, 26 September 2026; representative papers and exact use not yet indexed | **Reported; citation-level audit pending.** Do not state a paper count until verified. |
+| The package reproduces defined analytic diffraction and elasticity cases | 45-check analytic suite and synthetic offline FCC workflow | Supportable only as reproducible software/analytic verification; not an experimental-accuracy or impact claim. |
+| A real multiphase workflow informed a specific research decision | No hashed, versioned case report is indexed | Pending. |
+| Indexed reflection geometry agrees with an independent reference | No completed, pre-toleranced diffraction report is indexed | Pending. |
+| Directional elasticity agrees with an independent tensor reference | No completed, tensor-basis-aware report is indexed | Pending. |
+| Researchers outside the development environment installed or used the software | No external test or use record is indexed | Pending. |
+| The software changed a research decision, dataset, presentation, preprint, or paper | Author reports published use; affected result and software contribution are not yet mapped to sources | Source verification pending. |
 
-| Proposed manuscript claim | Required evidence | Public record | Status |
-|---|---|---|---|
-| The software supports a reproducible candidate-to-diffraction workflow | versioned real-material case and verified result bundle | pending | not yet claimable |
-| Indexed reflection geometry agrees with an independent implementation | comparison report with predeclared tolerance | pending | not yet claimable |
-| Directional elastic output agrees with an independent tensor calculation | tensor, frame, rotation, equations, numerical comparison | pending | not yet claimable |
-| Researchers outside the author's development environment can install and use the software | external issue/PR or archived user test | pending | not yet claimable |
-| The software has contributed to a research decision, dataset, presentation, preprint, or paper | versioned workflow plus cited output | pending | not yet claimable |
-
-Synthetic analytic benchmarks support correctness of declared contracts. They
-do not support claims of experimental validity, adoption, productivity gain,
-or research impact.
+The evidence ledger intentionally retains empty research-use, validation, and
+external-engagement arrays until their source records satisfy the documented
+checks. Do not substitute prospective plans for completed work.

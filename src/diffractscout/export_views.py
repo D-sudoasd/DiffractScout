@@ -99,7 +99,7 @@ def user_guide_rows() -> list[list[str]]:
     return [
         ["项目", "说明"],
         ["软件", "DiffractScout — 理论粉末 XRD 参考与候选相 scout（非实验反演）"],
-        ["建议阅读顺序", "① 本表 使用说明 → ② 推荐峰表（中文筛选）→ ③ Peaks 完整英文列 → ④ CSV 做脚本"],
+        ["建议阅读顺序", "① 结果概览 → ② 本表 使用说明 → ③ 推荐峰表（中文筛选）→ ④ Peaks 完整英文列 → ⑤ CSV 做脚本"],
         ["推荐峰表", "分析向中文长表：冻结首行 + 自动筛选；用「物相名称」过滤多相；列顺序为 身份→hkl→几何→强度→排序→弹性"],
         ["Peaks", "完整规范英文峰表（与 peak_reference.csv 列名一致）；同样冻结首行 + 自动筛选"],
         ["Phases", "每个 CIF/相的晶胞、空间群、占位警告、弹性配对状态"],
@@ -116,7 +116,7 @@ def user_guide_rows() -> list[list[str]]:
         ["g_1/Å / g_invA", "g = 1/d，单位 1/Å"],
         [],
         ["—— 强度列（理论） ——", ""],
-        ["相对强度_相内max100 / normalized_intensity", "相内最强线标为 100 的显示归一；不可跨物相直接比绝对强度"],
+        ["相对强度_相内max100 / normalized_intensity", "相内最强线标为 100 的显示归一；固定 0–100 数据条仅表示各物相内部相对强度，不可跨物相比较或用于定量"],
         ["强度_含LP / intensity_with_lp", "多重度 × |F_xray|² × Lorentz–polarization（LP）"],
         ["强度_无LP / intensity_no_lp", "多重度 × |F_xray|²（不含 LP）"],
         ["LP因子 / lp_factor", "经典粉末 LP：(1+cos²2θ)/(sin²θ cosθ)"],

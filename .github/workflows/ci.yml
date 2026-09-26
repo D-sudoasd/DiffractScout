@@ -87,6 +87,15 @@ jobs:
         run: |
           python -c "import mp_api, pymatgen; from diffractscout.providers.materials_project import _matrix; assert _matrix([[1 if i == j else 0 for j in range(6)] for i in range(6)]) is not None"
           pytest -q tests/test_provider_helpers.py
+      - name: Compare independent diffraction and elasticity implementations
+        run: python scripts/compare_reference_engines.py --output ci_reference_engines
+      - name: Upload independent numerical comparison
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reference-engines-python-${{ matrix.python-version }}
+          path: ci_reference_engines
+          if-no-files-found: warn
 
   cross-platform-smoke:
     name: Smoke / ${{ matrix.os }}
@@ -174,11 +183,15 @@ jobs:
           wheel-test/bin/diffractscout --version
           wheel-test/bin/diffractscout demo -o wheel_demo
           wheel-test/bin/diffractscout verify wheel_demo
+          wheel-test/bin/diffractscout inspect wheel_demo --json
           wheel-test/bin/diffractscout benchmark -o wheel_benchmark
           wheel_cif=$(wheel-test/bin/python -c "import pathlib,diffractscout; print(pathlib.Path(diffractscout.__file__).with_name('benchmark_data')/'fcc_al.cif')")
           test -f "$wheel_cif"
-          wheel-test/bin/diffractscout-quick-export "$wheel_cif" -o wheel_quick.xlsx
+          wheel-test/bin/diffractscout preset save -o wheel_preset.json --no-patterns
+          wheel-test/bin/diffractscout preset show wheel_preset.json --json
+          wheel-test/bin/diffractscout-quick-export "$wheel_cif" -o wheel_quick.xlsx --preset wheel_preset.json
           wheel-test/bin/diffractscout verify wheel_quick_bundle
+          wheel-test/bin/diffractscout inspect wheel_quick_bundle --json
           test -x wheel-test/bin/diffractscout-gui
       - name: Upload distributions
         uses: actions/upload-artifact@v7

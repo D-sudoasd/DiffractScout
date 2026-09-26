@@ -21,5 +21,13 @@ Use `docs/VALIDATION_CASE_TEMPLATE.md` for real-material or independent-package
 comparisons. Public records are indexed only after completion in
 `docs/evidence/impact_evidence.json`.
 
+Available numerical cases:
+
+- [Analytic reference suite](analytic_reference_v1/README.md): closed-form
+  crystallographic and cubic-elasticity expectations.
+- [Independent pymatgen comparison](independent_engines/README.md): the same
+  synthetic structures evaluated by separate diffraction and tensor
+  implementations, with versioned numerical reports.
+
 `real_multiphase_case/README.md` is an intake scaffold. Its presence is not
 research-use evidence and its pending fields must never be cited in the paper.

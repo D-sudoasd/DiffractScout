@@ -13,7 +13,7 @@
 
 **DiffractScout turns a chemical-system question or a folder of CIF files into a verifiable theoretical powder-diffraction reference bundle.** It preserves database identity, exact CIF hashes, structural diagnostics, radiation settings, optional elastic-tensor provenance, indexed reflections, warnings, and file checksums in one workflow.
 
-[中文说明](README.zh-CN.md) · [API](docs/API.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Validation](docs/VALIDATION.md) · [Release procedure](docs/RELEASE.md) · [JOSS readiness](docs/JOSS_READINESS.md)
+[中文说明](README.zh-CN.md) · [CLI guide](docs/CLI.md) · [API](docs/API.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Validation](docs/VALIDATION.md) · [Release procedure](docs/RELEASE.md) · [JOSS readiness](docs/JOSS_READINESS.md)
 
 ## Why this software exists
 
@@ -60,6 +60,24 @@ DiffractScout reimplements the CIF2Peaks desktop workflow inside a provenance-fi
 | Optional 2θ figure generation | CLI `--figures`; SVG/PNG bundle figures work in the base install, while `.[figures]` enables the matplotlib rendering path and paper-figure tooling |
 
 Column-name mapping and intensity-channel aliases: [docs/SCHEMA_ALIASES.md](docs/SCHEMA_ALIASES.md). Engine semantics vs CIF2Peaks/pymatgen: [docs/ENGINE_PARITY.md](docs/ENGINE_PARITY.md).
+
+Excel results include an overview with worksheet navigation, grouped table
+headers, consistent scientific number formats, frozen phase columns, and
+phase-relative intensity bars. The GUI can save/load analysis presets and
+offers separate Excel preview, permanent-copy, and result-folder actions.
+See [Working with Excel results](docs/EXCEL.md).
+
+The CLI can save and reuse the same parameter presets and inspect a completed
+bundle after verifying its integrity:
+
+```bash
+diffractscout preset save -o presets/energy-30.json --energy-keV 30
+diffractscout analyze path/to/cifs -o outputs/run --preset presets/energy-30.json
+diffractscout inspect outputs/run --json
+```
+
+Explicit command-line options override preset values. See the [CLI guide](docs/CLI.md)
+for batch exit statuses, radiation overrides, and parameter-file handling.
 
 When a *d*-spacing filter is used, the inclusive Bragg intersection is stored
 separately from the requested angular window. `provenance.json` and phase
@@ -196,6 +214,10 @@ PASS
 ```
 
 Set `SOURCE_DATE_EPOCH` when an archive requires reproducible generated timestamps. See [docs/ANALYTIC_BENCHMARKS.md](docs/ANALYTIC_BENCHMARKS.md).
+
+An optional [independent-engine comparison](validation_cases/independent_engines/README.md)
+checks the same synthetic CIFs and cubic directional moduli against pymatgen.
+CI preserves the numerical reports and dependency versions.
 
 ## Analyze local CIF files
 
@@ -343,7 +365,19 @@ Those repositories remain independent and unchanged by this project. Source snap
 
 ## JOSS preparation status
 
-The repository contains an OSI-approved license, installable package metadata, tests, analytic benchmarks, CI, user and API documentation, governance, examples, contribution and support routes, tag-driven deterministic release packaging, a monthly reproducibility audit, dependency-update automation, a JOSS-format manuscript, and a specific AI usage disclosure. The public-development clock began on 12 August 2026. Formal submission remains blocked by the six-month/distributed-history gate, a completed real multiphase research case, independent diffraction and elasticity validation, external engagement, and human-confirmed metadata. The immutable software archive DOI is required after successful JOSS review for the publication stage, not for the initial submission. First run `python scripts/check_release.py` to create the current-source release receipt, then use `python scripts/joss_readiness.py --stage release|submission|publication`; see [docs/JOSS_READINESS.md](docs/JOSS_READINESS.md) and [docs/JOSS_REVIEW_CHECKLIST.md](docs/JOSS_REVIEW_CHECKLIST.md).
+The repository includes an MIT license, installable package, tests, analytic and
+independent numerical comparisons, CI, documentation, contribution and support
+routes, reproducible release packaging, and a JOSS-format manuscript with AI
+disclosure. The author reports use in published research; representative
+citations and the associated software uses will be added to the submission
+record. Public development began on 12 August 2026, so the JOSS requirement for
+more than six months of active public history remains outstanding. The project
+also tracks its own scientific-validation and engagement criteria separately
+from official JOSS requirements. Run `python scripts/check_release.py` for the
+current-source software acceptance checks; see [JOSS readiness](docs/JOSS_READINESS.md)
+and the [review checklist](docs/JOSS_REVIEW_CHECKLIST.md) for the remaining
+submission evidence and author confirmations. The final archive DOI is a
+post-review publication step.
 
 ## Contributing, support, and citation
 

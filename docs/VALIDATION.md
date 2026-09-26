@@ -85,6 +85,27 @@ The 45 checks cover allowed and forbidden families, multiplicity, cubic plane sp
 
 The benchmark is an internal analytic validation with an implementation path separated from the production orchestration. It does not satisfy the project requirement for an external user or independent third-party comparison.
 
+## Independent numerical implementations
+
+The [independent-engine case](../validation_cases/independent_engines/README.md)
+compares the four packaged synthetic CIFs with pymatgen's `XRDCalculator` and
+the cubic directional-modulus calculation with pymatgen's `ElasticTensor`.
+Both diffraction paths use the same wavelength and conventional cells;
+coincident reflection families are grouped before matching peak positions.
+The report retains the compared values, input hashes, dependency versions,
+predeclared tolerances, and diagnostic intensity differences. CI runs this
+comparison in both Materials Project extra environments and uploads the
+reports, independently of live database access.
+
+```bash
+python -m pip install -e ".[mp]"
+python scripts/compare_reference_engines.py --output outputs/reference_engines
+```
+
+This comparison checks agreement with an independent implementation on
+synthetic structures. Experimental agreement and research-use evidence require
+their own documented cases.
+
 ## Synthetic reference fixture
 
 The offline demo uses:
