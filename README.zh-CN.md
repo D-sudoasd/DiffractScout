@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" width="100%" alt="DiffractScout：可追溯的候选相筛选与理论粉末衍射参考工作流。">
+  <img src="docs/assets/hero.png" width="100%" alt="DiffractScout: Traceable powder-diffraction references. AI-generated conceptual illustration.">
 </p>
 
 # DiffractScout 中文说明

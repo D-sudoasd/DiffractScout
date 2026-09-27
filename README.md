@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" width="100%" alt="DiffractScout: provenance-first phase scouting and indexed powder diffraction references.">
+  <img src="docs/assets/hero.png" width="100%" alt="DiffractScout: Traceable powder-diffraction references. AI-generated conceptual illustration.">
 </p>
 
 # DiffractScout
@@ -26,6 +26,8 @@ for retained formats, engine differences and validation limits.
 [中文说明](README.zh-CN.md) · [CLI guide](docs/CLI.md) · [API](docs/API.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Validation](docs/VALIDATION.md) · [Release procedure](docs/RELEASE.md) · [JOSS readiness](docs/JOSS_READINESS.md)
 
 ## Why this software exists
+
+<p align="center"><img src="paper/fig_workflow.png" width="100%" alt="Workflow from structure inputs to a verified diffraction-reference bundle."></p>
 
 Candidate-phase assessment commonly involves several disconnected operations: interpret an alloy grade, enumerate chemical subsystems, query a computed-materials database, download structures, inspect CIF metadata, calculate theoretical reflections, locate elastic constants, and prepare tables for experimental planning. Ad hoc scripts often lose the relationship between the provider record, exact CIF setting, tensor basis, diffraction settings, and final spreadsheet.
 
