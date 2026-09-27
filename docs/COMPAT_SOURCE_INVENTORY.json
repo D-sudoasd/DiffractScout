@@ -1,0 +1,120 @@
+{
+  "cif2peaks": {
+    "commit": "1c98d6d51b0cc26b4f9d3eed724956eeef6c7847",
+    "files": [
+      {
+        "source": "LICENSE",
+        "sha256": "8153090a3879157e8cfe105934a9b9ac5076d8de9e2d479f7af1321da2105901"
+      },
+      {
+        "source": "src/cif2peaks/__init__.py",
+        "sha256": "d59dbb9e1ce7861cbcf384f1334a3a0fa2e5c738717243539643043e85feef0e"
+      },
+      {
+        "source": "src/cif2peaks/__main__.py",
+        "sha256": "4ab2cadb688b59f5f596631f731e116ac27d15a604b67d26ee758792fe4cb93f"
+      },
+      {
+        "source": "src/cif2peaks/app.py",
+        "sha256": "4a0b70e6c972486cb5830ca3e47766f4326b01d307cdbe7871ed053c5215e2fc"
+      },
+      {
+        "source": "src/cif2peaks/batch.py",
+        "sha256": "54d4ca4b946dcc6f34eb891480517090379a57aa2de3926872de0dc166195ac5"
+      },
+      {
+        "source": "src/cif2peaks/constants.py",
+        "sha256": "e39f889e140444d4eced872b9c4d50794148be845b78364150dddc1589b430cf"
+      },
+      {
+        "source": "src/cif2peaks/elastic.py",
+        "sha256": "78a5439e88d259254b2da2619e3c3b544d8d0a783707fedd8dbb22aa2f6b270c"
+      },
+      {
+        "source": "src/cif2peaks/elastic_io.py",
+        "sha256": "5e4eda5dd966eaf2e19b986f377417cf4bd0139e1c755b5d625d70a6a02d3e03"
+      },
+      {
+        "source": "src/cif2peaks/experimental.py",
+        "sha256": "6c011f54f67faa6b34d134902397aa4535336ff8ac660d42bbf1530c9438984f"
+      },
+      {
+        "source": "src/cif2peaks/exporters.py",
+        "sha256": "f986cbed385b30b34ed0dbd5c1a2182921e8d3432cf0501b869473f85e589681"
+      },
+      {
+        "source": "src/cif2peaks/gui.py",
+        "sha256": "77ca7e6264a05657f7c95a6c19cb0c5493738feb2b44e51e050cdc51bbe7d876"
+      },
+      {
+        "source": "src/cif2peaks/hkl.py",
+        "sha256": "db22ba5c547232859db880b7d4e1488266868054df5929d65337e465799b8f55"
+      },
+      {
+        "source": "src/cif2peaks/models.py",
+        "sha256": "a6ffd04ca08a099e28432b75e5f89074a011bebc93035966056c3fe7dad7ff3f"
+      },
+      {
+        "source": "src/cif2peaks/plotting.py",
+        "sha256": "b00c73c53369e46056f891c52115f2f29e574948390dde81c80de3d4b8bd04f1"
+      },
+      {
+        "source": "src/cif2peaks/quick_export.py",
+        "sha256": "10bfd1eab873439bbef4de02e9610eeefc5b82dea22922d2115f58210233c098"
+      },
+      {
+        "source": "src/cif2peaks/service.py",
+        "sha256": "fa6ecd50aaaa03c36b27afeb453643d188f9c3703527cd64f435dc34cc594e0b"
+      },
+      {
+        "source": "src/cif2peaks/structure.py",
+        "sha256": "efa08f9fd13104f8274f628f367ec57e07dc251c2e82ef0d49320df6b20596e3"
+      },
+      {
+        "source": "src/cif2peaks/utils.py",
+        "sha256": "7c1619a82763a8506ee9fd291d2e354f2c0a68959e352683e1343482a424b809"
+      },
+      {
+        "source": "src/cif2peaks/workbook_views.py",
+        "sha256": "e95d5dfd9d61eee727cdc8df195773c6ea5b95634c827ee82fda4b123f7cdfb8"
+      },
+      {
+        "source": "src/cif2peaks/xrd.py",
+        "sha256": "db933a08c5fd47639454b4b28abd9411eb12b53b296e19b01decddc4df50bc43"
+      }
+    ]
+  },
+  "phasescout": {
+    "commit": "3935745a0a844b8925214ff4b6efbb2b9aefa70f",
+    "files": [
+      {
+        "source": "LICENSE",
+        "sha256": "69001fa072024e3334c37f2d5d27628495203593d70c60a09a9ec77e045a1d4e"
+      },
+      {
+        "source": "app.py",
+        "sha256": "c7d6ce6bef37c237678422b4c346a592054d4f8c17ff28a71cc8a4ebcc8c986c"
+      },
+      {
+        "source": "composition_parse.py",
+        "sha256": "0a8b8eb8b76bc3e5cd7d43df4fccc076e65d64441c7bc78389090449a899bde8"
+      },
+      {
+        "source": "elasticity_web.py",
+        "sha256": "583234b4cfe8ddfa139ee21be18a0b6179b902c8968619f0416c7f1dc6500392"
+      },
+      {
+        "source": "mp_client.py",
+        "sha256": "13044dedcb2f04f346a0228b8fc7b0390cdea43ed2710b8ce4428efa6c508afb"
+      },
+      {
+        "source": "scripts/fetch_possible_phases.py",
+        "sha256": "d0493dc9ec79b9cdb8fbdbfa95f22a1c59c60b8606c807a1232cb1624eb97d60"
+      },
+      {
+        "source": "structure_type.py",
+        "sha256": "3528302fb637920da8c070b5b7b365ab929a70106d1173fed53644d9a49d1d52"
+      }
+    ]
+  }
+}

@@ -14,12 +14,19 @@ diffractscout gui
 On Windows, after an editable or environment install, double-click
 `启动DiffractScout.bat` in the repository root. The repository launcher uses
 the checkout source and prefers interpreters in this order: the repository
-`.venv\Scripts\python.exe`, the current/active `python`, then `py -3`. There is
-no standalone Windows EXE yet, so a Python installation is required. The
+`.venv\Scripts\python.exe`, the current/active `python`, then `py -3`. These
+source launchers require Python. The
 repository launcher is only a convenient source-checkout entry point; an
 installed `diffractscout-gui` or `diffractscout gui` does not require it. The
-optional `scripts/package_windows_portable.py` file documents a future
-PyInstaller layout; it does not ship an executable.
+`scripts/package_windows_portable.py --build` command now builds a separate
+portable executable after installation of `.[complete,windows]`. Its generated
+`start_gui.bat` launches the bundled desktop without a Python installation.
+
+Install `.[complete]` to enable both inherited workbenches under the
+**Compatibility / 兼容工作台** menu. The CIF2Peaks workbench retains its original
+publication formats and Excel views; PhaseScout retains its original candidate
+selection and download interface. Both run from this package in separate windows.
+See [the replacement audit](REPLACEMENT_AUDIT.md) for CLI-only inherited options.
 
 A normal Python installation with Tk support is required. On Linux, the operating-system package is commonly named `python3-tk` or `tk`.
 

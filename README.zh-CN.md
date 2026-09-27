@@ -4,7 +4,13 @@
 
 # DiffractScout 中文说明
 
-> **状态：** 最新正式 [GitHub Release 为 v0.3.0](https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0)。本 checkout 中当前 source/package files（源码和包文件/元数据）为 **v0.4.0 Unreleased（未发布）**。支持的 Python 版本范围为 **3.10–3.13**。请从源码安装（通常使用可编辑安装），或安装 GitHub Release 附带的 wheel；本项目不宣称已有 PyPI 发布版本。Windows 目前没有独立 EXE，使用必须有 Python；仓库启动器只是源码 checkout 的便捷入口，安装后的 `diffractscout-gui` / `diffractscout gui` 不依赖它。
+本轮增加了内置的 CIF2Peaks、PhaseScout 兼容工作台。使用
+`python -m pip install ".[complete]"` 安装全部依赖后，可从主窗口的
+“兼容工作台”菜单打开，也可运行 `diffractscout compat --help` 查看命令。
+两个原项目的源码目录不再是运行依赖；原有导出格式和计算引擎仍有明确区分。
+功能逐项对照及验证边界见[替代性审计](docs/REPLACEMENT_AUDIT.md)。
+
+> **状态：** 最新正式 [GitHub Release 为 v0.3.0](https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0)。当前源码和包文件为 **v0.4.0 Unreleased（未发布）**，支持 Python **3.10–3.13**。可从源码或构建的 wheel 安装；不宣称已有 PyPI 发布版本。安装 `.[complete,windows]` 后，可运行 `python scripts/package_windows_portable.py --build` 构建包含两个兼容工作台的 Windows 便携版。仓库启动器需要 Python，生成的便携版启动器使用随包 EXE。本地构建通过不等于已经公开发布。
 
 **DiffractScout 将合金/化学体系候选相检索、本地 CIF 检查、理论粉末衍射计算、可选晶面法向弹性分析和可验证结果导出连接为一个流程。** 每项结果均可追溯到数据库记录或本地文件、CIF 哈希、辐射条件、计算定义、软件版本和结构化诊断。
 

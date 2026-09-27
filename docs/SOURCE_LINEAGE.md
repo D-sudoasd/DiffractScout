@@ -1,5 +1,11 @@
 # Source lineage
 
+The 2026-09-27 integration adds independently packaged inherited workbenches.
+See [REPLACEMENT_AUDIT.md](REPLACEMENT_AUDIT.md) and
+[COMPAT_SOURCE_INVENTORY.json](COMPAT_SOURCE_INVENTORY.json) for current runtime
+coverage and exact additional source snapshots. The table below describes the
+original 2026-07 integration, not the newly imported workbenches.
+
 ## Read-only source repositories
 
 The initial integration was prepared from the following public snapshots on 30 July 2026:
