@@ -303,6 +303,7 @@ if tk is not None:
             self._scroll_interiors: list[Any] = []
             self._scroll_focus_bindings: dict[str, set[str]] = {}
             self._scroll_wheel_bindings: dict[str, set[str]] = {}
+            self._scroll_bind_callbacks: list[Callable[[], None]] = []
             self._syncing_shortcut = False
             self._syncing_radiation = False
             self._radiation_initialized = False
@@ -321,6 +322,11 @@ if tk is not None:
             self._build_header()
             self._build_status_bar()
             self._build_main_split()
+            # Native drag/drop initialization may process idle callbacks while
+            # the form is still being built. Bind the complete widget tree now.
+            for bind_scroll_tree in self._scroll_bind_callbacks:
+                bind_scroll_tree()
+            self._build_compat_menu()
             self._sync_radiation_controls()
             self._sync_output_dependencies()
             self._refresh_cij_status()
@@ -470,6 +476,29 @@ if tk is not None:
             self.status_text = tk.StringVar(value=self._t("status_ready"))
             self._status_state: tuple[str, dict[str, object]] = ("status_ready", {})
             self.input_count_text = tk.StringVar(value=self._t("inputs_none"))
+
+        def _build_compat_menu(self) -> None:
+            menu = tk.Menu(self)
+            workflows = tk.Menu(menu, tearoff=False)
+            for label, workflow in (
+                ("CIF2Peaks · 峰表与图谱 / Peaks and figures", "cif2peaks-gui"),
+                ("PhaseScout · 候选相下载 / Candidate download", "phasescout-gui"),
+            ):
+                workflows.add_command(
+                    label=label, command=lambda name=workflow: self._launch_compat(name)
+                )
+            menu.add_cascade(label="兼容工作台 / Compatibility", menu=workflows)
+            self.configure(menu=menu)
+
+        def _launch_compat(self, workflow: str) -> None:
+            try:
+                command = [sys.executable]
+                if not getattr(sys, "frozen", False):
+                    command.extend(["-m", "diffractscout"])
+                command.extend(["compat", workflow])
+                subprocess.Popen(command)
+            except OSError as exc:
+                messagebox.showerror("DiffractScout", str(exc), parent=self)
 
         def _build_header(self) -> None:
             header = tk.Frame(self, bg=NAVY_DARK, height=78)
@@ -698,6 +727,7 @@ if tk is not None:
                 _bind_recursive(canvas)
 
             interior.bind("<Map>", lambda _e: self.after_idle(_bind_tree), add="+")
+            self._scroll_bind_callbacks.append(_bind_tree)
             self.after_idle(_bind_tree)
             return outer, interior
 

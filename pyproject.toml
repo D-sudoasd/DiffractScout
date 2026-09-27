@@ -25,7 +25,7 @@ keywords = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
-  "Operating System :: OS Independent",
+  "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -43,6 +43,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+complete = [
+  "mp-api>=0.43,<0.46; python_version < '3.11'",
+  "mp-api>=0.43; python_version >= '3.11'",
+  "pymatgen>=2024.11.13,<2026; python_version < '3.11'",
+  "pymatgen>=2024.11.13; python_version >= '3.11'",
+  "scipy>=1.10",
+  "matplotlib>=3.7",
+  "tkinterdnd2>=0.3.0",
+]
 mp = [
   "mp-api>=0.43,<0.46; python_version < '3.11'",
   "mp-api>=0.43; python_version >= '3.11'",
@@ -60,6 +69,7 @@ release = [
   "build>=1.2",
   "twine>=5.1",
 ]
+windows = ["pyinstaller>=6.11"]
 # Optional display figures and JOSS paper figure regeneration.
 figures = [
   "matplotlib>=3.7",
@@ -76,6 +86,7 @@ paper = [
 [project.scripts]
 diffractscout = "diffractscout.cli:main"
 diffractscout-quick-export = "diffractscout.quick_export:main"
+diffractscout-compat = "diffractscout.compat.launcher:main"
 
 [project.gui-scripts]
 diffractscout-gui = "diffractscout.gui:main"
@@ -94,6 +105,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 diffractscout = ["benchmark_data/*.cif", "benchmark_data/*.json"]
+"diffractscout.compat.cif2peaks" = ["LICENSE"]
+"diffractscout.compat.phasescout" = ["LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -118,6 +131,8 @@ ignore = ["E501"]
 omit = [
   "src/diffractscout/gui.py",
   "src/diffractscout/__main__.py",
+  "src/diffractscout/compat/cif2peaks/gui.py",
+  "src/diffractscout/compat/phasescout/app.py",
 ]
 
 [tool.coverage.report]

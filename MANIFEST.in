@@ -9,4 +9,6 @@ recursive-include examples *.cif *.json *.md
 recursive-include validation_cases *.md *.json *.csv *.cif
 recursive-include scripts *.py *.sh *.ps1
 recursive-include tests *.py
+recursive-include tests *.json
+recursive-include src/diffractscout/compat LICENSE
 recursive-include src/diffractscout/benchmark_data *.cif *.json

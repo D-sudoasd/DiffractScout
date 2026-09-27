@@ -26,7 +26,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install package and test tools
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[test]"
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[complete,test]"
       - name: Validate repository documents and metadata
         run: python scripts/check_docs.py
       - name: Lint
@@ -103,7 +103,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -113,16 +113,13 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install package
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[test]"
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[complete,test]"
       - name: Parse PowerShell publication helper
         if: runner.os == 'Windows'
         shell: pwsh
         run: '[void][scriptblock]::Create((Get-Content scripts/publish_github.ps1 -Raw))'
       - name: Check installed dependencies
         run: python -m pip check
-      - name: Run complete test suite / macOS
-        if: runner.os == 'macOS'
-        run: pytest -q
       - name: Run core tests without GUI / Windows
         if: runner.os == 'Windows'
         run: pytest -q --ignore=tests/test_gui.py
@@ -159,6 +156,19 @@ jobs:
           xvfb-run -a python -c "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
       - name: Run GUI interaction tests
         run: xvfb-run -a pytest -q tests/test_gui.py
+
+  inherited-workflows:
+    name: Complete edition inherited workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install ".[complete,test]"
+      - run: xvfb-run -a pytest -q tests/inherited tests/test_compatibility.py
+      - run: python -I scripts/check_compat_install.py
 
   package:
     name: Build and install wheel

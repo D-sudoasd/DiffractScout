@@ -6,6 +6,16 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Added
 
+- Windows desktop acceptance target and UTF-8 command-line output, including
+  redirected inherited exports on non-Chinese Windows installations.
+
+- Independently packaged CIF2Peaks and PhaseScout compatibility workbenches,
+  `diffractscout compat` dispatch, a desktop compatibility menu, and a `complete`
+  installation extra. Retains upstream export schemas and scientific engines.
+- Upstream runtime regression tests, source hashes and licenses, writable
+  per-user PhaseScout settings, and a working Windows portable build pipeline.
+  See `docs/REPLACEMENT_AUDIT.md` for capability coverage and verification limits.
+
 - Reusable CLI/desktop analysis presets and read-only inspection of verified
   result bundles, with explicit command-line override semantics. Presets exclude
   credentials, paths, overwrite authorization, and manual tensor overrides.

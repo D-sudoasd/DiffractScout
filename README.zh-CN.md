@@ -4,7 +4,17 @@
 
 # DiffractScout 中文说明
 
-> **状态：** 最新正式 [GitHub Release 为 v0.3.0](https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0)。本 checkout 中当前 source/package files（源码和包文件/元数据）为 **v0.4.0 Unreleased（未发布）**。支持的 Python 版本范围为 **3.10–3.13**。请从源码安装（通常使用可编辑安装），或安装 GitHub Release 附带的 wheel；本项目不宣称已有 PyPI 发布版本。Windows 目前没有独立 EXE，使用必须有 Python；仓库启动器只是源码 checkout 的便捷入口，安装后的 `diffractscout-gui` / `diffractscout gui` 不依赖它。
+本项目以 **Windows** 为使用和验收平台。Linux CI 保留用于基础代码验证，
+macOS 桌面不作为支持目标。命令行输出统一为 UTF-8，重定向或通过其他程序
+调用时也应使用 UTF-8 解码，避免英文 Windows 环境下的中文编码错误。
+
+本轮增加了内置的 CIF2Peaks、PhaseScout 兼容工作台。使用
+`python -m pip install ".[complete]"` 安装全部依赖后，可从主窗口的
+“兼容工作台”菜单打开，也可运行 `diffractscout compat --help` 查看命令。
+两个原项目的源码目录不再是运行依赖；原有导出格式和计算引擎仍有明确区分。
+功能逐项对照及验证边界见[替代性审计](docs/REPLACEMENT_AUDIT.md)。
+
+> **状态：** 最新正式 [GitHub Release 为 v0.3.0](https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0)。当前源码和包文件为 **v0.4.0 Unreleased（未发布）**，支持 Python **3.10–3.13**。可从源码或构建的 wheel 安装；不宣称已有 PyPI 发布版本。安装 `.[complete,windows]` 后，可运行 `python scripts/package_windows_portable.py --build` 构建包含两个兼容工作台的 Windows 便携版。仓库启动器需要 Python，生成的便携版启动器使用随包 EXE。本地构建通过不等于已经公开发布。
 
 **DiffractScout 将合金/化学体系候选相检索、本地 CIF 检查、理论粉末衍射计算、可选晶面法向弹性分析和可验证结果导出连接为一个流程。** 每项结果均可追溯到数据库记录或本地文件、CIF 哈希、辐射条件、计算定义、软件版本和结构化诊断。
 
@@ -262,7 +272,7 @@ J_no_LP   = I_no_LP / V_cell²
 
 ## 验证与 JOSS 状态
 
-当前离线 pytest 套件覆盖成分解析、子体系枚举及组合数量上限、大小写 CIF 扫描、同名文件防覆盖、CIF 数据块和空间群解析、特殊位置占位转换、系统消光、解析结构因子、Bragg 几何、边界反射、刚度单位换算、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全、确定性证据归档、严格清单校验和投稿准备检查。测试收集数由 pytest/CI 报告，不再复制到静态文档；另有稳定的 45 项解析科学基准。GitHub Actions 还配置了多 Python 版本、Windows/macOS、Linux 无头 GUI、wheel 安装、解析基准、发布制品、月度复现审计、依赖更新和 JOSS 论文构建。月度定时运行只记录某一公开提交的可复现状态；只有由真实缺陷、依赖更新、验证、文档改进或用户反馈形成的公开提交、Issue、Pull Request 或 Release 才构成开发活动证据。
+当前离线 pytest 套件覆盖成分解析、子体系枚举及组合数量上限、大小写 CIF 扫描、同名文件防覆盖、CIF 数据块和空间群解析、特殊位置占位转换、系统消光、解析结构因子、Bragg 几何、边界反射、刚度单位换算、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全、确定性证据归档、严格清单校验和投稿准备检查。测试收集数由 pytest/CI 报告，不再复制到静态文档；另有稳定的 45 项解析科学基准。GitHub Actions 还配置了多 Python 版本、Windows、Linux 无头 GUI、wheel 安装、解析基准、发布制品、月度复现审计、依赖更新和 JOSS 论文构建。月度定时运行只记录某一公开提交的可复现状态；只有由真实缺陷、依赖更新、验证、文档改进或用户反馈形成的公开提交、Issue、Pull Request 或 Release 才构成开发活动证据。
 
 作者已确认软件用于其已发表研究，代表论文及具体使用情况将在投稿记录中补充。项目自 2026 年 8 月 12 日开始公开开发，目前尚未满足 JOSS 超过六个月的持续公开开发要求。项目自定的科学验证、社区参与要求与 JOSS 官方门槛分别列于 [投稿准备状态](docs/JOSS_READINESS.md)。先执行 `python scripts/check_release.py` 验收当前软件，再用 `python scripts/joss_readiness.py --stage submission --output build/joss-readiness` 检查待补的投稿证据和作者确认事项。最终软件归档 DOI 在审稿完成后的 `publication` 阶段补入；工作计划见 [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md)。
 

@@ -1,0 +1,11 @@
+[
+  "test_builtin_skills_instruct_cli_complete_table_without_gui",
+  "test_project_is_cli_only_without_gui_dependencies",
+  "test_windows_build_creates_portable_zip",
+  "test_windows_build_includes_gui_and_quick_export_apps",
+  "test_windows_build_packages_readme_examples_and_self_test",
+  "test_windows_portable_zip_contains_complete_folder",
+  "test_windows_portable_zip_requires_tcl_tk_runtime_data",
+  "test_windows_quick_export_entry_exports_without_python_gui",
+  "test_windows_quick_export_entry_treats_diagnostic_workbook_as_success"
+]

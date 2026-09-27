@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from . import __version__
+from .console import configure_cli_output
 from .benchmark import run_reference_benchmarks, verify_benchmark_bundle
 from .cli_presets import (
     add_analysis_options,
@@ -252,12 +253,19 @@ def build_parser() -> argparse.ArgumentParser:
     preset_show.add_argument("--json", action="store_true", help="Print the normalized preset values as JSON.")
 
     subparsers.add_parser("gui", help="Launch the optional Tk desktop interface.")
+    subparsers.add_parser("compat", help="Run built-in CIF2Peaks/PhaseScout workflows; use compat --help.")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    configure_cli_output()
+    effective = list(sys.argv[1:] if argv is None else argv)
+    if effective and effective[0] == "compat":
+        from .compat.launcher import main as compat_main
+
+        return compat_main(effective[1:])
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective)
     try:
         if args.command == "analyze":
             analysis = resolve_cli_analysis(args)

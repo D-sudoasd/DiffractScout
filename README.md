@@ -4,7 +4,17 @@
 
 # DiffractScout
 
-> **Status:** The latest formal [GitHub Release is v0.3.0](https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0). The current source and package files in this checkout are **v0.4.0 Unreleased**. The supported Python range is **3.10–3.13**. Install this checkout from source (normally with an editable install), or install a wheel attached to a GitHub Release; no PyPI release is claimed. There is no standalone Windows EXE yet: Windows use requires Python. The repository launcher is a convenient source-checkout entry point; installed `diffractscout-gui` / `diffractscout gui` do not require it.
+Windows is the supported desktop platform. Linux CI remains for automated core
+validation; macOS desktop support is not an acceptance requirement. CLI output
+uses UTF-8, including when redirected; subprocess consumers should decode UTF-8.
+
+The complete edition includes the inherited CIF2Peaks and PhaseScout workbenches
+inside this package: install `.[complete]`, then use the desktop Compatibility
+menu or `diffractscout compat --help`. Neither original checkout is required.
+See the [replacement audit and capability matrix](docs/REPLACEMENT_AUDIT.md)
+for retained formats, engine differences and validation limits.
+
+> **Status:** The latest formal [GitHub Release is v0.3.0](https://github.com/D-sudoasd/DiffractScout/releases/tag/v0.3.0). The current source and package files in this checkout are **v0.4.0 Unreleased**. The supported Python range is **3.10–3.13**. Install this checkout from source, or install a built wheel; no PyPI release is claimed. A Windows portable build is available through `python scripts/package_windows_portable.py --build` after installing `.[complete,windows]`. Repository batch launchers require Python; generated portable launchers use the bundled executable. Local build validation does not constitute a published release.
 
 [![CI](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml)
 [![JOSS draft](https://github.com/D-sudoasd/DiffractScout/actions/workflows/draft-pdf.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/draft-pdf.yml)
@@ -320,7 +330,7 @@ The offline pytest suite covers composition parsing, subsystem enumeration, case
 GitHub Actions is configured for:
 
 - Ubuntu tests on Python 3.10–3.13 with coverage and Ruff;
-- Windows and macOS smoke tests;
+- Windows smoke tests;
 - a headless Linux GUI startup check under Xvfb;
 - wheel build and clean-environment installation;
 - the offline scientific demo and bundle verification;
