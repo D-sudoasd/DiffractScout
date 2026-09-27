@@ -405,3 +405,7 @@ Create a tagged, archived release before citing a specific production version or
 ## License
 
 MIT. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).
+
+## JOSS preparation
+
+See the [submission guide](docs/joss/README.md) for the manuscript, verified author metadata, research-use evidence and final checks. This repository is being prepared for submission; no JOSS acceptance is claimed.

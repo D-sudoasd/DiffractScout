@@ -10,12 +10,13 @@ tags:
 authors:
   - name: Delun Gong
     orcid: 0000-0001-7877-7707
+    email: dlgong17s@imr.ac.cn
     corresponding: true
     affiliation: '1'
 affiliations:
   - name: Institute of Metal Research, Chinese Academy of Sciences, Shenyang 110016, China
     index: 1
-date: 26 September 2026
+date: 27 September 2026
 bibliography: paper.bib
 ---
 
@@ -47,7 +48,7 @@ The command-line and desktop interfaces call the same analysis pipeline. The com
 
 Each run is first written to a staging directory. Before publication to the requested output path, a verifier checks the manifest's SHA-256 digests and file sizes, path safety, symbolic links, and unlisted files. Replacing an existing result requires explicit authorization and verification of that result. This design makes the completed directory a portable evidence bundle while keeping recovery behavior explicit.
 
-An offline analytic benchmark tests simple-cubic, body-centered cubic, face-centered cubic, and NaCl selection rules, reflection geometry, structure factors, and cubic elasticity against closed-form expectations. A separate pymatgen XRDCalculator comparison [@ong2013] matched 40 d-spacing groups from four synthetic CIFs using Cu Kα (1.5406 Å) over 5–120° 2θ. Every group met the specified spacing ($10^{-6}$ Å) and angle ($10^{-5}\,^{\circ}$) tolerances, and all tested allowed and forbidden reflection rules passed. Directional moduli along [100], [110], and [111] for a synthetic cubic tensor passed the defined absolute and relative tolerances in the pymatgen compliance-tensor comparison [@ong2013]. The automated suite checks analysis and export contracts; continuous integration runs it on Linux for Python 3.10–3.13 and selected checks on Windows and macOS. These comparisons are reproducible without a database service.
+An offline analytic benchmark tests simple-cubic, body-centered cubic, face-centered cubic, and NaCl selection rules, reflection geometry, structure factors, and cubic elasticity against closed-form expectations. A separate pymatgen XRDCalculator comparison [@ong2013] matched 40 d-spacing groups from four synthetic CIFs using Cu Kα (1.5406 Å) over 5–120° 2θ. Every group met the specified spacing ($10^{-6}$ Å) and angle ($10^{-5}\,^{\circ}$) tolerances, and all tested allowed and forbidden reflection rules passed. Directional moduli along [100], [110], and [111] for a synthetic cubic tensor passed the defined absolute and relative tolerances in the pymatgen compliance-tensor comparison [@ong2013]. The automated suite checks analysis and export contracts; continuous integration runs it on Linux for Python 3.10–3.13 and selected checks on Windows. These comparisons are reproducible without a database service.
 
 ![DiffractScout workflow from candidate request or local CIFs to a verified result bundle. Source identity, assumptions, diagnostics, and missing-data states are carried across the pipeline.](fig_workflow.png){#fig:workflow width="95%"}
 
@@ -55,7 +56,8 @@ An offline analytic benchmark tests simple-cubic, body-centered cubic, face-cent
 
 # Research impact statement
 
-The developer reports using DiffractScout in published materials-science research. Each result bundle preserves candidate identity, source structures, calculation settings, diagnostics, and file checksums, making calculated references traceable.
+The author reports using DiffractScout in the research underlying the Ti-24Nb-4Zr-8Sn study by Gong et al. [@gong2026acta], as confirmed on 27 September 2026. This is an author-confirmed application, not a claim that the article cites the software or that all features in the current candidate were used. The historical revision and operation-to-output mapping remain to be checked against the author's processing records before submission. The repository records this distinction alongside reproducible software-verification examples. Those examples establish specified numerical and software behavior rather than experimental accuracy or independent adoption.
+
 
 # AI usage disclosure
 
@@ -63,6 +65,6 @@ OpenAI GPT-5.6 Pro assisted earlier repository development, testing, documentati
 
 # Acknowledgements
 
-The author acknowledges the developers and maintainers of the open-source software and data services cited above.
+No external funding was received for this software. There was no sponsor involvement. The author declares no competing interests.
 
 # References

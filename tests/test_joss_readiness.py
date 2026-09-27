@@ -99,6 +99,19 @@ def test_add_calendar_months_handles_month_end_and_leap_year() -> None:
     assert READINESS.add_calendar_months(date(2023, 8, 31), 6) == date(2024, 2, 29)
 
 
+def test_paper_citations_ignore_author_and_prose_email(tmp_path, monkeypatch) -> None:
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "paper.md").write_text(
+        "---\nemail: author@example.org\n---\n# Summary\n"
+        "Contact author@example.org. See [@known; @missing].\n",
+        encoding="utf-8",
+    )
+    (paper / "paper.bib").write_text("@article{known, title={Known}}\n", encoding="utf-8")
+    monkeypatch.setattr(READINESS, "ROOT", tmp_path)
+    assert READINESS._paper_metrics()["undefined_citations"] == ["missing"]
+
+
 def test_evidence_payload_validation_accepts_empty_honest_ledger() -> None:
     assert READINESS.validate_evidence_payload(_valid_payload()) == []
 
