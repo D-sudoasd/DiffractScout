@@ -1,3 +1,5 @@
+> Historical plan written 26 September 2026. PR #14 and #15 are now merged. For current status and the author-confirmed research use, follow [the current guide](joss/README.md). The dates below remain conditional; a creation timestamp does not establish public visibility.
+
 # Public development and JOSS submission plan
 
 The public DiffractScout repository was created on **12 August 2026 at

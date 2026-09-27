@@ -3,7 +3,7 @@
   "public_repository": {
     "url": "https://github.com/D-sudoasd/DiffractScout",
     "public_since": "2026-08-12",
-    "note": "GitHub repository metadata checked 2026-09-26 reports creation at 2026-08-12T10:02:29Z. This timestamp starts the public-development clock; private history before it is excluded."
+    "note": "Repository creation is a lower bound. The 12 August release/PR records are recorded below; verify historical public visibility before submission, not just commit dates."
   },
   "archived_releases": [],
   "public_development_activity": [
@@ -101,10 +101,10 @@
       "date": "2026-09-26",
       "title": "Usability, workbook, reusable CLI workflow, and manuscript upgrade (PR #14)",
       "url": "https://github.com/D-sudoasd/DiffractScout/pull/14",
-      "software_version": "0.4.0 candidate (commit a09ee1b0e48de4bf07898bceda4bec46b70dab43)",
-      "claim_supported": "The maintainer publicly proposed workflow and workbook improvements and a reproducible synthetic reference-engine comparison.",
+      "software_version": "commit:1816ffbc104683caa9d263b6763f9e139bec1010",
+      "claim_supported": "The maintainer integrated usability, workbook and synthetic reference-comparison improvements.",
       "activity_type": "pull_request",
-      "outcome": "Public PR #14 is open with head commit a09ee1b0e48de4bf07898bceda4bec46b70dab43. This records visible proposed work, not a merge, release acceptance, passing full CI, research use, or external-user engagement."
+      "outcome": "Merged 2026-09-26T13:12:57Z as 1816ffbc104683caa9d263b6763f9e139bec1010. This is public integration evidence, not independent research adoption."
     }
   ],
   "research_use_cases": [],
@@ -149,7 +149,11 @@
       "tensor_source": "Explicit synthetic 6x6 cubic stiffness matrix in validation_cases/independent_engines/reference_engine_comparison.json at elasticity.synthetic_stiffness_GPa",
       "tensor_frame": "Conventional cubic Cartesian frame defined by the synthetic Fm-3m fcc_al.cif (a = 4 Å); no coordinate transformation is tested",
       "voigt_convention": "Voigt order [11, 22, 33, 23, 13, 12] with engineering shear strain",
-      "directions": ["[100]", "[110]", "[111]"],
+      "directions": [
+        "[100]",
+        "[110]",
+        "[111]"
+      ],
       "limitations": "Synthetic stiffness matrix only; this is a numerical convention/implementation cross-check, not validation of an experimental or database tensor, a real-material property claim, research-impact evidence, or external-user adoption.",
       "notes": "The input_sha256 identifies the shared synthetic fcc_al.cif fixture. The result JSON records the tensor, per-direction values, versions, and tolerances. The immutable GitHub URL points to the report section at the exact public candidate commit."
     }
@@ -158,20 +162,20 @@
   "publications_or_preprints": [],
   "presentations_or_training": [],
   "submission_metadata": {
-    "authors_confirmed": false,
-    "affiliations_confirmed": false,
-    "funding_confirmed": false,
-    "contributors_confirmed": false,
+    "authors_confirmed": true,
+    "affiliations_confirmed": true,
+    "funding_confirmed": true,
+    "contributors_confirmed": true,
     "related_publications_confirmed": false,
     "human_review_confirmed": false,
-    "remote_ci_confirmed": true,
-    "remote_ci_url": "https://github.com/D-sudoasd/DiffractScout/actions/runs/36242599844",
-    "remote_ci_commit": "a09ee1b0e48de4bf07898bceda4bec46b70dab43",
-    "official_joss_build_confirmed": true,
-    "official_joss_build_url": "https://github.com/D-sudoasd/DiffractScout/actions/runs/36242597087",
-    "official_joss_build_commit": "a09ee1b0e48de4bf07898bceda4bec46b70dab43",
-    "paper_source_sha256": "3a78d172508cb1db87f1bc28d5732748a84c0f3a2427f105cac00f2b0529e675",
-    "paper_pdf_sha256": "2acee1fd0d014f22fbd219bd0035a11c4ea453c051bfcbd82532ce16f0ac2386",
-    "note": "As of 2026-09-26, the user confirmed the currently listed Delun Gong name, ORCID, and Institute of Metal Research affiliation. CI run 36242599844 and official JOSS PDF run 36242597087 succeeded on commit a09ee1b0e48de4bf07898bceda4bec46b70dab43. The generated four-page PDF was checked for source/artifact identity, rendered layout, references, and text layer. This does not substitute for author review of all AI-assisted contributions. Keep author-list completeness, coauthor consent, full affiliation, funding and sponsor role, contributor, related-publication, and human-review confirmations pending until the submitting author confirms them for the selected source."
+    "remote_ci_confirmed": false,
+    "remote_ci_url": "",
+    "remote_ci_commit": "",
+    "official_joss_build_confirmed": false,
+    "official_joss_build_url": "",
+    "official_joss_build_commit": "",
+    "paper_source_sha256": "",
+    "paper_pdf_sha256": "",
+    "note": "27 September 2026: sole author Delun Gong confirmed, with identity, funding and competing-interest declarations reused at the author's direction from AbsSAXS. Actual use in Acta Materialia 316 (2026) 122455 is author-confirmed; historical revision and specific outputs remain unmapped. See docs/joss/submission-record.json. Final human review, full related-work inventory and exact-candidate CI/PDF receipts remain pending. Prior CI receipts are retained in the dated 26 September assessment."
   }
 }

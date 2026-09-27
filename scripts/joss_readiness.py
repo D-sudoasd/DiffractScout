@@ -643,7 +643,8 @@ def _paper_metrics() -> dict[str, Any]:
     words = re.findall(r"\b[\w'’-]+\b", countable, flags=re.UNICODE)
 
     bibliography = bibliography_path.read_text(encoding="utf-8")
-    cited = set(re.findall(r"@([A-Za-z0-9_:-]+)", text))
+    # Author emails in YAML or prose are not Pandoc citation keys.
+    cited = set(re.findall(r"(?<![\w.])@([A-Za-z0-9_:-]+)", body))
     defined = set(re.findall(r"@[A-Za-z]+\{([^,]+),", bibliography))
     return {
         "approximate_word_count": len(words),

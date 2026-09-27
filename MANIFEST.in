@@ -12,3 +12,6 @@ recursive-include tests *.py
 recursive-include tests *.json
 recursive-include src/diffractscout/compat LICENSE
 recursive-include src/diffractscout/benchmark_data *.cif *.json
+
+recursive-include docs/joss *.md *.json
+include scripts/check_joss_artifacts.py
