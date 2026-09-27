@@ -63,6 +63,8 @@ The author reports using DiffractScout in the research underlying the Ti-24Nb-4Z
 
 OpenAI GPT-5.6 Pro assisted earlier repository development, testing, documentation, figure production, and manuscript drafting from 30 July to 12 August 2026. In this revision, OpenAI Codex GPT-6 and cooperating assistant agents supported code changes, test scaffolding and review, documentation, citation discovery, manuscript restructuring, and automated verification. Software claims were checked against project source and scientific contracts, references against publisher or upstream records, and automated tests and the analytic benchmark were run. Human author review of the AI-assisted contributions remains pending.
 
+The README cover is AI-generated conceptual artwork. Manuscript diagrams and numerical plots are produced by repository scripts; scientific data are not retouched by an image-generation model.
+
 # Acknowledgements
 
 No external funding was received for this software. There was no sponsor involvement. The author declares no competing interests.

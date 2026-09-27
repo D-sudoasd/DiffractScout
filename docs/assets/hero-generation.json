@@ -1,0 +1,12 @@
+{
+  "name": "DiffractScout",
+  "subtitle": "Traceable powder-diffraction references",
+  "palette": "Warm ivory, ink navy, cobalt blue and muted copper",
+  "motif": "A crystalline unit-cell wireframe transitioning through three beautifully arranged translucent document sheets into a crisp idealized powder-diffraction stick pattern. The sheets imply a CIF and provenance record. No scientific numerical values, fake interface, or illegible paragraph text.",
+  "tool": "image_gen built-in; model identifier not exposed",
+  "revision": null,
+  "prompt": "Create one exceptionally polished scientific software README cover banner, wide landscape approximately 2.4:1 aspect ratio, premium editorial art direction, high resolution. Project: DiffractScout. Palette: Warm ivory, ink navy, cobalt blue and muted copper. Concept: A crystalline unit-cell wireframe transitioning through three beautifully arranged translucent document sheets into a crisp idealized powder-diffraction stick pattern. The sheets imply a CIF and provenance record. No scientific numerical values, fake interface, or illegible paragraph text. Compose generous negative space and sharply legible refined sans-serif typography integrated with the scientific motif. Exact text, no other copy: \"DiffractScout\" large, \"Traceable powder-diffraction references\" smaller, and a discreet \"Conceptual illustration\". Make name/subtitle read immediately at GitHub width. Restrained three-dimensional material, carefully controlled highlights, precise linework, sophisticated hierarchy and balanced composition. No generic AI neon clouds, no random particles, no badges, no claims, no photoreal experimental data, no fake application screenshot, no watermarks or publisher branding. This is an editorial cover, not a quantitative paper figure.",
+  "created_on": "2026-09-27",
+  "purpose": "README conceptual cover only, not experimental data or software output",
+  "sha256": "af2419e8a167f26909203ab2d04153a78fef7a3f5604a943c713896bdef63f2c"
+}
