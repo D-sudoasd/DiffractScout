@@ -1068,6 +1068,27 @@ def test_gui_layout_has_scrollable_regions_and_run_buttons() -> None:
         app.destroy()
 
 
+def test_scrollable_focus_survives_early_drag_drop_idle_processing(monkeypatch) -> None:
+    """Native drag/drop setup can process idle callbacks before the form is built."""
+    original = gui_module.DiffractScoutApp._enable_dnd
+
+    def eager_drop_setup(self, widget):
+        original(self, widget)
+        self.update_idletasks()
+        self.update()
+
+    monkeypatch.setattr(gui_module.DiffractScoutApp, "_enable_dnd", eager_drop_setup)
+    app = _create_test_app()
+    try:
+        app.update_idletasks()
+        app.update()
+        canvas = app._local_left_scroll_canvas
+        assert str(app.local_output_entry) in app._scroll_focus_bindings[str(canvas)]
+        assert app.local_output_entry.bind("<FocusIn>").count("_focus_into_view") == 1
+    finally:
+        app.destroy()
+
+
 def test_scrollable_focus_reveals_focused_descendant() -> None:
     app = _create_test_app()
     try:

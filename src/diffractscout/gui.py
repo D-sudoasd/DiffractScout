@@ -303,6 +303,7 @@ if tk is not None:
             self._scroll_interiors: list[Any] = []
             self._scroll_focus_bindings: dict[str, set[str]] = {}
             self._scroll_wheel_bindings: dict[str, set[str]] = {}
+            self._scroll_bind_callbacks: list[Callable[[], None]] = []
             self._syncing_shortcut = False
             self._syncing_radiation = False
             self._radiation_initialized = False
@@ -321,6 +322,10 @@ if tk is not None:
             self._build_header()
             self._build_status_bar()
             self._build_main_split()
+            # Native drag/drop initialization may process idle callbacks while
+            # the form is still being built. Bind the complete widget tree now.
+            for bind_scroll_tree in self._scroll_bind_callbacks:
+                bind_scroll_tree()
             self._build_compat_menu()
             self._sync_radiation_controls()
             self._sync_output_dependencies()
@@ -722,6 +727,7 @@ if tk is not None:
                 _bind_recursive(canvas)
 
             interior.bind("<Map>", lambda _e: self.after_idle(_bind_tree), add="+")
+            self._scroll_bind_callbacks.append(_bind_tree)
             self.after_idle(_bind_tree)
             return outer, interior
 
