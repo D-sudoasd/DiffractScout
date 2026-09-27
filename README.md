@@ -4,6 +4,10 @@
 
 # DiffractScout
 
+Windows is the supported desktop platform. Linux CI remains for automated core
+validation; macOS desktop support is not an acceptance requirement. CLI output
+uses UTF-8, including when redirected; subprocess consumers should decode UTF-8.
+
 The complete edition includes the inherited CIF2Peaks and PhaseScout workbenches
 inside this package: install `.[complete]`, then use the desktop Compatibility
 menu or `diffractscout compat --help`. Neither original checkout is required.
@@ -326,7 +330,7 @@ The offline pytest suite covers composition parsing, subsystem enumeration, case
 GitHub Actions is configured for:
 
 - Ubuntu tests on Python 3.10–3.13 with coverage and Ruff;
-- Windows and macOS smoke tests;
+- Windows smoke tests;
 - a headless Linux GUI startup check under Xvfb;
 - wheel build and clean-environment installation;
 - the offline scientific demo and bundle verification;

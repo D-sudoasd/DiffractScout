@@ -45,6 +45,9 @@ def main() -> None:
             records.append({"source": relative, "sha256": hashlib.sha256(data).hexdigest()})
             if dest.suffix == ".py":
                 text = data.decode("utf-8-sig").replace("\r\n", "\n")
+                if relative in {"src/cif2peaks/batch.py", "src/cif2peaks/quick_export.py", "scripts/fetch_possible_phases.py"}:
+                    text = text.replace("from pathlib import Path", "from pathlib import Path\nfrom ...console import configure_cli_output")
+                    text = text.replace("    parser = argparse.ArgumentParser(", "    configure_cli_output()\n    parser = argparse.ArgumentParser(", 1)
                 if name == "phasescout":
                     text = text.replace("from dataclasses import asdict\n", "")
                     text = text.replace("from dataclasses import dataclass, field", "from dataclasses import dataclass")
@@ -89,6 +92,7 @@ def main() -> None:
                 text = text.replace("import pytest", 'import pytest\n\npytest.importorskip("pymatgen.core")')
                 text = re.sub(r"\bcif2peaks\.", "diffractscout.compat.cif2peaks.", text)
                 text = text.replace('"cif2peaks",', '"diffractscout.compat.cif2peaks",')
+                text = text.replace("text=True,", 'text=True, encoding="utf-8",')
                 text = text.replace('parents[1]', 'parents[2]')
                 text = text.replace('ROOT / "examples" / "cif"', 'ROOT / "examples" / "inherited_cif2peaks"')
                 text = text.replace('Path.home() / "Desktop" / "Nb_HEA_peak_separation"', 'ROOT / "tests" / "private_fixtures" / "nb_hea"')

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import Sequence
+from ...console import configure_cli_output
 
 from .gui import (
     SimpleGuiExportResult,
@@ -30,6 +31,7 @@ def quick_export_message_lines(result: SimpleGuiExportResult) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    configure_cli_output()
     parser = argparse.ArgumentParser(description="One-step Excel export for dragged CIF files or folders.")
     parser.add_argument("inputs", nargs="+", help="CIF files or folders containing CIF files.")
     parser.add_argument("-o", "--output", default=None, help="Optional output .xlsx path.")

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -10,6 +13,25 @@ import pytest
 from diffractscout.cli import main
 from diffractscout.compat import launcher
 from diffractscout.compat.paths import user_data_dir
+
+
+@pytest.mark.parametrize("module", [
+    "diffractscout.compat.cif2peaks.batch",
+    "diffractscout.compat.cif2peaks.quick_export",
+])
+def test_redirected_exports_are_utf8_under_western_windows_encoding(module, tmp_path):
+    pytest.importorskip("pymatgen.core")
+    root = Path(__file__).resolve().parents[1]
+    cif = root / "src/diffractscout/benchmark_data/fcc_al.cif"
+    output = tmp_path / "结果.xlsx"
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONPATH": str(root / "src")}
+    result = subprocess.run(
+        [sys.executable, "-m", module, str(cif), "-o", str(output)],
+        env=env, cwd=tmp_path, capture_output=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8")
+    assert "结果.xlsx" in result.stdout.decode("utf-8")
+    assert output.is_file()
 
 
 def test_compat_help_does_not_require_optional_engines(capsys):

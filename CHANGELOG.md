@@ -6,6 +6,9 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Added
 
+- Windows desktop acceptance target and UTF-8 command-line output, including
+  redirected inherited exports on non-Chinese Windows installations.
+
 - Independently packaged CIF2Peaks and PhaseScout compatibility workbenches,
   `diffractscout compat` dispatch, a desktop compatibility menu, and a `complete`
   installation extra. Retains upstream export schemas and scientific engines.

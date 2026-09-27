@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import Sequence
+from ...console import configure_cli_output
 
 from .constants import DEFAULT_XRD_SOURCE, XRD_SOURCE_PRESETS
 from .exporters import (
@@ -106,6 +107,7 @@ def _settings_from_args(args: argparse.Namespace) -> Cif2PeaksSettings:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    configure_cli_output()
     parser = argparse.ArgumentParser(
         description="Batch-export theoretical powder XRD peak tables and pattern data from CIF files.",
     )

@@ -103,7 +103,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -120,9 +120,6 @@ jobs:
         run: '[void][scriptblock]::Create((Get-Content scripts/publish_github.ps1 -Raw))'
       - name: Check installed dependencies
         run: python -m pip check
-      - name: Run complete test suite / macOS
-        if: runner.os == 'macOS'
-        run: pytest -q
       - name: Run core tests without GUI / Windows
         if: runner.os == 'Windows'
         run: pytest -q --ignore=tests/test_gui.py

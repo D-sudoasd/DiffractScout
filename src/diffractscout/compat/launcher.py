@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib
 import sys
 from typing import Sequence
+from ..console import configure_cli_output
 
 
 WORKFLOWS = {
@@ -16,6 +17,7 @@ WORKFLOWS = {
 
 
 def dispatch(workflow: str, argv: Sequence[str] = ()) -> int:
+    configure_cli_output()
     if workflow not in WORKFLOWS:
         raise ValueError(f"Unknown inherited workflow: {workflow}")
     try:

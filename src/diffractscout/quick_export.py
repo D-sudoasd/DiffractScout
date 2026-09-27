@@ -464,6 +464,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from .console import configure_cli_output
+
+    configure_cli_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

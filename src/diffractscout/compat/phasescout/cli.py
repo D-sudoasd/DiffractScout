@@ -17,6 +17,7 @@ import os
 import sys
 from collections import Counter
 from pathlib import Path
+from ...console import configure_cli_output
 
 from ..paths import user_data_dir
 
@@ -270,6 +271,7 @@ def build_alloy_label_map(parsed: ParsedComposition, extra_labels: list[str]) ->
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_cli_output()
     parser = argparse.ArgumentParser(
         description="PhaseScout: fetch Materials Project possible-phase CIFs from alloy/composition text."
     )

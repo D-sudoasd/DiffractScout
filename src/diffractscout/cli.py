@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from . import __version__
+from .console import configure_cli_output
 from .benchmark import run_reference_benchmarks, verify_benchmark_bundle
 from .cli_presets import (
     add_analysis_options,
@@ -257,6 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    configure_cli_output()
     effective = list(sys.argv[1:] if argv is None else argv)
     if effective and effective[0] == "compat":
         from .compat.launcher import main as compat_main

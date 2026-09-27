@@ -18,3 +18,4 @@ runtime modules from both repositories. Exact commits and original file hashes a
 recorded in `docs/COMPAT_SOURCE_INVENTORY.json`. Original MIT license texts ship in
 `diffractscout/compat/cif2peaks/LICENSE` and `diffractscout/compat/phasescout/LICENSE`.
 PhaseScout imports and writable storage paths were adapted for package isolation.
+Inherited CLI output is explicitly configured as UTF-8 for Windows pipe compatibility.

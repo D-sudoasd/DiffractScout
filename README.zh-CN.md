@@ -4,6 +4,10 @@
 
 # DiffractScout 中文说明
 
+本项目以 **Windows** 为使用和验收平台。Linux CI 保留用于基础代码验证，
+macOS 桌面不作为支持目标。命令行输出统一为 UTF-8，重定向或通过其他程序
+调用时也应使用 UTF-8 解码，避免英文 Windows 环境下的中文编码错误。
+
 本轮增加了内置的 CIF2Peaks、PhaseScout 兼容工作台。使用
 `python -m pip install ".[complete]"` 安装全部依赖后，可从主窗口的
 “兼容工作台”菜单打开，也可运行 `diffractscout compat --help` 查看命令。
@@ -268,7 +272,7 @@ J_no_LP   = I_no_LP / V_cell²
 
 ## 验证与 JOSS 状态
 
-当前离线 pytest 套件覆盖成分解析、子体系枚举及组合数量上限、大小写 CIF 扫描、同名文件防覆盖、CIF 数据块和空间群解析、特殊位置占位转换、系统消光、解析结构因子、Bragg 几何、边界反射、刚度单位换算、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全、确定性证据归档、严格清单校验和投稿准备检查。测试收集数由 pytest/CI 报告，不再复制到静态文档；另有稳定的 45 项解析科学基准。GitHub Actions 还配置了多 Python 版本、Windows/macOS、Linux 无头 GUI、wheel 安装、解析基准、发布制品、月度复现审计、依赖更新和 JOSS 论文构建。月度定时运行只记录某一公开提交的可复现状态；只有由真实缺陷、依赖更新、验证、文档改进或用户反馈形成的公开提交、Issue、Pull Request 或 Release 才构成开发活动证据。
+当前离线 pytest 套件覆盖成分解析、子体系枚举及组合数量上限、大小写 CIF 扫描、同名文件防覆盖、CIF 数据块和空间群解析、特殊位置占位转换、系统消光、解析结构因子、Bragg 几何、边界反射、刚度单位换算、弹性张量检查、侧车配对、资源限制、数据库失败语义、事务式输出、电子表格安全、确定性证据归档、严格清单校验和投稿准备检查。测试收集数由 pytest/CI 报告，不再复制到静态文档；另有稳定的 45 项解析科学基准。GitHub Actions 还配置了多 Python 版本、Windows、Linux 无头 GUI、wheel 安装、解析基准、发布制品、月度复现审计、依赖更新和 JOSS 论文构建。月度定时运行只记录某一公开提交的可复现状态；只有由真实缺陷、依赖更新、验证、文档改进或用户反馈形成的公开提交、Issue、Pull Request 或 Release 才构成开发活动证据。
 
 作者已确认软件用于其已发表研究，代表论文及具体使用情况将在投稿记录中补充。项目自 2026 年 8 月 12 日开始公开开发，目前尚未满足 JOSS 超过六个月的持续公开开发要求。项目自定的科学验证、社区参与要求与 JOSS 官方门槛分别列于 [投稿准备状态](docs/JOSS_READINESS.md)。先执行 `python scripts/check_release.py` 验收当前软件，再用 `python scripts/joss_readiness.py --stage submission --output build/joss-readiness` 检查待补的投稿证据和作者确认事项。最终软件归档 DOI 在审稿完成后的 `publication` 阶段补入；工作计划见 [docs/JOSS_6_MONTH_PLAN.md](docs/JOSS_6_MONTH_PLAN.md)。
 
