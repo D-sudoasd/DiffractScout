@@ -4,6 +4,9 @@
 
 # DiffractScout
 
+[Documentation guide](docs/README.md) · [中文说明](README.zh-CN.md) ·
+[Contributing](CONTRIBUTING.md) · [Agent workflow](docs/AGENT_WORKFLOW.md)
+
 Windows is the supported desktop platform. Linux CI remains for automated core
 validation; macOS desktop support is not an acceptance requirement. CLI output
 uses UTF-8, including when redirected; subprocess consumers should decode UTF-8.
@@ -31,12 +34,14 @@ for retained formats, engine differences and validation limits.
 
 Candidate-phase assessment commonly involves several disconnected operations: interpret an alloy grade, enumerate chemical subsystems, query a computed-materials database, download structures, inspect CIF metadata, calculate theoretical reflections, locate elastic constants, and prepare tables for experimental planning. Ad hoc scripts often lose the relationship between the provider record, exact CIF setting, tensor basis, diffraction settings, and final spreadsheet.
 
-DiffractScout represents that chain as one research object. It supports two entry points:
+DiffractScout represents that chain as one research object. It supports three entry points:
 
 | Workflow | Input | Main output |
 |---|---|---|
 | Local structure analysis | CIF files or folders | Validated structures, indexed theoretical reflections, optional paired `Cij`, profiles, diagnostics, manifest |
 | Candidate-phase pipeline | Alloy grade, formula, chemical system, or Materials Project IDs | Candidate catalogue, downloaded conventional CIFs, optional DFT tensors, diffraction tables, provenance, diagnostics, manifest |
+| Symmetry prototype and explicit edit | Alloy system, then caller-supplied composition and a cited cell | `alpha.cif`, `beta.cif`, `alpha-double-prime.cif`, then a new CIF and an adapt sidecar |
+| Initial CIF preparation | Alloy grade or explicit percentages, optional cited phase parameters | Validated starting CIFs, preserved sources, refinement guide, theoretical peak preview and integrity manifest |
 
 The base installation works offline. Materials Project access is optional and uses the researcher's own API key.
 
@@ -168,6 +173,44 @@ $env:MP_API_KEY = "replace-with-your-key"
 diffractscout discover "Ti-Al-V" -o outputs/ti_al_v_candidates
 Remove-Item Env:MP_API_KEY
 ```
+
+### Symmetry prototypes
+
+For ready-to-load starting models, use the desktop **Initial CIFs** menu or:
+
+```bash
+diffractscout prepare-cifs TC4 -o outputs/TC4_initial --offline
+diffractscout verify outputs/TC4_initial
+```
+
+The three Ti phase families work offline with attributed packaged scaffolds.
+Read `report.md` and load the CIFs in `initial/`. Without sample-specific
+parameters, their lattice and internal coordinates remain prototype values;
+nominal chemistry is a starting assumption. For cited per-phase lattice or
+partitioned compositions, fill a copy of
+[the parameter template](examples/phase_parameters.template.json) and pass
+`--parameters your-parameters.json`. Online preparation tries ranked database
+prototypes, restores P1 symmetry from actual atoms, checks the single metal
+orbit, and falls back to the Ti scaffolds when needed. See the
+[initial CIF guide](docs/INITIAL_CIFS.md) for output semantics and limitations.
+
+`run` answers a chemical-system search. For one alpha, beta, or
+alpha-double-prime cell, fetch the symmetry prototype and then edit a copy:
+
+```bash
+diffractscout fetch-prototypes "Ti-6Al-4V" -o prototypes \
+  --phase alpha --phase beta --phase alpha-double-prime
+diffractscout adapt prototypes/alpha.cif -o TC4_alpha.cif \
+  --nominal tc4 --a 2.935 --c 4.673 \
+  --citation "Author, Journal, volume, pages, year, DOI"
+```
+
+`fetch-prototypes` does not assign the alloy composition. The COD 1523304
+fallback is a Ti–20 at% Nb Cmcm scaffold. `--nominal tc4` is only the
+conventional 6 wt% Al, 4 wt% V grade, and a lattice or coordinate change
+requires the citation you supply. The package does not read numbers out of
+papers. The full sequence, including nominal versus partitioned chemistry, is
+in the [CLI guide](docs/CLI.md).
 
 ### Optional extras
 

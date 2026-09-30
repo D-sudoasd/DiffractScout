@@ -208,6 +208,46 @@ overrides it:
 
 Scientific meanings and units are defined in `docs/SCIENTIFIC_CONTRACTS.md`.
 
+## Symmetry prototypes and explicit CIF edits
+
+`diffractscout.phase_cif.fetch_prototypes(composition, output_dir, ...)` copies
+alpha (space group 194), beta (229), or alpha-double-prime (63) prototypes into
+stable filenames and writes `prototype_index.csv`. It does not assign the
+requested alloy composition. The first parsed element is the host unless `host` is supplied. There is no
+energy-above-hull cutoff. When no eligible Cmcm candidate is available,
+alpha-double-prime uses the packaged COD 1523304 scaffold.
+
+`diffractscout.phase_cif.adapt_cif(source, destination, ...)` writes a new CIF.
+Composition comes from `nominal="tc4"` (also `ti64` or `ti-6al-4v`),
+`weight_percent`, or `atomic_percent`. Lattice arguments and `fract` require
+`citation`. The source file is unchanged. `analyze`, `discover`, and `run` do
+not call either function.
+
+## Initial CIF preparation
+
+```python
+from diffractscout import prepare_cifs
+
+result = prepare_cifs("TC4", "outputs/TC4_initial", offline=True)
+print(result.exit_code, result.report_path)
+```
+
+`prepare_cifs` accepts `nominal`, `weight_percent`, `atomic_percent`, `host`,
+`phases`, `templates`, `parameter_file` (JSON) or `phase_parameters` (mapping),
+`offline`, `api_key`, `provider`, `max_subsystems`, `max_prototype_attempts`
+and `preview_wavelength_A`.
+Known Ti-6Al-4V grade aliases default to nominal composition only in this API;
+other alloys require explicit percentages. The largest atomic fraction selects
+the host; equal major fractions need an explicit host. Explicit phase chemistry
+overrides the bulk starting assumption and remains identifiable in provenance.
+The result is `PrepareCifsResult` with per-phase `records`, artifact paths and
+`exit_code` (0 complete, 3 partial, 2 no usable CIF). A complete result can still
+retain prototype lattice parameters; read `lattice_basis` and the guide.
+The function preserves raw sources, validates symmetry and single-orbit
+topology, creates a peak preview, and publishes a verified new directory.
+It does not infer equilibrium chemistry, read papers, or alter `analyze`/`run`.
+See [the initial CIF contract](INITIAL_CIFS.md).
+
 ## Analytic benchmark API
 
 ```python

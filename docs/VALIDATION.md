@@ -1,5 +1,10 @@
 # Validation strategy
 
+Choose local checks according to the change using the
+[workflow guide](AGENT_WORKFLOW.md). The broader suites below describe
+scientific, CI and release validation; they are not a mandatory local checklist
+for every documentation correction.
+
 ## Current automated suite
 
 The default suite is offline and deterministic:
@@ -150,7 +155,7 @@ The configured GitHub Actions checks are:
 - source compilation;
 - coverage threshold of 65% for the headless scientific, orchestration, provider, export, and verification code; the Tk controller and one-line module launcher are excluded from the line metric and checked by form-unit tests plus the Xvfb construction smoke test;
 - offline demo and manifest verification;
-- Windows and macOS tests and demo smoke runs;
+- Windows tests and demo smoke runs; macOS desktop acceptance is not configured;
 - Linux Xvfb GUI construction;
 - wheel build;
 - wheel installation in a clean virtual environment;
@@ -182,12 +187,16 @@ Scheduled audit runs show that one public commit remains reproducible at a later
 
 ## PDF verification
 
-After `paper/paper.pdf` is rebuilt, render it to images and inspect every page:
+After `paper/paper.pdf` is rebuilt, inspect every page with a local PDF viewer
+or render page images. If Poppler's `pdftoppm` is available, this example works
+from the repository root after creating `build/paper-render/`:
 
 ```bash
-python /home/oai/skills/pdfs/scripts/render_pdf.py paper/paper.pdf \
-  --out_dir /tmp/diffractscout-paper-render --dpi 200
+pdftoppm -png -r 200 paper/paper.pdf build/paper-render/page
 ```
+
+Rendering is optional tooling; a page-by-page visual inspection is required
+for paper delivery. Record the tool used and any pages that could not be checked.
 
 Check headings, equations, table/figure placement, references, clipping, missing glyphs, and page balance. The exact JOSS draft is produced by the Open Journals workflow.
 

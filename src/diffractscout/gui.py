@@ -479,6 +479,10 @@ if tk is not None:
 
         def _build_compat_menu(self) -> None:
             menu = tk.Menu(self)
+            menu.add_command(
+                label="初始 CIF 准备 / Prepare initial CIFs",
+                command=self._open_initial_cif_dialog,
+            )
             workflows = tk.Menu(menu, tearoff=False)
             for label, workflow in (
                 ("CIF2Peaks · 峰表与图谱 / Peaks and figures", "cif2peaks-gui"),
@@ -489,6 +493,15 @@ if tk is not None:
                 )
             menu.add_cascade(label="兼容工作台 / Compatibility", menu=workflows)
             self.configure(menu=menu)
+
+        def _open_initial_cif_dialog(self) -> None:
+            from .gui_cifs import InitialCifDialog
+
+            InitialCifDialog(
+                self,
+                language=self.lang,
+                on_load=self._add_input_paths,
+            )
 
         def _launch_compat(self, workflow: str) -> None:
             try:

@@ -107,3 +107,105 @@ Database discovery additionally needs the optional Materials Project
 dependencies and credentials. Prefer `MP_API_KEY` over placing a credential in
 a shell command. The [API guide](API.md) and [scientific contracts](SCIENTIFIC_CONTRACTS.md)
 describe the calculation fields and tensor-coordinate requirements.
+
+## Prepare usable initial CIFs
+
+```bash
+diffractscout prepare-cifs TC4 -o outputs/TC4_initial --offline
+diffractscout verify outputs/TC4_initial
+diffractscout prepare-cifs Ti-Nb -o outputs/TiNb_initial --at Ti=80,Nb=20 --offline
+```
+
+Load `initial/*.cif` and read `report.md` for inherited lattice parameters,
+composition assumptions and refinement suggestions. This preparation command
+recognizes nominal Ti-6Al-4V aliases, selects the host by the largest atomic
+fraction, checks actual parent-lattice atom orbits, restores chemically verified
+P1 symmetry, and preserves source files. All three Ti families have attributed
+offline scaffolds; their lattice/internal coordinates are not target-alloy
+measurements. Add `--parameters phase-parameters.json` for cited per-phase
+values, `--template phase=path.cif` for overrides, `--host` for explicit host,
+or `--json` for machine-readable artifact paths. `--max-prototype-attempts`
+controls the per-phase download/validation budget (default 8); remaining untried
+candidates are reported. Online mode uses `MP_API_KEY`;
+`--offline` never contacts a provider. Exit codes are 0 complete, 3 partial,
+2 no usable CIF or invalid input. The output directory must be new.
+See [the parameter template](../examples/phase_parameters.template.json) and
+[the initial CIF guide](INITIAL_CIFS.md) for the exact scientific contract.
+
+## Fetch a symmetry prototype, then adapt it
+
+`discover` and `run` enumerate chemical subsystems. For an alloy grade they can
+download intermetallics as well as the elemental prototypes. They do not edit
+occupancy or lattice parameters, and they do not read papers.
+
+Use this sequence when the goal is one alpha, beta, or alpha-double-prime CIF
+for a stated composition.
+
+1. Run `fetch-prototypes` first. A row whose status is `scaffold` or `template`,
+   and any row whose `target_composition` is `false`, still has the source
+   occupancy and lattice. The COD 1523304 scaffold is Ti–20 at% Nb, Cmcm. Its
+   Nb occupancy and cell are the Brown, Clark, Eastabrook, and Jepson (1964)
+   entry, not the alloy being requested.
+2. Look up a measurement for the user's composition and phase. Prefer the same
+   alloy, the same phase, room temperature, and a stated heat treatment. Record
+   the citation, the specimen condition, and the reported uncertainty.
+3. If that paper does not report a lattice for the phase, stop and say which
+   value is missing. An analogue alloy can be used only when the citation and
+   the output filename both say that it is a comparison.
+4. Leave every coordinate the paper does not report at the prototype value.
+   Change alpha-double-prime `y` only when the paper reports it or the user
+   passes `--fract y=...`.
+5. Keep the nominal alloy composition separate from equilibrium phase chemistry.
+   Martensite can inherit the parent composition. Equilibrium alpha and beta in
+   Ti-6Al-4V are commonly partitioned and are not bulk 6 wt% Al–4 wt% V.
+6. Run `adapt`. Report the loader's space-group cross-check. A result other
+   than `match` means the file was not written.
+
+```bash
+diffractscout fetch-prototypes "Ti-6Al-4V" -o prototypes \
+  --phase alpha --phase beta --phase alpha-double-prime
+diffractscout adapt prototypes/alpha.cif -o TC4_alpha.cif \
+  --nominal tc4 --a 2.935 --b 2.935 --c 4.673 \
+  --citation "Author, Journal, volume, pages, year, DOI"
+```
+
+`--nominal tc4`, `ti64`, and `ti-6al-4v` mean the conventional grade: 6 wt% Al,
+4 wt% V, balance Ti. That switch exists on `adapt` and `prepare-cifs`. In `discover` and `run` those aliases
+still expand to the element set Ti, Al, V. Other alloys need `--wt` or `--at`.
+The percentages must sum to 100 within 0.05. Occupancies are rounded to five
+decimal places and the residual is added to the last element.
+
+Independent axes, angles, and fractional coordinates change only when supplied.
+Hexagonal/tetragonal a and b, and cubic a, b and c, are linked by symmetry.
+Specify one of the equal axes; conflicting explicit values are rejected. `--citation` is
+required for every lattice or coordinate edit. Composition-only edits do not
+need one. The command writes `name.adapt.json` beside the new CIF and refuses
+to overwrite the source, the destination, or the sidecar.
+
+`fetch-prototypes` queries every chemical subsystem and applies no
+energy-above-hull cutoff, because beta-Ti is well above the usual near-stable
+threshold. The default `--max-subsystems` is 64. The host is the first parsed
+element unless overridden with `--host`, so `Ti-Al-V` and `Ti-6Al-4V` use Ti. An elemental host prototype is
+preferred over a lower-energy multielement candidate. Alpha requires space
+group 194 and excludes D0₁₉ and C14. Beta requires 229. Alpha-double-prime
+requires 63 and a formula whose elements are inside the requested system, which
+excludes oxides of an oxygen-free alloy.
+
+Alpha and beta need a Materials Project key or `--template phase=path`.
+Alpha-double-prime can be fetched with no key: the packaged scaffold is copied
+and the index says so. If a key is set, the command searches first and uses the
+scaffold only when no eligible Cmcm hit exists. The packaged scaffold is restricted
+to host Ti; other hosts need a candidate or template. A Materials Project conventional
+CIF is stored unchanged. When its declared symmetry is P1, `adapt` will refuse
+it; pass a symmetry-declared file with `--template`.
+
+`fetch-prototypes` is the low-level raw acquisition command: CIFs and the index
+are individually created without overwrite, but the directory is not a
+transactional bundle. Use separate output directories for concurrent fetches;
+use `prepare-cifs` for a fully staged, verified atomic bundle.
+
+| Exit status | `fetch-prototypes` | `adapt` |
+|---|---|---|
+| `0` | Every requested phase produced a CIF. | The new CIF and sidecar passed validation. |
+| `2` | Invalid input, missing API key for alpha or beta, or another fatal error. | Invalid input, missing citation, or the symmetry check failed. No destination file is left behind. |
+| `3` | The index was written and at least one requested phase is missing. | Not used. |

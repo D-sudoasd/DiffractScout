@@ -8,19 +8,21 @@ List the files, numerical contracts, data schemas, providers, or user workflows 
 
 ## Scientific evidence
 
-Provide analytical checks, independent comparisons, public/synthetic fixtures, units, tolerances, and interpretation of any changed result.
+For changed numerical behavior or scientific contracts, provide analytical
+checks, relevant independent comparisons, public/synthetic fixtures, units,
+tolerances, and interpretation of changed results. Otherwise state that this
+section does not apply.
 
 ## Validation
 
-- [ ] `ruff check src tests scripts`
-- [ ] `python -m compileall -q src tests scripts`
-- [ ] `pytest --cov=diffractscout --cov-fail-under=65`
-- [ ] `diffractscout demo -o outputs/pr_demo`
-- [ ] `diffractscout benchmark -o outputs/pr_benchmark`
-- [ ] `diffractscout verify outputs/pr_demo`
-- [ ] `python scripts/joss_readiness.py --output outputs/pr_readiness` completes in non-strict mode
+List the relevant local checks and results, and explain any skipped check that
+affects confidence in this change. Use [the workflow guide](../docs/AGENT_WORKFLOW.md)
+to choose checks; required CI checks remain the merge gate. Full release and
+JOSS preflights apply when preparing their respective candidates.
+
+- [ ] Checks appropriate to the changed behavior completed and reported
 - [ ] Documentation, validation evidence, and changelog updated when applicable
-- [ ] No API keys, restricted data, build artifacts, or local paths committed
+- [ ] No API keys, restricted data, generated build artifacts, or private local paths committed
 
 ## Compatibility and provenance
 
