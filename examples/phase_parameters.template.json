@@ -1,0 +1,21 @@
+{
+  "schema": "diffractscout_phase_parameters_v1",
+  "phases": {
+    "alpha": {
+      "lattice": {},
+      "citation": "",
+      "conditions": ""
+    },
+    "beta": {
+      "lattice": {},
+      "citation": "",
+      "conditions": ""
+    },
+    "alpha-double-prime": {
+      "lattice": {},
+      "fract": {},
+      "citation": "",
+      "conditions": ""
+    }
+  }
+}

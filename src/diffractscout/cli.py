@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from . import __version__
 from .console import configure_cli_output
@@ -124,6 +124,28 @@ def _print_result(
         print(f"Downloads: {successful}/{len(result.downloads)} successful")
     for level, message in diagnostic_lines:
         print(f"{level}: {message}", file=sys.stderr)
+
+
+def _print_fetch(result: Any) -> None:
+    print(f"Output: {result.output_dir}")
+    print(f"Index: {result.index_path}")
+    print(f"Host: {result.host}")
+    for record in result.records:
+        filename = record.cif_path.name if record.cif_path is not None else "-"
+        identity = record.material_id or record.source or record.status
+        print(f"{record.phase}: {record.status} {identity} -> {filename}")
+        if record.note:
+            print(f"NOTE: {record.note}")
+
+
+def _print_adapt(result: Any) -> None:
+    print(f"Output: {result.cif_path}")
+    print(f"Sidecar: {result.sidecar_path}")
+    print(f"Space group: {result.space_group_symbol} ({result.space_group_number})")
+    print(f"Cross-check: {result.symmetry_crosscheck}")
+    print("Occupancies: " + " ".join(f"{element}={value}" for element, value in result.occupancies.items()))
+    for warning in result.warnings:
+        print(f"WARNING: {warning}", file=sys.stderr)
 
 
 def _pipeline_exit_code(result: object) -> int:
@@ -251,6 +273,101 @@ def build_parser() -> argparse.ArgumentParser:
     preset_show = preset_commands.add_parser("show", help="Validate and display a preset file.")
     preset_show.add_argument("file", help="Preset JSON file.")
     preset_show.add_argument("--json", action="store_true", help="Print the normalized preset values as JSON.")
+
+    fetch = subparsers.add_parser(
+        "fetch-prototypes",
+        help="Copy alpha, beta, or alpha-double-prime symmetry prototypes without assigning alloy composition.",
+    )
+    fetch.add_argument(
+        "composition",
+        help="Alloy grade or chemical system. The first parsed element is the host.",
+    )
+    fetch.add_argument("-o", "--output", required=True, help="Directory for the prototype CIFs and prototype_index.csv.")
+    fetch.add_argument(
+        "--phase",
+        action="append",
+        dest="phases",
+        default=None,
+        help="Repeat for alpha, beta, or alpha-double-prime. Default: all three.",
+    )
+    fetch.add_argument(
+        "--template",
+        action="append",
+        dest="templates",
+        default=None,
+        help="Local CIF for one phase, as phase=path. Example: alpha=alpha.cif.",
+    )
+    fetch.add_argument(
+        "--max-subsystems",
+        type=int,
+        default=64,
+        help="Maximum chemical-subsystem queries. Default 64; this command applies no energy-above-hull cutoff.",
+    )
+    fetch.add_argument("--api-key", default="", help="Materials Project API key. MP_API_KEY is preferred.")
+    fetch.add_argument("--host", default="", help="Override the first parsed host element.")
+
+    prepare = subparsers.add_parser("prepare-cifs", help="Prepare validated, traceable alloy starting CIFs and a refinement guide.")
+    prepare.add_argument("composition", help="Chemical system or known nominal grade (TC4/Ti64/Ti-6Al-4V).")
+    prepare.add_argument("-o", "--output", required=True, help="New directory for initial CIFs, sources, checks and peak preview.")
+    prepare.add_argument("--nominal", default="", help="Nominal grade. Known Ti-6Al-4V aliases are recognized automatically here.")
+    prepare.add_argument("--wt", default="", help="Complete weight percentages, e.g. Ti=90,Al=6,V=4.")
+    prepare.add_argument("--at", default="", help="Complete atomic percentages, e.g. Ti=80,Nb=20.")
+    prepare.add_argument("--host", default="", help="Parent lattice host; otherwise the largest supplied atomic fraction is used.")
+    prepare.add_argument("--phase", action="append", dest="phases", default=None, help="Repeat alpha, beta or alpha-double-prime; default all three.")
+    prepare.add_argument("--template", action="append", dest="templates", default=None, help="Override one prototype with phase=local.cif.")
+    prepare.add_argument("--parameters", default=None, help="Strict JSON with cited per-phase lattice, coordinates and optional phase chemistry.")
+    prepare.add_argument("--offline", action="store_true", help="Use local templates and packaged Ti scaffolds; never contact the provider.")
+    prepare.add_argument("--api-key", default="", help="Materials Project API key. MP_API_KEY is preferred.")
+    prepare.add_argument("--max-subsystems", type=int, default=64, help="Maximum subsystem queries before expansion; default 64.")
+    prepare.add_argument("--max-prototype-attempts", type=int, default=8, help="Maximum downloaded candidates attempted per phase; untried alternatives are reported. Default 8.")
+    prepare.add_argument("--preview-wavelength", type=float, default=1.5406, help="Preview wavelength in angstroms; default Cu Ka 1.5406.")
+    prepare.add_argument("--json", action="store_true", help="Print structured artifact paths and per-phase statuses.")
+
+    adapt_cmd = subparsers.add_parser(
+        "adapt",
+        help="Write caller-supplied composition and cited lattice edits into a new CIF.",
+    )
+    adapt_cmd.add_argument("cif", help="Source CIF. The source file is left unchanged.")
+    adapt_cmd.add_argument("-o", "--output", required=True, help="Destination .cif path. Existing files are refused.")
+    adapt_cmd.add_argument(
+        "--nominal",
+        default="",
+        help="Conventional grade: tc4, ti64, or ti-6al-4v (6 wt percent Al, 4 wt percent V, balance Ti).",
+    )
+    adapt_cmd.add_argument(
+        "--wt",
+        default="",
+        help="Weight percent, for example Ti=90,Al=6,V=4. The values must sum to 100 within 0.05.",
+    )
+    adapt_cmd.add_argument(
+        "--at",
+        default="",
+        help="Atomic percent, for example Ti=86.2,Al=10.2,V=3.6. The values must sum to 100 within 0.05.",
+    )
+    adapt_cmd.add_argument("--a", type=float, default=None, help="Replacement cell length a in angstroms.")
+    adapt_cmd.add_argument("--b", type=float, default=None, help="Replacement cell length b in angstroms.")
+    adapt_cmd.add_argument("--c", type=float, default=None, help="Replacement cell length c in angstroms.")
+    adapt_cmd.add_argument("--alpha", type=float, default=None, help="Replacement cell angle alpha in degrees.")
+    adapt_cmd.add_argument(
+        "--beta",
+        type=float,
+        default=None,
+        dest="beta_angle",
+        help="Replacement cell angle beta in degrees.",
+    )
+    adapt_cmd.add_argument("--gamma", type=float, default=None, help="Replacement cell angle gamma in degrees.")
+    adapt_cmd.add_argument(
+        "--fract",
+        action="append",
+        dest="fract",
+        default=None,
+        help="Fractional coordinate shared by every metal site, for example y=0.166667.",
+    )
+    adapt_cmd.add_argument(
+        "--citation",
+        default="",
+        help="Required when a lattice parameter or fractional coordinate is set.",
+    )
 
     subparsers.add_parser("gui", help="Launch the optional Tk desktop interface.")
     subparsers.add_parser("compat", help="Run built-in CIF2Peaks/PhaseScout workflows; use compat --help.")
@@ -393,6 +510,67 @@ def main(argv: Sequence[str] | None = None) -> int:
                     for key, value in sorted(values.items()):
                         print(f"{key}: {value}")
                 return 0
+
+        if args.command == "fetch-prototypes":
+            from .phase_cif import fetch_prototypes
+
+            result = fetch_prototypes(
+                args.composition,
+                args.output,
+                phases=args.phases,
+                template_args=args.templates,
+                api_key=str(args.api_key or os.environ.get("MP_API_KEY", "")).strip() or None,
+                max_subsystems=args.max_subsystems,
+                host=args.host,
+            )
+            _print_fetch(result)
+            return result.exit_code
+
+        if args.command == "prepare-cifs":
+            from .initial_cifs import prepare_cifs
+
+            result = prepare_cifs(
+                args.composition, args.output, nominal=args.nominal,
+                weight_percent=args.wt, atomic_percent=args.at, host=args.host,
+                phases=args.phases, template_args=args.templates,
+                parameter_file=args.parameters, offline=args.offline,
+                api_key=str(args.api_key or os.environ.get("MP_API_KEY", "")).strip() or None,
+                max_subsystems=args.max_subsystems, max_prototype_attempts=args.max_prototype_attempts,
+                preview_wavelength_A=args.preview_wavelength,
+            )
+            if args.json:
+                print(json.dumps(to_jsonable(result), indent=2, ensure_ascii=False))
+            else:
+                print(f"Initial CIFs: {result.output_dir / 'initial'}")
+                print(f"Guide: {result.report_path}")
+                print(f"Index: {result.index_path}")
+                print(f"Manifest: {result.manifest_path}")
+                for record in result.records:
+                    print(f"{record.phase}: {record.status} -> {record.cif_path or '-'}")
+                    print(f"NOTE: {record.note}")
+                print("Review report.md for prototype lattice values and composition assumptions before refinement.")
+            return result.exit_code
+
+        if args.command == "adapt":
+            from .phase_cif import adapt_cif, parse_fractional_assignments
+
+            adapted = adapt_cif(
+                args.cif,
+                args.output,
+                nominal=args.nominal,
+                weight_percent=args.wt,
+                atomic_percent=args.at,
+                a=args.a,
+                b=args.b,
+                c=args.c,
+                alpha=args.alpha,
+                beta=args.beta_angle,
+                gamma=args.gamma,
+                fract=parse_fractional_assignments(args.fract),
+                citation=args.citation,
+            )
+            _print_adapt(adapted)
+            return 0
 
         if args.command == "gui":
             from .gui import main as gui_main

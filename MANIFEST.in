@@ -1,6 +1,8 @@
 include pyproject.toml MANIFEST.in
 include README.md README.zh-CN.md LICENSE NOTICE.md AUTHORS.md CITATION.cff CHANGELOG.md
 include CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md GOVERNANCE.md SUPPORT.md ROADMAP.md
+include AGENTS.md
+recursive-include .agents/skills *.md
 include 启动DiffractScout.bat quick_export_diffractscout.bat
 recursive-include docs *.md *.svg *.png *.json
 recursive-include paper *.md *.bib *.svg *.png *.sh *.py
@@ -12,6 +14,7 @@ recursive-include tests *.py
 recursive-include tests *.json
 recursive-include src/diffractscout/compat LICENSE
 recursive-include src/diffractscout/benchmark_data *.cif *.json
+recursive-include src/diffractscout/prototype_data *.cif
 
 recursive-include docs/joss *.md *.json
 include scripts/check_joss_artifacts.py

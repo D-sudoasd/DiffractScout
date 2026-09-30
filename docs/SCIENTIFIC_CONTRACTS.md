@@ -11,6 +11,8 @@ This document defines the numerical quantities and validation rules emitted by D
 - Local inputs remain unchanged. A dedicated Gemmi structure copy is used for structure-factor occupancy conversion.
 - Partial occupancies are retained as an average-structure model and generate an explicit warning.
 - DiffractScout does not invent or repair atom labels, occupancies, compositions, oxidation states, disorder models, or crystallographic settings.
+- `adapt_cif` is outside that rule. It writes a new file from caller-supplied composition and, when a citation is supplied, caller-supplied lattice parameters or fractional coordinates. It leaves the source CIF unchanged. `analyze`, `discover`, and `run` do not call it, and it does not extract numbers from literature.
+- `prepare_cifs` is a separate explicit derivation workflow. It checks actual metal-site topology as well as the phase-family space group, restores chemically verified fully enumerated P1 structures into standard conventional cells at `symprec=0.001 Å`, archives the original bytes, and records the transformation. It never relabels an incompatible non-P1 structure. Nominal/bulk occupancy and any inherited lattice/internal coordinates are starting assumptions. Cited caller values are not verified experimental measurements by the software. Derived CIF formula, Z and formula mass are consistent with expanded occupied sites. Detailed contracts are in [INITIAL_CIFS.md](INITIAL_CIFS.md).
 
 ### Space-group resolution
 
@@ -315,7 +317,7 @@ Database query failure, no property document, a document without a tensor, a ten
 
 ## 10. Result-bundle integrity
 
-All outputs are first written to a staging directory. CSV and workbook files use temporary-file replacement. The completed staging bundle is verified before it can replace the target directory.
+Analysis result bundles and `prepare-cifs` packages are first written to a staging directory. CSV and workbook files use temporary-file replacement. The completed staging bundle is verified before publication to the target directory. The low-level `fetch-prototypes` command creates raw CIFs and its index individually without overwrite; it is not a transactional result bundle and concurrent fetches should use separate directories.
 
 The manifest verifier checks SHA-256, byte size, path safety, duplicate paths, symbolic links, root escapes, missing files, modified files, and files present on disk but absent from the manifest. A pre-existing bundle must itself pass verification before overwrite is allowed.
 

@@ -36,6 +36,12 @@ validation.py — strict independent bundle verification
 
 The GUI contains no separate numerical implementation. It creates `AnalysisSettings` and `DiscoverySettings`, calls the pipeline API, and renders returned diagnostics.
 
+`phase_cif.py` is a separate, explicit preparation path for symmetry-prototype
+acquisition and derived composition/lattice/site edits. It writes new CIFs;
+ordinary analysis and discovery do not invoke it automatically. See the
+[API guide](API.md#symmetry-prototypes-and-explicit-cif-edits) for its inputs
+and provenance requirements.
+
 `gui_settings.py` validates and persists a versioned, explicit allowlist of
 analysis controls. Presets exclude credentials, paths, overwrite authorization,
 and structure-specific elastic tensors. Excel presentation is separate from

@@ -20,12 +20,17 @@ macOS 桌面不作为支持目标。命令行输出统一为 UTF-8，重定向�
 
 [英文主页](README.md) · [CLI 使用说明](docs/CLI.md) · [API](docs/API.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [发布流程](docs/RELEASE.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
 
-## 两类工作流
+## 三类工作流
+
+使用与开发入口：[文档索引](docs/README.md) · [贡献指南](CONTRIBUTING.md) ·
+[项目协作约定](AGENTS.md) · [开发与 agent 工作流](docs/AGENT_WORKFLOW.md)。
 
 | 工作流 | 输入 | 主要输出 |
 |---|---|---|
 | 本地 CIF 分析 | 单个或多个 CIF、CIF 文件夹 | 结构检查、理论峰表、可选 `Cij` 配对、连续显示谱线、诊断和校验清单 |
 | Materials Project 流程 | 合金牌号、化学式、化学体系或 `mp-` 编号 | 候选相、常规标准晶胞、可选 DFT 弹性张量、理论衍射表、来源记录和校验清单 |
+| 对称性原型与显式精修 | 化学体系，以及调用者给出的成分和带出处的晶格 | `alpha.cif`、`beta.cif`、`alpha-double-prime.cif`，以及一份新 CIF 和 adapt 侧车 |
+| 初始 CIF 准备 | 牌号或明确百分比，以及可选的逐相引用参数 | 可载入的初始 CIF、原始来源、拟合建议、理论峰表预览及完整性清单 |
 
 基础安装可以离线分析本地 CIF。Materials Project 支持为可选依赖，API 密钥由用户自行提供。
 
@@ -223,6 +228,61 @@ Remove-Item Env:MP_API_KEY
 ```
 
 默认下载常规标准晶胞。raw/POSCAR 和 IEEE 格式张量会保留数值及来源，但由于当前 provider 没有持久化足够的上游结构取向，无法验证其到导出 CIF Cartesian 坐标系的变换，因此两者均标记为 `frame_transform_required`，不输出方向模量，直至用户提供经过验证的坐标变换。原胞下载需要同时使用 `--no-elasticity`。软件会在访问数据库前估算化学子体系查询数量，超过 `--max-subsystems`（默认 4096）时停止，避免高元体系产生组合式查询膨胀。
+
+## 对称性原型与成分、晶格精修
+
+推荐先使用主窗口的“初始 CIF”菜单，或一次生成完整起始模型包：
+
+```powershell
+diffractscout prepare-cifs TC4 -o outputs/TC4_initial --offline
+diffractscout verify outputs/TC4_initial
+```
+
+TC4、Ti64、Ti-6Al-4V 在这个新入口中会按名义 6 wt% Al、4 wt% V 展开。
+宿主默认按最大的原子分数确定，不受元素输入顺序影响。其它合金须明确
+`--wt` 或 `--at`，也可以用 `--host` 指定母相宿主。
+最终应载入 `initial/` 中的 CIF，并阅读 `report.md`。
+三种 Ti 相族均有带出处的离线原型；缺少目标合金参数时，报告和 CIF 内会
+明确写出“原型晶格、初始成分假设”，不会宣称已经得到该样品的精修结构。
+
+有目标相文献值时，复制[逐相参数模板](examples/phase_parameters.template.json)，
+填入晶格、引用和适用条件，再增加 `--parameters your-parameters.json`。
+可以逐相指定实际相成分，替代整体合金占位假设。在线模式会检查候选真实
+原子位点，对可复核的 P1 数据恢复显式空间群，拒绝仅有同一空间群的多轨道
+化合物，并保留原始 CIF。详见[初始 CIF 使用指南](docs/INITIAL_CIFS.md)。
+
+要的是某一个 α、β 或 α'' 晶胞时，用下面两条命令。`run "Ti64"` 会在整个 Ti-Al-V 体系里检索，结果里会包括金属间化合物；它不负责把原型改成指定合金的占位和晶格。
+
+```powershell
+diffractscout fetch-prototypes "Ti-6Al-4V" -o prototypes `
+  --phase alpha --phase beta --phase alpha-double-prime
+diffractscout adapt prototypes\alpha.cif -o TC4_alpha.cif `
+  --nominal tc4 --a 2.935 --c 4.673 `
+  --citation "作者, 期刊, 卷, 页, 年份, DOI"
+```
+
+`fetch-prototypes` 只复制对称性原型，并写 `prototype_index.csv`。这一步的 `target_composition` 一律是 `false`。
+
+- `alpha`：空间群 194。D0₁₉（例如 Ti₃Al）和 C14 不会进入。ω 是 191，也不会进入。
+- `beta`：空间群 229。成分字符串里的第一个元素是宿主；有该元素的单质原型时优先用它，所以 Ti-Al-V 的 β 是 Ti，而不是 V。这里不用能量上限，因为 β-Ti 明显高于常见的 near-stable 阈值。
+- `alpha-double-prime`：空间群 63，化学元素必须落在给定体系内。Ti 宿主在库里没有合格结构时，使用随包附带的 COD 1523304。那是 Ti–20 at% Nb 的 Cmcm 骨架，晶格和 Nb 占位都属于 Brown 等人 1964 年的那条记录。索引会写明这一点；其它宿主须提供合格候选或模板。
+
+已有对称性完整的 CIF 时，可以用 `--template alpha=路径` 跳过数据库。Materials Project 常规 CIF 常被标成 P1；`adapt` 要求文件里的 Hermann–Mauguin 符号已经和结构一致，这种 P1 文件会被拒绝。
+
+文献里的晶格常数由调用者查完后写在命令里。软件不从论文抽取数字。建议按这个顺序做：
+
+1. 先跑 `fetch-prototypes`。状态为 `scaffold` 或 `template` 的文件，其晶格和占位仍是来源结构。
+2. 按用户给的成分查该相的实测晶格。优先同一合金、同一相、室温、并写明热处理。记下出处、条件和不确定度。
+3. 论文没有该相的晶格时，停下来说明缺哪一项。借用相近合金时，出处和文件名都要写明这是对照，而不是目标合金的实测。
+4. 论文没给的坐标保持原型原值。α'' 的 `y` 只有在论文报告了它，或用户明确写了 `--fract y=...` 时才改。
+5. 名义合金成分和平衡分配后的相成分分开。马氏体可以继承母相成分；Ti-6Al-4V 里平衡 α、β 通常经过分配，不是整体的 6Al–4V。
+6. 再跑 `adapt`，并把加载器的空间群交叉检查结果告诉用户。结果必须是 `match`，否则文件不会留下。
+
+`--nominal tc4`、`ti64`、`ti-6al-4v` 只表示常规牌号：6 wt% Al、4 wt% V、余量 Ti。这是名义牌号。`discover` 和 `run` 里的同名别名仍然只表示元素集合 Ti、Al、V。其它合金用 `--wt Ti=90,Al=6,V=4` 或 `--at`。百分数之和要在 100±0.05 以内。占位先保留五位小数，残差加到输入顺序的最后一个元素上，使总和正好为 1。
+
+未指定的独立轴、角度和分数坐标保持原型值。六方/四方的 a、b 自动联动，立方的 a、b、c 自动联动；显式给出相互矛盾的等价轴会被拒绝。改了晶格或坐标就必须有 `--citation`。只改成分时不需要。新文件旁边会有 `名称.adapt.json`，里面有来源 CIF 的 SHA-256、成分依据、出处、改过的轴和按对称性联动的轴。化学式、Z、化学式质量按实际展开的占位和位点重算。源文件、已存在的目标文件和侧车都不会被覆盖。
+
+没有 API key 时，只请求 `alpha-double-prime` 也可以完成，走的是 COD 骨架。请求 α 或 β 时需要 key，或者用 `--template`。设置了 key 时，α'' 会先检索；没有合格 Cmcm 结构才退回骨架。
 
 ## 结果包与写入安全
 

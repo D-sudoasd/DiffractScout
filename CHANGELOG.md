@@ -6,6 +6,10 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Added
 
+- `fetch-prototypes` and `adapt` for symmetry-prototype CIFs and caller-supplied composition or cited lattice edits. Alpha (194), beta (229), and alpha-double-prime (63) selection stays outside `discover` / `run`. Literature numbers are supplied by the caller; the package does not extract them. The alpha-double-prime fallback is the public-domain COD 1523304 Ti–20 at% Nb scaffold.
+- `prepare-cifs` and the desktop Initial CIFs dialog produce checked starting models with raw sources, provenance, per-phase lattice/chemistry assumptions, a theoretical peak preview and a verified manifest. Chemically resolved P1 atoms can be standardized into their verified parent symmetry; multiorbit compounds are rejected and subsequent ranked candidates are tried. All three Ti families have attributed offline scaffolds. Cited phase parameters can override lattice, internal coordinates and bulk chemistry; no literature values are invented.
+- `adapt` links symmetry-equivalent conventional cell axes and rejects conflicts. Formula, Z and formula mass now follow expanded occupied sites; stale atom-type/geometry tables are removed from derivatives. Interstitial percentages are not substituted onto metal sites.
+
 - Windows desktop acceptance target and UTF-8 command-line output, including
   redirected inherited exports on non-Chinese Windows installations.
 

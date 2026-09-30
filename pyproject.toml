@@ -104,7 +104,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-diffractscout = ["benchmark_data/*.cif", "benchmark_data/*.json"]
+diffractscout = ["benchmark_data/*.cif", "benchmark_data/*.json", "prototype_data/*.cif"]
 "diffractscout.compat.cif2peaks" = ["LICENSE"]
 "diffractscout.compat.phasescout" = ["LICENSE"]
 

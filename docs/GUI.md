@@ -85,6 +85,42 @@ The query can be an alloy grade, chemical formula, chemical system, or explicit 
 
 The API key remains in process memory. DiffractScout does not save it in configuration, result, log, or repository files. Users should still remove keys before sharing screenshots, terminal history, or diagnostic material.
 
+## Prepare starting CIFs
+
+Choose **Prepare initial CIFs / 初始 CIF 准备** from the menu to open the
+standalone phase-preparation window. Enter an element system such as `Ti-Al-V`,
+choose the composition basis, select phases, and choose a new output folder.
+The form and per-phase results scroll vertically on shorter screens; the
+status and main action buttons remain fixed at the bottom.
+For the common nominal `TC4`, `Ti64`, or `Ti-6Al-4V` grade, the form starts
+with `TC4`; the workflow interprets it as 6 wt% Al, 4 wt% V, balance Ti. For
+other alloys, enter the complete composition, such as `Ti=90,Al=6,V=4` wt% or
+`Ti=86,Al=10,V=4` at%. The optional host defaults to the element with the
+largest supplied fraction; specify it explicitly for ties or a different
+parent lattice.
+
+The advanced section accepts a literature-parameter JSON, per-phase template
+CIFs, an optional Materials Project key, and an offline switch. Leave the key
+empty to use `MP_API_KEY` from the process environment. The GUI does not store
+the key. Offline Ti runs can use packaged, cited prototypes; a non-Ti system
+must use its own compatible prototypes or templates. If no literature
+parameters are provided, the generated files remain explicitly labelled
+starting models with the prototype lattice retained as an initial assumption.
+The program does not search or interpret papers.
+
+The result table reports each requested phase and its source/status, with the
+record note shown below the table. Use **View report** for the complete
+provenance report, **Open output folder** to inspect files, or **Load results
+for analysis** to add the generated CIFs to the main window's local analysis
+list. The worker never accesses Tk widgets; closing this dialog stops its UI
+polling while the preparation can finish writing the requested output. A
+successful or partial result remains in the selected output folder.
+
+These CIFs are starting structures. A database or packaged prototype's
+composition and lattice do not become measurements of the target alloy, and
+the workflow does not identify phases, infer equilibrium partitioning, or
+replace refinement against experimental data.
+
 ## Radiation controls
 
 | Mode | Required control | Interpretation |
