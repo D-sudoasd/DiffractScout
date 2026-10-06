@@ -20,7 +20,7 @@ macOS 桌面不作为支持目标。命令行输出统一为 UTF-8，重定向�
 
 [英文主页](README.md) · [CLI 使用说明](docs/CLI.md) · [API](docs/API.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [发布流程](docs/RELEASE.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
 
-## 三类工作流
+## 主要工作流
 
 使用与开发入口：[文档索引](docs/README.md) · [贡献指南](CONTRIBUTING.md) ·
 [项目协作约定](AGENTS.md) · [开发与 agent 工作流](docs/AGENT_WORKFLOW.md)。
