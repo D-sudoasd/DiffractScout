@@ -2,17 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from diffractscout.compat.cif2peaks.gui import (
-    GUI_FIGURE_PRESET_TOOLTIP_KEYS,
-    GUI_PATTERN_AXIS_TOOLTIP_KEYS,
-    GUI_PREVIEW_HEADING_TOOLTIP_KEYS,
-    GUI_TEXT,
-    GUI_TOOLTIP_KEYS,
-    GUI_XRAY_TOOLTIP_KEYS,
-    GUI_XRAY_PRESET_LABELS,
-    GUI_PUBLICATION_PRESET_LABELS,
-    _gui_text,
-)
+@pytest.fixture
+def cif2peaks_gui():
+    pytest.importorskip("pymatgen.core")
+    from diffractscout.compat.cif2peaks import gui
+    return gui
 
 
 def _tkinter_or_skip():
@@ -35,12 +29,13 @@ def _assert_interactive_help_coverage(view, registered):
     assert missing == []
 
 
-def test_cif2peaks_help_copy_and_choice_maps_are_bilingual() -> None:
-    tooltip_keys = set(GUI_TOOLTIP_KEYS.values())
-    tooltip_keys.update(GUI_XRAY_TOOLTIP_KEYS.values())
-    tooltip_keys.update(GUI_PATTERN_AXIS_TOOLTIP_KEYS.values())
-    tooltip_keys.update(GUI_FIGURE_PRESET_TOOLTIP_KEYS.values())
-    tooltip_keys.update(GUI_PREVIEW_HEADING_TOOLTIP_KEYS.values())
+def test_cif2peaks_help_copy_and_choice_maps_are_bilingual(cif2peaks_gui) -> None:
+    gui = cif2peaks_gui
+    tooltip_keys = set(gui.GUI_TOOLTIP_KEYS.values())
+    tooltip_keys.update(gui.GUI_XRAY_TOOLTIP_KEYS.values())
+    tooltip_keys.update(gui.GUI_PATTERN_AXIS_TOOLTIP_KEYS.values())
+    tooltip_keys.update(gui.GUI_FIGURE_PRESET_TOOLTIP_KEYS.values())
+    tooltip_keys.update(gui.GUI_PREVIEW_HEADING_TOOLTIP_KEYS.values())
     tooltip_keys.update(
         {
             "tooltip_cij_cell",
@@ -50,18 +45,18 @@ def test_cif2peaks_help_copy_and_choice_maps_are_bilingual() -> None:
         }
     )
 
-    assert set(GUI_TEXT["zh"]) == set(GUI_TEXT["en"])
+    assert set(gui.GUI_TEXT["zh"]) == set(gui.GUI_TEXT["en"])
     for key in tooltip_keys:
-        assert key in GUI_TEXT["zh"]
-        assert key in GUI_TEXT["en"]
+        assert key in gui.GUI_TEXT["zh"]
+        assert key in gui.GUI_TEXT["en"]
         args = {"row": 1, "column": 2, "name": "Fe", "path": "Fe.cif", "message": "Ready"}
-        assert _gui_text("zh", key, **args).strip()
-        assert _gui_text("en", key, **args).strip()
+        assert gui._gui_text("zh", key, **args).strip()
+        assert gui._gui_text("en", key, **args).strip()
 
-    assert set(GUI_XRAY_TOOLTIP_KEYS) == set(GUI_XRAY_PRESET_LABELS)
-    assert set(GUI_FIGURE_PRESET_TOOLTIP_KEYS) == set(GUI_PUBLICATION_PRESET_LABELS)
-    assert set(GUI_PATTERN_AXIS_TOOLTIP_KEYS) == {"two_theta", "d_spacing", "q", "g"}
-    assert set(GUI_PREVIEW_HEADING_TOOLTIP_KEYS) == {
+    assert set(gui.GUI_XRAY_TOOLTIP_KEYS) == set(gui.GUI_XRAY_PRESET_LABELS)
+    assert set(gui.GUI_FIGURE_PRESET_TOOLTIP_KEYS) == set(gui.GUI_PUBLICATION_PRESET_LABELS)
+    assert set(gui.GUI_PATTERN_AXIS_TOOLTIP_KEYS) == {"two_theta", "d_spacing", "q", "g"}
+    assert set(gui.GUI_PREVIEW_HEADING_TOOLTIP_KEYS) == {
         "display_name", "formula", "space_group", "peaks", "warning", "elastic"
     }
 
@@ -109,10 +104,10 @@ def test_phase_scout_help_covers_actions_tables_tabs_and_scrollbars(
         root.destroy()
 
 
-def test_cif2peaks_help_registers_controls_and_each_dropdown_item(monkeypatch) -> None:
+def test_cif2peaks_help_registers_controls_and_each_dropdown_item(monkeypatch, cif2peaks_gui) -> None:
     tkinter = _tkinter_or_skip()
     from diffractscout import gui_help
-    from diffractscout.compat.cif2peaks import gui as cif2peaks
+    cif2peaks = cif2peaks_gui
 
     try:
         probe = tkinter.Tk()
@@ -162,8 +157,8 @@ def test_cif2peaks_help_registers_controls_and_each_dropdown_item(monkeypatch) -
     assert RecordingHelp.instances
     help_manager = RecordingHelp.instances[-1]
     assert {"TEntry", "TButton", "TCheckbutton", "TCombobox", "Treeview", "Listbox", "TScrollbar"} <= set(help_manager.widget_classes)
-    assert set(GUI_XRAY_PRESET_LABELS) in help_manager.combobox_choices
-    assert set(GUI_PATTERN_AXIS_TOOLTIP_KEYS) in help_manager.combobox_choices
-    assert set(GUI_PUBLICATION_PRESET_LABELS) in help_manager.combobox_choices
-    assert help_manager.tree_headings == [set(GUI_PREVIEW_HEADING_TOOLTIP_KEYS) | {"__resize__"}]
+    assert set(cif2peaks.GUI_XRAY_PRESET_LABELS) in help_manager.combobox_choices
+    assert set(cif2peaks.GUI_PATTERN_AXIS_TOOLTIP_KEYS) in help_manager.combobox_choices
+    assert set(cif2peaks.GUI_PUBLICATION_PRESET_LABELS) in help_manager.combobox_choices
+    assert help_manager.tree_headings == [set(cif2peaks.GUI_PREVIEW_HEADING_TOOLTIP_KEYS) | {"__resize__"}]
     assert len(help_manager.scrollbar_parents) >= 3

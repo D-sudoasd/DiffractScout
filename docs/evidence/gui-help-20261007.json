@@ -83,6 +83,13 @@
     "source": "Actual CIF2Peaks _launch_tk_app construction; no export, external app or clipboard action."
   },
   "validation": {
+    "optional_import_boundary_fix": {
+      "initial_remote_run": "37559484873",
+      "collection_error": "The base GUI job did not install pymatgen; eager compatibility-test imports interrupted collection.",
+      "resolution": "Load CIF2Peaks through a guarded fixture and also run compatibility GUI help in the complete-edition Xvfb job.",
+      "complete_environment": {"passed": 3, "seconds": 7.71},
+      "simulated_base_import_boundary": {"passed": 1, "optional_skipped": 2, "seconds": 0.27}
+    },
     "initial_affected_suite": {
       "passed": 118,
       "failed": 1,
