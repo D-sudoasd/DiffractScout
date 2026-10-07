@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/hero.png" width="100%" alt="DiffractScout: Traceable powder-diffraction references. AI-generated conceptual illustration.">
+</p>
+
 # DiffractScout
 
 **Turn local CIF structures or a chemical-system query into theoretical diffraction references with verifiable provenance.**

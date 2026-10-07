@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/hero.png" width="100%" alt="DiffractScout: Traceable powder-diffraction references. AI-generated conceptual illustration.">
+</p>
+
 # DiffractScout 中文说明
 
 **从本地 CIF 或化学体系检索出发，生成带来源、诊断和校验清单的理论衍射参考。**
