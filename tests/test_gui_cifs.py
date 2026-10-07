@@ -172,6 +172,42 @@ def _wait_for(root, condition, timeout: float = 5.0) -> None:
     pytest.fail("Timed out waiting for the dialog worker result")
 
 
+def test_prepared_result_keeps_long_notes_scrollable_and_focus_visible(tmp_path) -> None:
+    root, dialog = _make_hidden_dialog(language="en")
+    try:
+        root.deiconify()
+        dialog.deiconify()
+        dialog.geometry("820x660")
+        root.update()
+        cif = tmp_path / "alpha.cif"
+        cif.write_text("data_alpha\n", encoding="utf-8")
+        note = "\n".join(f"Assumption {index}: full record detail." for index in range(50))
+        result = SimpleNamespace(
+            records=[SimpleNamespace(phase="alpha", status="prepared", cif_path=cif, note=note)],
+            report_path=None, output_dir=tmp_path, exit_code=0,
+        )
+        dialog._show_result(result)
+        root.update()
+        assert note in dialog.details.get("1.0", "end")
+        assert dialog.details.cget("yscrollcommand")
+        dialog.details.yview_moveto(1)
+        assert dialog.details.yview()[0] > 0
+        dialog._scroll_canvas.yview_moveto(0)
+        dialog.details.focus_force()
+        root.update()
+        canvas = dialog._scroll_canvas
+        assert canvas.winfo_rooty() <= dialog.details.winfo_rooty()
+        assert dialog.details.winfo_rooty() + dialog.details.winfo_height() <= canvas.winfo_rooty() + canvas.winfo_height()
+        outer_position = canvas.yview()
+        dialog.details.yview_moveto(0)
+        dialog.details.event_generate("<MouseWheel>", delta=-120)
+        root.update()
+        assert dialog.details.yview()[0] > 0
+        assert canvas.yview() == outer_position
+    finally:
+        root.destroy()
+
+
 def test_hidden_dialog_accepts_entries_and_loads_result_paths_on_tk_thread(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

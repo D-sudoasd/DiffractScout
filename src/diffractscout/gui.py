@@ -21,6 +21,10 @@ from . import __version__
 from .diffraction import ENERGY_WAVELENGTH_KEV_A, X_RAY_SOURCES_A, validate_analysis_settings
 from .elasticity_input import parse_cij_matrix_6x6, parse_cij_paste_text, parse_cubic_cij
 from .gui_i18n import DEFAULT_LANG, t
+from .gui_theme import (
+    BG, BORDER, CARD, LOG_BG, LOG_TEXT, NAVY, NAVY_DARK,
+    TEAL, TEAL_DARK, TEXT, configure_styles,
+)
 from .models import AnalysisSettings, DiscoverySettings, ElasticTensor, PipelineResult
 from .pipeline import analyze_cifs, run_pipeline
 from .providers.materials_project import MaterialsProjectProvider
@@ -42,22 +46,6 @@ except ImportError:  # pragma: no cover - optional dependency
     DND_FILES = None  # type: ignore[assignment]
     TkinterDnD = None  # type: ignore[assignment]
     _HAS_DND = False
-
-NAVY = "#102A43"
-NAVY_DARK = "#0B1F33"
-TEAL = "#00A6A6"
-TEAL_DARK = "#087F8C"
-BLUE = "#277DA1"
-BG = "#F3F6F9"
-CARD = "#FFFFFF"
-TEXT = "#203040"
-MUTED = "#61758A"
-BORDER = "#D7E0E8"
-SUCCESS = "#14804A"
-WARNING = "#A35A00"
-ERROR = "#B42318"
-LOG_BG = "#0D1B2A"
-LOG_TEXT = "#DCE7F1"
 
 _PROFILE_MODELS = ("pseudo_voigt", "gaussian", "lorentzian")
 _PATTERN_AXES = ("two_theta", "d_spacing", "q", "g")
@@ -289,6 +277,7 @@ if tk is not None:
             self._result_buttons: list[ttk.Button] = []
             self._preset_buttons: list[ttk.Button] = []
             self._radiation_source_widgets: list[ttk.Combobox] = []
+            self._radiation_source_labels: list[Any] = []
             self._radiation_value_widgets: list[ttk.Entry] = []
             self._cij_widgets: list[Any] = []
             self._lab_view_widgets: list[Any] = []
@@ -299,6 +288,12 @@ if tk is not None:
             self._labelframes: list[tuple[Any, str]] = []
             self._notebook_tabs: list[tuple[int, str]] = []
             self._wrap_labels: list[tuple[Any, int]] = []
+            self._translated_combos: list[Any] = []
+            self._disclosures: list[dict[str, Any]] = []
+            self._ready_vars: list[Any] = []
+            self._output_groups: list[tuple[Any, list[Any]]] = []
+            self._pane_ratios: dict[int, float] = {}
+            self._active_workflow = 0
             self._scroll_canvases: list[Any] = []
             self._scroll_interiors: list[Any] = []
             self._scroll_focus_bindings: dict[str, set[str]] = {}
@@ -331,6 +326,11 @@ if tk is not None:
             self._sync_output_dependencies()
             self._refresh_cij_status()
             self._apply_language()
+            for variable in (self.local_output, self.mp_output, self.mp_composition, self.mp_key):
+                variable.trace_add("write", lambda *_args: self._refresh_readiness())
+            self.bind("<Control-Return>", self._run_active_tab, add="+")
+            self.input_list.bind("<Delete>", lambda _event: self._remove_inputs())
+            self.input_list.bind("<<ListboxSelect>>", self._show_input_path, add="+")
             self.bind("<Configure>", self._on_root_configure, add="+")
             self._poll_after_id = self.after(120, self._poll)
             self._log(self._t("log_ready"), "info")
@@ -396,32 +396,47 @@ if tk is not None:
                     pass
 
         def _configure_style(self) -> None:
-            style = ttk.Style(self)
-            style.theme_use("clam")
-            style.configure("TFrame", background=BG)
-            style.configure("Card.TFrame", background=CARD, relief="flat")
-            style.configure("TLabel", background=BG, foreground=TEXT, font=("Segoe UI", 9))
-            style.configure("Card.TLabel", background=CARD, foreground=TEXT, font=("Segoe UI", 9))
-            style.configure("Title.TLabel", background=CARD, foreground=NAVY, font=("Segoe UI Semibold", 12))
-            style.configure("Hint.TLabel", background=CARD, foreground=MUTED, font=("Segoe UI", 8))
-            style.configure("Header.TLabel", background=NAVY_DARK, foreground="white")
-            style.configure("HeaderTitle.TLabel", background=NAVY_DARK, foreground="white", font=("Segoe UI Semibold", 18))
-            style.configure("HeaderSub.TLabel", background=NAVY_DARK, foreground="#BFD3E5", font=("Segoe UI", 9))
-            style.configure("Badge.TLabel", background=TEAL, foreground="white", font=("Segoe UI Semibold", 9), padding=(8, 3))
-            style.configure("TNotebook", background=BG, borderwidth=0)
-            style.configure("TNotebook.Tab", background="#DCE6EE", foreground=NAVY, padding=(14, 6), font=("Segoe UI Semibold", 9))
-            style.map("TNotebook.Tab", background=[("selected", CARD)], foreground=[("selected", TEAL_DARK)])
-            style.configure("Primary.TButton", background=TEAL_DARK, foreground="white", padding=(14, 9), font=("Segoe UI Semibold", 10), borderwidth=0)
-            style.map("Primary.TButton", background=[("active", TEAL), ("disabled", "#9FB3C3")])
-            style.configure("Secondary.TButton", background="#E6EEF4", foreground=NAVY, padding=(10, 7), borderwidth=0)
-            style.map("Secondary.TButton", background=[("active", "#D4E3ED")])
-            style.configure("Danger.TButton", background="#FDE8E7", foreground=ERROR, padding=(10, 7), borderwidth=0)
-            style.configure("TEntry", fieldbackground="white", foreground=TEXT, bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER, padding=6)
-            style.configure("TCombobox", fieldbackground="white", foreground=TEXT, padding=5)
-            style.configure("TLabelframe", background=CARD, bordercolor=BORDER, relief="solid")
-            style.configure("TLabelframe.Label", background=CARD, foreground=NAVY, font=("Segoe UI Semibold", 10))
-            style.configure("TCheckbutton", background=CARD, foreground=TEXT)
-            style.configure("Horizontal.TProgressbar", background=TEAL, troughcolor="#DCE6EE", borderwidth=0)
+            self.ui_font = configure_styles(self)
+
+        def _choice(self, parent: Any, variable: Any, values: tuple[str, ...],
+                    **kwargs: Any) -> Any:
+            from .gui_widgets import TranslatedCombobox
+
+            combo = TranslatedCombobox(
+                parent, variable=variable, translate=self._t,
+                value_keys={value: f"choice_{value}" for value in values}, **kwargs,
+            )
+            self._translated_combos.append(combo)
+            return combo
+
+        def _disclosure(self, parent: Any, key: str) -> Any:
+            shell = ttk.Frame(parent, style="Card.TFrame")
+            shell.pack(fill="x", pady=(10, 0))
+            content = ttk.Frame(shell, style="Card.TFrame", padding=(0, 8, 0, 0))
+            section: dict[str, Any] = {"key": key, "content": content, "open": False}
+            button = ttk.Button(
+                shell, style="Disclosure.TButton",
+                command=lambda: self._toggle_disclosure(section),
+            )
+            button.pack(fill="x")
+            section["button"] = button
+            self._disclosures.append(section)
+            self._label_disclosure(section)
+            return content
+
+        def _label_disclosure(self, section: dict[str, Any]) -> None:
+            section["button"].configure(
+                text=("▾  " if section["open"] else "▸  ") + self._t(section["key"])
+            )
+
+        def _toggle_disclosure(self, section: dict[str, Any]) -> None:
+            section["open"] = not section["open"]
+            if section["open"]:
+                section["content"].pack(fill="x")
+            else:
+                section["content"].pack_forget()
+            self._label_disclosure(section)
+            self._schedule_wrap_update()
 
         def _create_variables(self) -> None:
             self.lang_var = tk.StringVar(value=self.lang)
@@ -476,6 +491,7 @@ if tk is not None:
             self.status_text = tk.StringVar(value=self._t("status_ready"))
             self._status_state: tuple[str, dict[str, object]] = ("status_ready", {})
             self.input_count_text = tk.StringVar(value=self._t("inputs_none"))
+            self.input_path_text = tk.StringVar(value="")
 
         def _build_compat_menu(self) -> None:
             menu = tk.Menu(self)
@@ -500,8 +516,12 @@ if tk is not None:
             InitialCifDialog(
                 self,
                 language=self.lang,
-                on_load=self._add_input_paths,
+                on_load=self._load_prepared_inputs,
             )
+
+        def _load_prepared_inputs(self, paths: list[Path]) -> None:
+            self._add_input_paths(paths)
+            self.notebook.select(0)
 
         def _launch_compat(self, workflow: str) -> None:
             try:
@@ -533,21 +553,25 @@ if tk is not None:
 
             right = tk.Frame(header, bg=NAVY_DARK)
             right.pack(side="right", padx=18)
-            ttk.Label(right, text=f"v{__version__}", style="Badge.TLabel").pack(anchor="e", pady=(6, 4))
-            lang_row = tk.Frame(right, bg=NAVY_DARK)
+            self._header_right = right
+            self.prepare_button = ttk.Button(
+                right, text=self._t("prepare_initial"), style="Secondary.TButton",
+                command=self._open_initial_cif_dialog,
+            )
+            self.prepare_button.pack(side="left", padx=(0, 18))
+            self._register_text(self.prepare_button, "prepare_initial")
+            self._preset_buttons.append(self.prepare_button)
+            preferences = tk.Frame(right, bg=NAVY_DARK)
+            preferences.pack(side="right")
+            ttk.Label(preferences, text=f"v{__version__}", style="Badge.TLabel").pack(anchor="e", pady=(0, 5))
+            lang_row = tk.Frame(preferences, bg=NAVY_DARK)
             lang_row.pack(anchor="e")
             self.lang_label = ttk.Label(lang_row, text=self._t("lang_label"), style="HeaderSub.TLabel")
             self.lang_label.pack(side="left", padx=(0, 6))
             self._i18n_targets.append((self.lang_label, "lang_label", "text"))
-            lang_box = ttk.Combobox(
-                lang_row,
-                textvariable=self.lang_var,
-                values=("zh", "en"),
-                state="readonly",
-                width=6,
-            )
+            lang_box = self._choice(lang_row, self.lang_var, ("zh", "en"), width=8)
             lang_box.pack(side="left")
-            lang_box.bind("<<ComboboxSelected>>", lambda _e: self._set_language(self.lang_var.get()))
+            lang_box.bind("<<ComboboxSelected>>", lambda _e: self._set_language(self.lang_var.get()), add="+")
 
         def _build_main_split(self) -> None:
             """Notebook above, resizable activity log below; both share remaining height."""
@@ -568,15 +592,31 @@ if tk is not None:
             mp = ttk.Frame(notebook, style="Card.TFrame", padding=10)
             notebook.add(local, text=self._t("tab_local"))
             notebook.add(mp, text=self._t("tab_mp"))
-            self._notebook_tabs = [(0, "tab_local"), (1, "tab_mp")]
+            from .gui_results import ResultView
+
+            self.results_view = ResultView(notebook, translate=self._t)
+            notebook.add(self.results_view, text=self._t("tab_results"))
+            self._notebook_tabs = [(0, "tab_local"), (1, "tab_mp"), (2, "tab_results")]
             self._build_local_tab(local)
             self._build_mp_tab(mp)
             self._build_activity_panel(activity_host)
+            notebook.bind("<<NotebookTabChanged>>", self._on_workflow_changed, add="+")
             # Give the form most of the space only after Tk has assigned real
             # geometry. Calling sashpos against the initial 1-pixel pane can
             # make the activity pane overlap the form on short windows.
             paned.bind("<Configure>", self._schedule_default_sash, add="+")
             self._schedule_default_sash()
+
+        def _on_workflow_changed(self, _event: Any = None) -> None:
+            self._schedule_wrap_update()
+            if not self._sash_initialized:
+                return
+            height = max(1, self._main_paned.winfo_height())
+            self._pane_ratios[self._active_workflow] = self._main_paned.sashpos(0) / height
+            self._active_workflow = self.notebook.index(self.notebook.select())
+            ratio = self._pane_ratios.get(self._active_workflow,
+                                          (height - 90) / height if self._active_workflow == 2 else 0.82)
+            self._main_paned.sashpos(0, max(300, min(height - 60, int(height * ratio))))
 
         def _schedule_default_sash(self, _event: object | None = None) -> None:
             if self._sash_initialized or self._sash_after_id is not None:
@@ -598,9 +638,9 @@ if tk is not None:
                 # Keep both panes usable at the minimum window size. The
                 # position is relative to the Panedwindow, not the root (the
                 # latter includes the header and status bar).
-                activity_min = 150
+                activity_min = 120
                 form_min = 300
-                sash = max(form_min, min(height - activity_min, int(height * 0.72)))
+                sash = max(form_min, min(height - activity_min, int(height * 0.82)))
                 if sash <= 0 or sash >= height:
                     return
                 self._main_paned.sashpos(0, sash)
@@ -792,14 +832,29 @@ if tk is not None:
                 selectbackground="#D7EEF0",
                 selectforeground=NAVY,
                 relief="flat",
-                highlightthickness=0,
-                font=("Segoe UI", 9),
+                highlightthickness=1,
+                highlightbackground=CARD,
+                highlightcolor=TEAL_DARK,
+                exportselection=False,
+                height=6,
+                font=(self.ui_font, 9),
             )
             scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.input_list.yview)
-            self.input_list.configure(yscrollcommand=scrollbar.set)
-            self.input_list.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-            scrollbar.pack(side="right", fill="y")
+            xscroll = ttk.Scrollbar(list_frame, orient="horizontal", command=self.input_list.xview)
+            self.input_list.configure(yscrollcommand=scrollbar.set, xscrollcommand=xscroll.set)
+            self.input_list.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 0))
+            scrollbar.grid(row=0, column=1, sticky="ns")
+            xscroll.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 4))
+            list_frame.columnconfigure(0, weight=1)
+            list_frame.rowconfigure(0, weight=1)
+            self.input_empty = ttk.Label(
+                list_frame, text=self._t("inputs_empty_hint"), style="Hint.TLabel",
+                justify="center", anchor="center",
+            )
+            self.input_empty.place(relx=0.5, rely=0.45, anchor="center")
+            self._register_text(self.input_empty, "inputs_empty_hint")
             self._enable_dnd(self.input_list)
+            self._enable_dnd(self.input_empty)
             ttk.Label(left, textvariable=self.input_count_text, style="Hint.TLabel").pack(anchor="w", pady=(5, 4))
 
             buttons = ttk.Frame(left, style="Card.TFrame")
@@ -827,7 +882,13 @@ if tk is not None:
             self.btn_clear.grid(row=1, column=1, sticky="ew", padx=(4, 0), pady=2)
             self._register_text(self.btn_clear, "btn_clear")
 
+            input_path = ttk.Label(left, textvariable=self.input_path_text, style="Hint.TLabel",
+                                   wraplength=400)
+            self._input_path_label = input_path
+            self._wrap_labels.append((input_path, 400))
+
             output_box = self._labeled_frame(left, "result_bundle", padding=8)
+            self._local_output_box = output_box
             output_box.pack(fill="x")
             self.local_output_entry = self._path_entry(
                 output_box, self.local_output, self._choose_local_output
@@ -850,8 +911,7 @@ if tk is not None:
             footer.grid(row=1, column=0, sticky="ew", pady=(8, 0))
 
             self._card_title(right, "scientific_title", "scientific_hint")
-            self._analysis_controls(right)
-            self._build_cij_panel(right)
+            details = self._analysis_controls(right)
             options = self._labeled_frame(right, "outputs", padding=8)
             options.pack(fill="x", pady=(8, 0))
             self.chk_elasticity_local = ttk.Checkbutton(
@@ -881,7 +941,14 @@ if tk is not None:
             )
             self.chk_figures.pack(anchor="w")
             self._register_text(self.chk_figures, "include_figures")
+            self._output_groups.append((options, [
+                self.chk_elasticity_local, self.chk_excel_local, self.chk_lab_views,
+                self.chk_patterns, self.chk_figures,
+            ]))
+            details.pack(fill="x")
+            self._build_cij_panel(self._disclosure(right, "details_cij"))
 
+            self._build_readiness(footer)
             button = ttk.Button(
                 footer, text=self._t("analyze_local"), style="Primary.TButton", command=self._run_local
             )
@@ -937,40 +1004,38 @@ if tk is not None:
             self.lbl_mode = ttk.Label(form, text=self._t("mode"), style="Card.TLabel")
             self.lbl_mode.grid(row=2, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_mode, "mode")
-            ttk.Combobox(
-                form,
-                textvariable=self.mp_mode,
-                values=("possible_phases", "near_stable", "single_chemsys", "mpids_only"),
-                state="readonly",
-                width=24,
-            ).grid(row=2, column=1, sticky="ew", padx=(12, 0), pady=4)
-            self.lbl_ehull = ttk.Label(form, text=self._t("e_hull_max"), style="Card.TLabel")
-            self.lbl_ehull.grid(row=3, column=0, sticky="w", pady=4)
+            self._choice(form, self.mp_mode,
+                         ("possible_phases", "near_stable", "single_chemsys", "mpids_only"),
+                         width=18).grid(row=2, column=1, sticky="ew", padx=(12, 0), pady=4)
+            self.lbl_max_cand = ttk.Label(form, text=self._t("max_candidates"), style="Card.TLabel")
+            self.lbl_max_cand.grid(row=3, column=0, sticky="w", pady=4)
+            self._register_text(self.lbl_max_cand, "max_candidates")
+            ttk.Entry(form, textvariable=self.mp_limit).grid(row=3, column=1, sticky="ew", padx=(12, 0), pady=4)
+            selection = self._disclosure(left, "details_candidates")
+            selection.columnconfigure(1, weight=1)
+            self.lbl_ehull = ttk.Label(selection, text=self._t("e_hull_max"), style="Card.TLabel")
+            self.lbl_ehull.grid(row=0, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_ehull, "e_hull_max")
-            self.mp_e_hull_entry = ttk.Entry(form, textvariable=self.mp_e_hull)
-            self.mp_e_hull_entry.grid(row=3, column=1, sticky="ew", padx=(12, 0), pady=4)
+            self.mp_e_hull_entry = ttk.Entry(selection, textvariable=self.mp_e_hull)
+            self.mp_e_hull_entry.grid(row=0, column=1, sticky="ew", padx=(12, 0), pady=4)
             self._add_hover_help(self.lbl_ehull, "help_e_hull")
             self._add_hover_help(self.mp_e_hull_entry, "help_e_hull")
-            self.lbl_sub_order = ttk.Label(form, text=self._t("subsystem_order"), style="Card.TLabel")
-            self.lbl_sub_order.grid(row=4, column=0, sticky="w", pady=4)
+            self.lbl_sub_order = ttk.Label(selection, text=self._t("subsystem_order"), style="Card.TLabel")
+            self.lbl_sub_order.grid(row=1, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_sub_order, "subsystem_order")
-            ttk.Entry(form, textvariable=self.mp_subsystem_order).grid(
-                row=4, column=1, sticky="ew", padx=(12, 0), pady=4
+            ttk.Entry(selection, textvariable=self.mp_subsystem_order).grid(
+                row=1, column=1, sticky="ew", padx=(12, 0), pady=4
             )
-            self.lbl_per_sub = ttk.Label(form, text=self._t("per_subsystem"), style="Card.TLabel")
-            self.lbl_per_sub.grid(row=5, column=0, sticky="w", pady=4)
+            self.lbl_per_sub = ttk.Label(selection, text=self._t("per_subsystem"), style="Card.TLabel")
+            self.lbl_per_sub.grid(row=2, column=0, sticky="w", pady=4)
             self._register_text(self.lbl_per_sub, "per_subsystem")
-            ttk.Entry(form, textvariable=self.mp_per_subsystem).grid(
-                row=5, column=1, sticky="ew", padx=(12, 0), pady=4
+            ttk.Entry(selection, textvariable=self.mp_per_subsystem).grid(
+                row=2, column=1, sticky="ew", padx=(12, 0), pady=4
             )
-            self.lbl_max_cand = ttk.Label(form, text=self._t("max_candidates"), style="Card.TLabel")
-            self.lbl_max_cand.grid(row=6, column=0, sticky="w", pady=4)
-            self._register_text(self.lbl_max_cand, "max_candidates")
-            ttk.Entry(form, textvariable=self.mp_limit).grid(row=6, column=1, sticky="ew", padx=(12, 0), pady=4)
             self.chk_deprecated = ttk.Checkbutton(
-                form, text=self._t("include_deprecated"), variable=self.mp_include_deprecated
+                selection, text=self._t("include_deprecated"), variable=self.mp_include_deprecated
             )
-            self.chk_deprecated.grid(row=7, column=0, columnspan=2, sticky="w", pady=4)
+            self.chk_deprecated.grid(row=3, column=0, columnspan=2, sticky="w", pady=4)
             self._register_text(self.chk_deprecated, "include_deprecated")
 
             output_box = self._labeled_frame(left, "result_bundle", padding=8)
@@ -997,7 +1062,7 @@ if tk is not None:
             self._wrap_labels.append((self.mp_key_hint, 400))
 
             self._card_title(right, "mp_analyze_title", "mp_analyze_hint")
-            self._analysis_controls(right)
+            details = self._analysis_controls(right)
             options = self._labeled_frame(right, "outputs", padding=8)
             options.pack(fill="x", pady=(8, 0))
             self.chk_elasticity_mp = ttk.Checkbutton(
@@ -1027,7 +1092,13 @@ if tk is not None:
             )
             self.chk_figures_mp.pack(anchor="w")
             self._register_text(self.chk_figures_mp, "include_figures")
+            self._output_groups.append((options, [
+                self.chk_elasticity_mp, self.chk_excel_mp, self.chk_lab_views_mp,
+                self.chk_patterns_mp, self.chk_figures_mp,
+            ]))
+            details.pack(fill="x")
 
+            self._build_readiness(footer)
             button = ttk.Button(
                 footer, text=self._t("run_mp"), style="Primary.TButton", command=self._run_mp
             )
@@ -1035,7 +1106,7 @@ if tk is not None:
             self._register_text(button, "run_mp")
             self._run_buttons.append(button)
 
-        def _analysis_controls(self, parent: ttk.Frame) -> None:
+        def _analysis_controls(self, parent: ttk.Frame) -> Any:
             box = self._labeled_frame(parent, "radiation_profile", padding=10)
             box.pack(fill="x")
 
@@ -1067,17 +1138,22 @@ if tk is not None:
             self._preset_buttons.extend((load_button, save_button))
             row_offset = 1
 
-            def add_label_field(row: int, key: str, variable: Any, *, values: tuple[str, ...] | None = None) -> Any:
-                label = ttk.Label(box, text=self._t(key), style="Card.TLabel")
+            def add_label_field(row: int, key: str, variable: Any, *, values: tuple[str, ...] | None = None,
+                                form: Any = None) -> Any:
+                host = form if form is not None else box
+                host.columnconfigure(1, weight=1)
+                label = ttk.Label(host, text=self._t(key), style="Card.TLabel")
                 label.grid(row=row, column=0, sticky="w", pady=4)
                 self._register_text(label, key)
                 if key == "radiation_value":
                     self._radiation_value_labels.append(label)
                     self._add_hover_help(label, "help_radiation")
+                elif key == "source_preset":
+                    self._radiation_source_labels.append(label)
                 if values is None:
-                    field: Any = ttk.Entry(box, textvariable=variable)
+                    field: Any = ttk.Entry(host, textvariable=variable, width=14)
                 else:
-                    field = ttk.Combobox(box, textvariable=variable, values=values, state="readonly", width=24)
+                    field = self._choice(host, variable, values, width=18)
                 field.grid(row=row, column=1, sticky="ew", padx=(12, 0), pady=4)
                 if key == "radiation_value":
                     self._add_hover_help(field, "help_radiation")
@@ -1098,22 +1174,36 @@ if tk is not None:
             self._radiation_source_widgets.append(source)
             self._radiation_value_widgets.append(value)
 
+            scan = ttk.Frame(box, style="Card.TFrame")
+            scan.grid(row=row_offset + 4, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+            scan.columnconfigure((1, 3), weight=1)
+            for column, (key, variable) in enumerate(
+                (("two_theta_min", self.two_theta_min), ("two_theta_max", self.two_theta_max))
+            ):
+                label = ttk.Label(scan, text=self._t(key), style="Card.TLabel")
+                label.grid(row=0, column=column * 2, sticky="w", padx=(0 if column == 0 else 12, 8))
+                self._register_text(label, key)
+                ttk.Entry(scan, textvariable=variable, width=7).grid(
+                    row=0, column=column * 2 + 1, sticky="ew"
+                )
+
+            details = ttk.Frame(parent, style="Card.TFrame")
+            profile = self._disclosure(details, "details_profile")
             labels = (
-                ("two_theta_min", self.two_theta_min),
-                ("two_theta_max", self.two_theta_max),
                 ("step", self.step),
                 ("fwhm", self.fwhm),
                 ("eta", self.eta),
                 ("d_min", self.d_min_A),
                 ("d_max", self.d_max_A),
             )
-            for row, (key, variable) in enumerate(labels, start=row_offset + 4):
-                add_label_field(row, key, variable)
-            add_label_field(row_offset + 4 + len(labels), "profile_model", self.profile_model, values=_PROFILE_MODELS)
-            add_label_field(row_offset + 5 + len(labels), "pattern_axis", self.pattern_axis, values=_PATTERN_AXES)
+            for row, (key, variable) in enumerate(labels):
+                add_label_field(row, key, variable, form=profile)
+            add_label_field(len(labels), "profile_model", self.profile_model,
+                            values=_PROFILE_MODELS, form=profile)
+            add_label_field(len(labels) + 1, "pattern_axis", self.pattern_axis,
+                            values=_PATTERN_AXES, form=profile)
 
-            limits = self._labeled_frame(parent, "resource_guards", padding=10)
-            limits.pack(fill="x", pady=(8, 0))
+            limits = self._disclosure(details, "resource_guards")
             lbl_pp = ttk.Label(limits, text=self._t("profile_points"), style="Card.TLabel")
             lbl_pp.grid(row=0, column=0, sticky="w", pady=4)
             self._register_text(lbl_pp, "profile_points")
@@ -1127,6 +1217,7 @@ if tk is not None:
                 row=1, column=1, sticky="ew", padx=(12, 0), pady=4
             )
             limits.columnconfigure(1, weight=1)
+            return details
 
         def _analysis_preset_values(self) -> dict[str, object]:
             values = {
@@ -1259,7 +1350,7 @@ if tk is not None:
                 paste_frame,
                 height=3,
                 wrap="none",
-                font=("Cascadia Mono", 8),
+                font="TkFixedFont",
                 relief="solid",
                 borderwidth=1,
                 highlightthickness=0,
@@ -1305,6 +1396,43 @@ if tk is not None:
             self._register_text(btn, "browse")
             return entry
 
+        def _build_readiness(self, footer: Any) -> None:
+            variable = tk.StringVar(master=self)
+            self._ready_vars.append(variable)
+            label = ttk.Label(footer, textvariable=variable, style="Hint.TLabel", wraplength=450)
+            label.pack(anchor="w", fill="x", pady=(0, 5))
+            self._wrap_labels.append((label, 450))
+
+        def _refresh_readiness(self) -> None:
+            if len(self._run_buttons) != 2 or len(self._ready_vars) != 2:
+                return
+            keys = [
+                "ready_local_inputs" if not self.local_inputs else
+                "ready_output" if not self.local_output.get().strip() else "ready_configured",
+                "ready_mp_composition" if not self.mp_composition.get().strip() else
+                "ready_mp_key" if not self.mp_key.get().strip() else
+                "ready_output" if not self.mp_output.get().strip() else "ready_configured",
+            ]
+            for variable, button, key in zip(self._ready_vars, self._run_buttons, keys):
+                variable.set(self._t("ready_running" if self.running else key))
+                button.configure(state="normal" if key == "ready_configured" and not self.running
+                                 else "disabled")
+
+        def _run_active_tab(self, _event: Any = None) -> str:
+            selected = self.notebook.index(self.notebook.select())
+            if selected in (0, 1) and self._run_buttons[selected].instate(("!disabled",)):
+                (self._run_local if selected == 0 else self._run_mp)()
+            return "break"
+
+        def _show_input_path(self, _event: Any = None) -> None:
+            paths = self._selected_input_paths()
+            self.input_path_text.set(str(paths[0]) if len(paths) == 1 else "")
+            if len(paths) == 1:
+                self._input_path_label.pack(fill="x", pady=(0, 8), before=self._local_output_box)
+            else:
+                self._input_path_label.pack_forget()
+            self.btn_remove.configure(state="normal" if paths else "disabled")
+
         def _build_activity_panel(self, parent: Any | None = None) -> None:
             host = parent if parent is not None else self
             panel = ttk.Frame(host)
@@ -1312,17 +1440,17 @@ if tk is not None:
             title_row = ttk.Frame(panel)
             title_row.pack(fill="x")
             self.activity_label = ttk.Label(
-                title_row, text=self._t("activity"), font=("Segoe UI Semibold", 10), foreground=NAVY
+                title_row, text=self._t("activity"), font=(self.ui_font, 9, "bold"), foreground=NAVY
             )
             self.activity_label.pack(side="left")
             self._register_text(self.activity_label, "activity")
             btn_copy = ttk.Button(
-                title_row, text=self._t("copy"), style="Secondary.TButton", command=self._copy_log
+                title_row, text=self._t("copy"), command=self._copy_log
             )
             btn_copy.pack(side="right", padx=(6, 0))
             self._register_text(btn_copy, "copy")
             btn_clear = ttk.Button(
-                title_row, text=self._t("clear_log"), style="Secondary.TButton", command=self._clear_log
+                title_row, text=self._t("clear_log"), command=self._clear_log
             )
             btn_clear.pack(side="right")
             self._register_text(btn_clear, "clear_log")
@@ -1337,7 +1465,7 @@ if tk is not None:
                 fg=LOG_TEXT,
                 insertbackground="white",
                 relief="flat",
-                font=("Cascadia Mono", 8),
+                font="TkFixedFont",
                 padx=10,
                 pady=8,
             )
@@ -1368,22 +1496,22 @@ if tk is not None:
             # Keep the button's requested height inside the bar at the
             # minimum window size; otherwise vertical pack padding clips its
             # native glyph area before the user can resize the window.
-            bar = tk.Frame(self, bg="#E5EDF3", height=48)
+            bar = tk.Frame(self, bg=BG, height=52)
             bar.pack(fill="x", side="bottom")
             bar.pack_propagate(False)
             self.status_label = ttk.Label(
                 bar,
                 textvariable=self.status_text,
-                background="#E5EDF3",
+                background=BG,
                 foreground=NAVY,
                 width=30,
                 wraplength=230,
                 anchor="w",
                 justify="left",
             )
-            self.progress = ttk.Progressbar(bar, mode="indeterminate", length=100)
-            self.progress.pack(side="right", padx=(6, 12), pady=8)
+            self.progress = ttk.Progressbar(bar, mode="indeterminate", length=80)
             result_actions = ttk.Frame(bar)
+            self._status_actions = result_actions
             result_actions.pack(side="right", padx=(4, 0), pady=4)
             self.preview_button = ttk.Button(
                 result_actions,
@@ -1495,11 +1623,17 @@ if tk is not None:
                     self.notebook.tab(index, text=self._t(key))
                 except tk.TclError:
                     continue
+            for combo in self._translated_combos:
+                combo.refresh_language()
+            for section in self._disclosures:
+                self._label_disclosure(section)
+            self.results_view.refresh_language()
             self._refresh_status_text()
             self._refresh_inputs()
             self._refresh_cij_status()
             self._sync_radiation_controls()
             self._sync_output_dependencies()
+            self._refresh_readiness()
             self._schedule_wrap_update()
 
         def _on_root_configure(self, event: Any) -> None:
@@ -1532,14 +1666,34 @@ if tk is not None:
 
         def _update_wraplengths(self) -> None:
             self._wrap_after_id = None
-            width = max(int(self.winfo_width()), 400)
-            # Rough half-column width for two-column forms.
-            target = max(220, min(520, width // 2 - 80))
+            height = self._main_paned.winfo_height()
+            if self._sash_initialized and height != getattr(self, "_last_pane_height", None):
+                activity_min = 90 if self.notebook.index(self.notebook.select()) == 2 else 120
+                limit = max(300, height - activity_min)
+                if self._main_paned.sashpos(0) > limit:
+                    self._main_paned.sashpos(0, limit)
+                self._last_pane_height = height
             for widget, _default in self._wrap_labels:
                 try:
+                    target = max(160, min(620, int(widget.master.winfo_width()) - 20))
                     widget.configure(wraplength=target)
                 except tk.TclError:
                     continue
+            if hasattr(self, "input_empty"):
+                self.input_empty.configure(wraplength=max(160, self.input_list.winfo_width() - 30))
+            available = self.winfo_width() - self._header_right.winfo_width() - 120
+            self.header_sub.configure(wraplength=max(200, available))
+            for group, controls in self._output_groups:
+                column_widths = [max(widget.winfo_reqwidth() for widget in controls[parity::2])
+                                 for parity in (0, 1)]
+                columns = 2 if group.winfo_width() >= sum(column_widths) + 32 else 1
+                group.columnconfigure(0, weight=1)
+                group.columnconfigure(1, weight=1 if columns == 2 else 0)
+                for widget in controls:
+                    widget.pack_forget()
+                for index, widget in enumerate(controls):
+                    widget.grid(row=index // columns, column=index % columns, sticky="w",
+                                padx=(0, 10 if columns == 2 and index % 2 == 0 else 0))
 
         @staticmethod
         def _valid_radiation_value(value: object) -> float | None:
@@ -1659,15 +1813,23 @@ if tk is not None:
                 custom_source = mode == "source" and source == "Custom"
                 for widget in self._radiation_source_widgets:
                     widget.configure(state="readonly" if mode == "source" else "disabled")
+                    if mode == "source":
+                        widget.grid()
+                    else:
+                        widget.grid_remove()
+                for label in self._radiation_source_labels:
+                    label.grid() if mode == "source" else label.grid_remove()
                 for widget in self._radiation_value_widgets:
                     widget.configure(
                         state="normal"
                         if mode in {"energy", "wavelength"} or custom_source
                         else "disabled"
                     )
+                    widget.grid() if mode != "source" or source == "Custom" else widget.grid_remove()
                 unit_key = "radiation_value_keV" if mode == "energy" else "radiation_value_A"
                 for label in self._radiation_value_labels:
                     label.configure(text=self._t(unit_key))
+                    label.grid() if mode != "source" or source == "Custom" else label.grid_remove()
                 if not self._syncing_shortcut:
                     # Keep shortcut label coherent when mode is edited manually.
                     energy_value = self._valid_radiation_value(
@@ -1880,6 +2042,7 @@ if tk is not None:
 
         def _remove_inputs(self) -> None:
             selected = set(self.input_list.curselection())
+            self.input_list.selection_clear(0, "end")
             removed = [path for index, path in enumerate(self.local_inputs) if index in selected]
             for path in removed:
                 self.elastic_overrides.pop(canonical_input_identity(path), None)
@@ -1892,14 +2055,26 @@ if tk is not None:
             self._refresh_inputs()
 
         def _refresh_inputs(self) -> None:
+            selection = list(self.input_list.curselection()) if hasattr(self.input_list, "curselection") else []
             self.input_list.delete(0, "end")
             for path in self.local_inputs:
-                self.input_list.insert("end", str(path))
+                self.input_list.insert("end", f"{path.name}  ·  {path.parent}")
+            for index in selection:
+                if int(index) < len(self.local_inputs):
+                    self.input_list.selection_set(index)
             count = len(self.local_inputs)
             if count:
                 self.input_count_text.set(self._t("inputs_count", n=count))
             else:
                 self.input_count_text.set(self._t("inputs_none"))
+            if hasattr(self, "input_empty"):
+                if count:
+                    self.input_empty.place_forget()
+                else:
+                    self.input_empty.place(relx=0.5, rely=0.45, anchor="center")
+                self.btn_clear.configure(state="normal" if count else "disabled")
+                self._show_input_path()
+                self._refresh_readiness()
 
         def _choose_local_output(self) -> None:
             selected = filedialog.askdirectory(title=self._t("dialog_output_select"), mustexist=False)
@@ -2155,10 +2330,12 @@ if tk is not None:
         def _start_task(self, label: str, function: Callable[[], PipelineResult]) -> None:
             self.running = True
             self._set_status("status_busy", label=label)
+            self.progress.pack(side="right", before=self._status_actions, padx=(6, 12), pady=8)
             self.progress.start(12)
             DiffractScoutApp._update_open_button_state(self)
             for button in self._run_buttons:
                 button.configure(state="disabled")
+            self._refresh_readiness()
             self._log(self._t("log_started", label=label), "info")
             for button in self._result_buttons + self._preset_buttons:
                 button.configure(state="disabled")
@@ -2174,11 +2351,15 @@ if tk is not None:
         def _finish_task(self) -> None:
             self.running = False
             self.progress.stop()
+            if hasattr(self.progress, "pack_forget"):
+                self.progress.pack_forget()
             for button in self._run_buttons:
                 button.configure(state="normal")
             DiffractScoutApp._update_open_button_state(self)
             for button in self._preset_buttons:
                 button.configure(state="normal")
+            if hasattr(self, "_refresh_readiness"):
+                self._refresh_readiness()
 
         def _update_open_button_state(self) -> None:
             busy = bool(getattr(self, "running", False))
@@ -2218,6 +2399,9 @@ if tk is not None:
                     result = payload
                     assert isinstance(result, PipelineResult)
                     self.last_output = result.output_dir
+                    if hasattr(self, "results_view"):
+                        self.results_view.set_result(result)
+                        self.notebook.select(self.results_view)
                     error_count = sum(item.level == "error" for item in result.diagnostics)
                     warning_count = sum(
                         item.level == "warning" for item in result.diagnostics
@@ -2263,22 +2447,10 @@ if tk is not None:
                             if diagnostic.level == "warning"
                             else "info",
                         )
-                    dialog = (
-                        messagebox.showwarning
-                        if (not result.analyses or error_count or warning_count)
-                        else messagebox.showinfo
-                    )
-                    dialog(
-                        self._t("dialog_result_title"),
-                        self._t(
-                            "dialog_result_message",
-                            path=result.output_dir,
-                            phases=len(result.analyses),
-                            peaks=peak_count,
-                            warnings=warning_count,
-                            errors=error_count,
-                        ),
-                    )
+                    self._log(self._t(
+                        "log_result_counts", phases=len(result.analyses), peaks=peak_count,
+                        warnings=warning_count, errors=error_count,
+                    ), log_level)
                 else:
                     exc, details = payload
                     self._set_status("status_failed")

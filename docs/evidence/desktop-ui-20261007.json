@@ -1,0 +1,53 @@
+{
+  "workbook_sheets": [
+    "结果概览",
+    "使用说明",
+    "推荐峰表",
+    "Summary",
+    "Peaks",
+    "Phases",
+    "Elasticity",
+    "Candidates",
+    "Downloads",
+    "Diagnostics",
+    "Patterns",
+    "峰_fcc_al",
+    "峰_bcc_fe",
+    "峰_nacl"
+  ],
+  "local": {
+    "phases": 3,
+    "peaks": 29,
+    "verified": true
+  },
+  "peak_selection_and_sort": "PASS",
+  "peak_to_pattern_navigation": "PASS",
+  "compact_result_geometry": {
+    "plot": [
+      824,
+      162
+    ],
+    "table": [
+      811,
+      164
+    ]
+  },
+  "materials_project_workflow_offline_provider": "PASS",
+  "failed_retry_preserves_previous_bundle": "PASS",
+  "partial_result_diagnostics": "PASS",
+  "initial_cif_preparation_and_load": "PASS",
+  "raw_inputs_unchanged": {
+    "src\\diffractscout\\benchmark_data\\fcc_al.cif": "c82f082d2c1ed45c2219713cf972ffce67a7df78d00eb8b953541363c8f0ffdf",
+    "src\\diffractscout\\benchmark_data\\bcc_fe.cif": "eb39f2b2e2a9a29cf8429b3b62da7f5dbea03cc765db8e8f1009c17043c15f6a",
+    "src\\diffractscout\\benchmark_data\\nacl.cif": "1f9eb32ede4720e3b96394f0145cac0a6ca23eabe52c37a6a76ea2131ce238bc"
+  },
+  "external_materials_project_query": "Not run; offline fixtures only.",
+  "computer_use": "No computer-use API or desktop switch; Tk test events confined to a private Windows desktop.",
+  "date": "2026-10-07",
+  "base_commit": "47a4093a6309abf6239d36de6a95dfe02997829f",
+  "runtime": {
+    "platform": "Windows",
+    "python": "3.12.10",
+    "tk": "8.6"
+  }
+}

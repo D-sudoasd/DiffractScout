@@ -39,7 +39,20 @@ to Chinese.
 
 ## Layout and scrolling
 
-Dense forms (radiation, Cij, export options) live in **vertically scrollable** columns: use the mouse wheel or the right-hand scrollbar. Primary **Analyze / Run** actions stay **pinned under** the scroll area so they remain visible. The Activity log is in a **resizable vertical split** under the notebook—drag the sash to give the form more height on small screens. Default window size is about `1200×820` with a lower minimum (`900×640`).
+The workbench separates **Local CIF analysis**, **Materials Project**, and
+**Analysis results**. Common radiation, scan-range and export controls appear
+first. **Profile and d-spacing**, **Resource limits**, and **Cij** settings expand
+on demand; collapsing them retains their values. Chinese and English choices
+map to the same canonical settings used by the CLI and API.
+
+Both form columns scroll with the mouse wheel or scrollbar. Keyboard focus
+automatically reveals controls inside the scroll area. Primary **Analyze / Run**
+actions remain pinned below the form, with a next-step message that identifies
+missing inputs or the output folder. Use **Ctrl+Enter** to run the active
+workflow once its required inputs are ready, and **Delete** in the local input
+list to remove selected paths. The Activity log remains in a resizable vertical
+split. The default size is `1200×820`, with a minimum of `900×640`; text wraps to
+its actual column width.
 
 ## Local CIF analysis
 
@@ -51,7 +64,11 @@ Dense forms (radiation, Cij, export options) live in **vertically scrollable** c
 4. Define radiation and profile settings.
 5. Set the profile-grid and reciprocal-candidate safety limits.
 6. Choose whether compatible numerical elastic sidecars should be paired.
-7. Run the analysis and inspect the Activity log.
+7. Run the analysis; the workbench opens **Analysis results** automatically.
+
+Input rows show the filename first and its parent folder, with horizontal
+scrolling for long paths. Selecting one input displays its complete path.
+Language changes retain the input selection and all calculation settings.
 
 Duplicate input paths are removed. Only readable files with the `.cif` extension enter the calculation. Selecting `Replace an existing verified DiffractScout bundle` authorizes replacement only when the existing directory contains a supported manifest and currently passes the bundle-integrity check.
 
@@ -87,6 +104,8 @@ The API key remains in process memory. DiffractScout does not save it in configu
 
 ## Prepare starting CIFs
 
+![Prepared starting CIFs and their recorded assumptions](assets/gui-initial-cifs.png)
+
 Choose **Prepare initial CIFs / 初始 CIF 准备** from the menu to open the
 standalone phase-preparation window. Enter an element system such as `Ti-Al-V`,
 choose the composition basis, select phases, and choose a new output folder.
@@ -108,11 +127,14 @@ parameters are provided, the generated files remain explicitly labelled
 starting models with the prototype lattice retained as an initial assumption.
 The program does not search or interpret papers.
 
-The result table reports each requested phase and its source/status, with the
-record note shown below the table. Use **View report** for the complete
+Use **Prepare initial CIFs** in the main header to open this workflow. Its
+controls share the workbench typography and styles. The result table reports
+each requested phase and its source/status, with the complete record note in
+a scrollable detail area below the table. Completion scrolls to the results.
+Use **View report** for the complete
 provenance report, **Open output folder** to inspect files, or **Load results
-for analysis** to add the generated CIFs to the main window's local analysis
-list. The worker never accesses Tk widgets; closing this dialog stops its UI
+for analysis** to add the generated CIFs and switch the main window to local
+analysis. The worker never accesses Tk widgets; closing this dialog stops its UI
 polling while the preparation can finish writing the requested output. A
 successful or partial result remains in the selected output folder.
 
@@ -208,6 +230,34 @@ alias `requested_two_theta_range_deg`, records configured per-phase bounds in
 `effective_energy_keV`, `effective_radiation_source`, and
 `source_preset_applied`.
 
+## Analysis results
+
+![Analysis results with theoretical pattern and indexed reflections](assets/gui-results.png)
+
+A completed run opens a result overview with phase, indexed-peak, warning and
+error counts and its output path. Select a phase to inspect its space group,
+theoretical 2θ pattern and indexed peak table on separate tabs. Click a numerical table heading
+to sort and use the page controls for large peak tables. Select a peak and
+choose **Locate in pattern**, double-click its row, or press **Enter** to show
+its indexed position on the plot. Missing directional elastic moduli appear as `—`.
+
+The preview displays the actual wavelength and uses the pipeline's returned
+arrays and reflections. Without a continuous profile, it shows a stick pattern.
+Curves retain
+the minimum and maximum of each display bucket so narrow peaks remain visible
+when a large profile is drawn into a small plot. Each phase is normalized
+independently for display; these intensities do not represent phase fractions.
+The plot remains on **2θ (°)** even when CSV/Excel profiles use `d`, `q` or `g`.
+Exports retain the complete data and original numerical definitions.
+
+The **Diagnostics** page provides severity filters and full messages. A run
+with no analyzable phases still exposes its diagnostics and result folder.
+Routine completion is reported in the result page and Activity log without a
+modal confirmation dialog.
+
+See the [desktop acceptance record](evidence/desktop-ui-20261007.md) for
+actual workflow checks and reference views at the minimum window size.
+
 ## Activity log and completion states
 
 The Activity panel reports timestamps and separates informational, warning, and error diagnostics. A completed bundle can contain diagnostic errors for individual phases that failed while other phases succeeded. Completion messages therefore distinguish:
@@ -236,15 +286,15 @@ One pipeline task can run at a time. Run buttons are disabled while a worker thr
 ## Headless GUI validation
 
 CI installs the test extra and runs both an application construction smoke and
-the full GUI interaction test module under Xvfb on Linux:
+the desktop, CIF preparation and result-view tests under Xvfb on Linux:
 
 ```bash
 xvfb-run -a python -c \
   "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
-xvfb-run -a pytest -q tests/test_gui.py
+xvfb-run -a pytest -q tests/test_gui.py tests/test_gui_cifs.py tests/test_gui_results.py
 ```
 
 The smoke validates import, widget construction, layout initialization, and
-clean shutdown; `tests/test_gui.py` exercises GUI settings, transitions,
-layout, and worker interaction. Numerical workflows are tested separately
+clean shutdown; the interaction tests exercise settings, transitions,
+layout, worker interaction, result navigation and plot display. Numerical workflows are tested separately
 through the headless API and CLI.

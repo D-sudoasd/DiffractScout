@@ -600,7 +600,7 @@ def test_status_text_rerenders_in_the_selected_language() -> None:
     assert controller.status_text.get() == t("zh", "status_failed")
 
 
-def test_completion_dialog_reports_phase_peak_warning_and_error_counts(
+def test_completion_reports_phase_peak_warning_and_error_counts_without_modal(
     tmp_path, monkeypatch
 ) -> None:
     class Widget:
@@ -640,7 +640,8 @@ def test_completion_dialog_reports_phase_peak_warning_and_error_counts(
     controller.lang = "en"
     controller._t = lambda key, **fmt: t(controller.lang, key, **fmt)
     controller._set_status = lambda *_args, **_kwargs: None
-    controller._log = lambda *_args, **_kwargs: None
+    messages = []
+    controller._log = lambda message, *_args: messages.append(message)
     controller.after = lambda *_args: "poll-id"
     dialogs = []
     monkeypatch.setattr(
@@ -651,11 +652,11 @@ def test_completion_dialog_reports_phase_peak_warning_and_error_counts(
 
     gui_module.DiffractScoutApp._poll(controller)
 
-    assert len(dialogs) == 1
-    assert "Phases: 2" in dialogs[0][1]
-    assert "indexed peaks: 3" in dialogs[0][1]
-    assert "warnings: 1" in dialogs[0][1]
-    assert "errors: 1" in dialogs[0][1]
+    assert dialogs == []
+    assert "Phases: 2" in messages[-1]
+    assert "indexed peaks: 3" in messages[-1]
+    assert "warnings: 1" in messages[-1]
+    assert "errors: 1" in messages[-1]
 
 
 def test_create_app_language_switch_rerenders_completion_status() -> None:
@@ -1213,7 +1214,6 @@ def test_scrollable_focus_bindings_are_idempotent_and_cover_all_tabs(geometry: s
                     widget
                     for widget in descendants(interior)
                     if widget is not interior
-                    and widget.winfo_ismapped()
                     and widget.winfo_class() in focusable_classes
                     and widget.winfo_height() > 0
                 ]
@@ -1230,6 +1230,8 @@ def test_scrollable_focus_bindings_are_idempotent_and_cover_all_tabs(geometry: s
                         assert widget.bind("<MouseWheel>").count("_on_wheel") == 1
                         assert widget.bind("<Button-4>").count("_on_wheel") == 1
                         assert widget.bind("<Button-5>").count("_on_wheel") == 1
+                    if not widget.winfo_ismapped():
+                        continue  # Collapsed settings keep bindings ready for expansion.
                     widget.focus_force()
                     app.update_idletasks()
                     app.update()
@@ -1257,6 +1259,8 @@ def test_action_button_geometry_has_no_clipped_glyph_area(geometry: str, lang: s
         app.update_idletasks()
         app.update()
         app._set_language(lang)
+        app._toggle_disclosure(next(section for section in app._disclosures
+                                    if section["key"] == "details_cij"))
         app.update_idletasks()
         app.update()
         buttons = [
@@ -1378,3 +1382,165 @@ def test_local_worker_uses_ui_state_snapshot(tmp_path, monkeypatch) -> None:
     assert observed["recursive"] is True
     assert observed["include_excel"] is False
     assert observed["overwrite"] is False
+
+
+def test_readiness_tracks_required_inputs_and_busy_state(tmp_path) -> None:
+    app = _create_test_app()
+    try:
+        assert app._run_buttons[0].instate(("disabled",))
+        assert app._ready_vars[0].get() == t("zh", "ready_local_inputs")
+        cif = tmp_path / "sample.cif"
+        cif.write_text("data_sample\n", encoding="utf-8")
+        app._add_input_paths([cif])
+        assert app._ready_vars[0].get() == t("zh", "ready_output")
+        app.local_output.set(str(tmp_path / "results"))
+        assert app._run_buttons[0].instate(("!disabled",))
+        app.mp_key.set("fake-offline-test-key")
+        app.mp_output.set(str(tmp_path / "mp-results"))
+        assert app._run_buttons[1].instate(("!disabled",))
+        app.running = True
+        app._refresh_readiness()
+        assert all(button.instate(("disabled",)) for button in app._run_buttons)
+        assert all(variable.get() == t("zh", "ready_running") for variable in app._ready_vars)
+        app.running = False
+        app._clear_inputs()
+        assert app._run_buttons[0].instate(("disabled",))
+        assert app.input_empty.winfo_manager() == "place"
+    finally:
+        app.destroy()
+
+
+def test_translated_choices_preserve_canonical_scientific_settings() -> None:
+    app = _create_test_app()
+    try:
+        app.input_mode.set("energy")
+        app.radiation_value.set("83")
+        app.profile_model.set("gaussian")
+        app.pattern_axis.set("q")
+        settings = app._form_analysis_settings()
+        for lang in ("en", "zh", "en"):
+            app._set_language(lang)
+            assert app._form_analysis_settings() == settings
+            for combo in app._translated_combos:
+                value = combo.canonical_variable.get()
+                assert combo.get() == t(lang, combo.value_keys[value])
+        combo = next(combo for combo in app._translated_combos
+                     if combo.canonical_variable is app.profile_model)
+        combo.set(t("en", "choice_lorentzian"))
+        combo.event_generate("<<ComboboxSelected>>")
+        assert app.profile_model.get() == "lorentzian"
+        assert app._form_analysis_settings().profile_model == "lorentzian"
+        assert app._form_analysis_settings().energy_keV == 83
+    finally:
+        app.destroy()
+
+
+def test_language_selector_switches_language_through_native_event() -> None:
+    app = _create_test_app()
+    try:
+        combo = next(combo for combo in app._translated_combos
+                     if combo.canonical_variable is app.lang_var)
+        combo.set("English")
+        combo.event_generate("<<ComboboxSelected>>")
+        assert app.lang == "en"
+        assert app.lang_var.get() == "en"
+        assert app._run_buttons[0].cget("text") == t("en", "analyze_local")
+        combo.set("中文")
+        combo.event_generate("<<ComboboxSelected>>")
+        assert app.lang == "zh"
+        assert app.lang_var.get() == "zh"
+    finally:
+        app.destroy()
+
+
+def test_input_selection_and_identity_survive_language_switch(tmp_path) -> None:
+    app = _create_test_app()
+    try:
+        files = []
+        for name in ("one", "two"):
+            folder = tmp_path / name
+            folder.mkdir()
+            cif = folder / "same-name.cif"
+            cif.write_text("data_sample\n", encoding="utf-8")
+            files.append(cif.resolve())
+        app._add_input_paths(files)
+        app.input_list.selection_set(1)
+        app._show_input_path()
+        assert app._selected_input_paths() == [files[1]]
+        assert app.input_list.get(1).startswith("same-name.cif")
+        app._set_language("en")
+        assert app._selected_input_paths() == [files[1]]
+        assert app.input_path_text.get() == str(files[1])
+        app._remove_inputs()
+        assert app.local_inputs == [files[0]]
+        assert app.input_list.curselection() == ()
+        app._remove_inputs()  # A repeated Delete must not remove the following input.
+        assert app.local_inputs == [files[0]]
+    finally:
+        app.destroy()
+
+
+def test_collapsed_settings_keep_values_and_reveal_keyboard_focus() -> None:
+    app = _create_test_app()
+    try:
+        app.geometry("900x640")
+        app.update()
+        app.fwhm.set("0.25")
+        section = next(section for section in app._disclosures if section["key"] == "details_profile")
+        assert not section["content"].winfo_ismapped()
+        section["button"].invoke()
+        app.update()
+        assert section["content"].winfo_ismapped()
+        field = next(child for child in section["content"].winfo_children()
+                     if child.winfo_class() == "TEntry"
+                     and str(child.cget("textvariable")) == str(app.fwhm))
+        field.focus_force()
+        app.update()
+        canvas = app._scroll_canvases[1]
+        assert canvas.winfo_rooty() <= field.winfo_rooty()
+        assert field.winfo_rooty() + field.winfo_height() <= canvas.winfo_rooty() + canvas.winfo_height()
+        section["button"].invoke()
+        assert app._form_analysis_settings().fwhm_deg == 0.25
+        assert not section["content"].winfo_manager()
+    finally:
+        app.destroy()
+
+
+def test_workflow_switch_remembers_user_adjusted_activity_height() -> None:
+    app = _create_test_app()
+    try:
+        app.geometry("900x640")
+        app.update()
+        height = app._main_paned.winfo_height()
+        local_position = height - 145
+        app._main_paned.sashpos(0, local_position)
+        app.notebook.select(2)
+        app.update()
+        assert app._main_paned.sashpos(0) > local_position
+        result_position = height - 75
+        app._main_paned.sashpos(0, result_position)
+        app.notebook.select(0)
+        app.update()
+        assert abs(app._main_paned.sashpos(0) - local_position) <= 1
+        app.notebook.select(2)
+        app.update()
+        assert abs(app._main_paned.sashpos(0) - result_position) <= 1
+    finally:
+        app.destroy()
+
+
+def test_shrinking_result_window_keeps_activity_log_visible() -> None:
+    app = _create_test_app()
+    try:
+        app.update()
+        app.notebook.select(2)
+        app.update()
+        app._update_wraplengths()
+        app.geometry("900x640")
+        app.update()
+        app._update_wraplengths()
+        app.update_idletasks()
+        assert app._main_paned.winfo_height() - app._main_paned.sashpos(0) >= 90
+        assert app.log.winfo_height() >= 25
+    finally:
+        app.destroy()

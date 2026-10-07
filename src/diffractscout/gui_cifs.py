@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .gui_theme import BG, BORDER, ERROR, MUTED, TEXT, configure_styles
+
 try:  # Keep the core package importable when Tk is unavailable.
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -151,6 +153,8 @@ if tk is not None:
             on_close: Callable[[], Any] | None = None,
         ) -> None:
             super().__init__(master)
+            self.ui_font = configure_styles(self)
+            self.configure(background=BG)
             self.lang = "en" if str(language).lower() == "en" else "zh"
             self._on_load = on_load
             self._on_close = on_close
@@ -207,7 +211,7 @@ if tk is not None:
             scroll_host = ttk.Frame(outer)
             scroll_host.pack(fill="both", expand=True)
             self._scroll_canvas = tk.Canvas(
-                scroll_host, highlightthickness=0, borderwidth=0, background="#F3F6F9"
+                scroll_host, highlightthickness=0, borderwidth=0, background=BG
             )
             self._scroll_canvas.pack(side="left", fill="both", expand=True)
             self._scrollbar = ttk.Scrollbar(
@@ -225,16 +229,18 @@ if tk is not None:
             self.bind("<MouseWheel>", self._scroll_mousewheel, add="+")
             self.bind("<Button-4>", self._scroll_mousewheel, add="+")
             self.bind("<Button-5>", self._scroll_mousewheel, add="+")
+            self.bind("<FocusIn>", self._reveal_focused_control, add="+")
 
-            ttk.Label(content, text=self._t("heading"), font=("Segoe UI Semibold", 14)).pack(anchor="w")
-            ttk.Label(content, text=self._t("scroll_hint"), style="Hint.TLabel").pack(anchor="w", pady=(2, 0))
-            ttk.Label(
+            ttk.Label(content, text=self._t("heading"), style="PageTitle.TLabel").pack(anchor="w")
+            ttk.Label(content, text=self._t("scroll_hint"), style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
+            self.warning_label = ttk.Label(
                 content,
                 text=self._t("warning"),
                 wraplength=max(400, self._window_width - 80),
                 justify="left",
-                foreground="#8a4b08",
-            ).pack(anchor="w", fill="x", pady=(4, 10))
+                style="Warning.TLabel",
+            )
+            self.warning_label.pack(anchor="w", fill="x", pady=(8, 14))
 
             form = ttk.LabelFrame(content, text=self._t("inputs"), padding=10)
             form.pack(fill="x")
@@ -249,25 +255,28 @@ if tk is not None:
 
             basis_frame = ttk.LabelFrame(form, text=self._t("basis"), padding=(8, 4))
             basis_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(3, 7))
-            for column, basis in enumerate(("nominal", "weight_percent", "atomic_percent")):
+            basis_choices = ttk.Frame(basis_frame)
+            basis_choices.grid(row=0, column=0, columnspan=3, sticky="w")
+            for basis in ("nominal", "weight_percent", "atomic_percent"):
                 radio = ttk.Radiobutton(
-                    basis_frame,
+                    basis_choices,
                     text=self._t(f"basis_{basis}"),
                     value=basis,
                     variable=self.basis_var,
                 )
-                radio.grid(row=0, column=column, sticky="w", padx=(0, 14))
+                radio.pack(side="left", padx=(0, 20))
                 self._input_widgets.append(radio)
             self.basis_value_label = ttk.Label(basis_frame, text="")
             self.basis_value_label.grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
             self.nominal_entry = ttk.Entry(basis_frame, textvariable=self.nominal_var, width=28)
-            self.nominal_entry.grid(row=1, column=1, sticky="ew", pady=4)
+            self.nominal_entry.grid(row=1, column=1, columnspan=2, sticky="ew", pady=4)
             self.percent_entry = ttk.Entry(basis_frame, textvariable=self.percent_var, width=28)
-            self.percent_entry.grid(row=1, column=1, sticky="ew", pady=4)
+            self.percent_entry.grid(row=1, column=1, columnspan=2, sticky="ew", pady=4)
             basis_frame.columnconfigure(1, weight=1)
             self._input_widgets.extend((self.nominal_entry, self.percent_entry))
-            self.basis_hint = ttk.Label(basis_frame, text="", style="Hint.TLabel")
-            self.basis_hint.grid(row=2, column=1, sticky="w", pady=(0, 3))
+            self.basis_hint = ttk.Label(basis_frame, text="", style="Hint.TLabel", wraplength=580,
+                                        justify="left")
+            self.basis_hint.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 3))
 
             ttk.Label(form, text=self._t("host")).grid(row=3, column=0, sticky="w", padx=(0, 8), pady=4)
             self.host_entry = ttk.Entry(form, textvariable=self.host_var)
@@ -299,9 +308,10 @@ if tk is not None:
                 self._input_widgets.append(checkbox)
 
             self.advanced_button = ttk.Button(
-                content, text=self._t("advanced_show"), command=self._toggle_advanced
+                content, text=self._t("advanced_show"), command=self._toggle_advanced,
+                style="Disclosure.TButton",
             )
-            self.advanced_button.pack(anchor="w", pady=(8, 2))
+            self.advanced_button.pack(fill="x", pady=(10, 6))
             self.advanced_frame = ttk.LabelFrame(content, text=self._t("advanced"), padding=9)
             self.advanced_frame.columnconfigure(1, weight=1)
             self.advanced_visible = False
@@ -314,9 +324,9 @@ if tk is not None:
             self.status_label = ttk.Label(progress_row, textvariable=self.status_var)
             self.status_label.pack(side="left", fill="x", expand=True, anchor="w")
             self.progress = ttk.Progressbar(progress_row, mode="indeterminate", length=120)
-            self.progress.pack(side="right")
 
             results = ttk.LabelFrame(content, text=self._t("results"), padding=7)
+            self.results_frame = results
             results.pack(fill="both", expand=True, pady=(4, 5))
             results.columnconfigure(0, weight=1)
             results.rowconfigure(0, weight=1)
@@ -335,12 +345,21 @@ if tk is not None:
             result_scroll.grid(row=0, column=1, sticky="ns")
             self.tree.configure(yscrollcommand=result_scroll.set)
             self.tree.bind("<<TreeviewSelect>>", self._show_record_details)
-            self.details = tk.Text(results, height=3, wrap="word", state="disabled", relief="flat", background="#F4F7FA")
-            self.details.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+            detail_frame = ttk.Frame(results, style="Card.TFrame")
+            detail_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+            self.details = tk.Text(detail_frame, height=4, wrap="word", state="disabled",
+                                   relief="flat", background=BG, foreground=TEXT,
+                                   font=(self.ui_font, 9), padx=8, pady=6,
+                                   highlightthickness=1, highlightbackground=BORDER,
+                                   highlightcolor=MUTED)
+            detail_scroll = ttk.Scrollbar(detail_frame, orient="vertical", command=self.details.yview)
+            self.details.configure(yscrollcommand=detail_scroll.set)
+            detail_scroll.pack(side="right", fill="y")
+            self.details.pack(fill="x", expand=True)
 
             actions = ttk.Frame(footer)
             actions.pack(fill="x", pady=(4, 0))
-            self.run_button = ttk.Button(actions, text=self._t("run"), command=self._start, style="Accent.TButton")
+            self.run_button = ttk.Button(actions, text=self._t("run"), command=self._start, style="Primary.TButton")
             self.run_button.pack(side="left")
             self.load_button = ttk.Button(actions, text=self._t("load"), command=self._load_results, state="disabled")
             self.load_button.pack(side="left", padx=(6, 0))
@@ -349,8 +368,19 @@ if tk is not None:
             self.folder_button = ttk.Button(actions, text=self._t("open_folder"), command=self._open_folder, state="disabled")
             self.folder_button.pack(side="left", padx=(6, 0))
             ttk.Button(actions, text=self._t("close"), command=self._close).pack(side="right")
+            for group in (form, self.advanced_frame, results):
+                self._style_card_children(group)
+            self.bind("<Control-Return>", lambda _event: self._start() if not self._running else None)
             self._refresh_basis_label()
             self._refresh_key_visibility()
+
+        def _style_card_children(self, widget: Any) -> None:
+            for child in widget.winfo_children():
+                if isinstance(child, ttk.Frame):
+                    child.configure(style="Card.TFrame")
+                elif isinstance(child, ttk.Label) and not str(child.cget("style")):
+                    child.configure(style="Card.TLabel")
+                self._style_card_children(child)
 
         def _on_scroll_content_configure(self, _event: Any = None) -> None:
             bounds = self._scroll_canvas.bbox("all")
@@ -359,9 +389,38 @@ if tk is not None:
 
         def _on_scroll_canvas_configure(self, event: Any) -> None:
             self._scroll_canvas.itemconfigure(self._scroll_window, width=event.width)
+            if hasattr(self, "warning_label"):
+                self.warning_label.configure(wraplength=max(200, event.width - 60))
+            if hasattr(self, "basis_hint"):
+                self.basis_hint.configure(wraplength=max(200, event.width - 90))
+
+        def _reveal_focused_control(self, event: Any) -> None:
+            widget = event.widget
+            ancestor = widget
+            while ancestor is not None and ancestor is not self._scroll_content:
+                ancestor = getattr(ancestor, "master", None)
+            if ancestor is None:
+                return
+            bounds = self._scroll_canvas.bbox("all")
+            if not bounds:
+                return
+            total = max(1, bounds[3] - bounds[1])
+            height = self._scroll_canvas.winfo_height()
+            top = widget.winfo_rooty() - self._scroll_content.winfo_rooty()
+            bottom = top + widget.winfo_height()
+            offset = self._scroll_canvas.canvasy(0)
+            if top < offset:
+                target = top
+            elif bottom > offset + height:
+                target = bottom - height
+            else:
+                return
+            self._scroll_canvas.yview_moveto(max(0, min(target, total - height)) / total)
 
         def _scroll_mousewheel(self, event: Any) -> str | None:
             widget = event.widget
+            if widget.winfo_class() in {"Text", "TCombobox", "Listbox", "Spinbox", "TSpinbox", "Treeview"}:
+                return None  # Keep native controls' scrolling separate from the form.
             inside_content = widget is self._scroll_canvas
             while widget is not None and not inside_content:
                 inside_content = widget is self._scroll_content
@@ -550,6 +609,7 @@ if tk is not None:
             self._running = True
             self.run_button.configure(state="disabled")
             self._set_form_enabled(False)
+            self.progress.pack(side="right")
             self.progress.start(12)
             self._set_status(self._t("running"))
             thread = threading.Thread(
@@ -575,6 +635,7 @@ if tk is not None:
                 return
             self._running = False
             self.progress.stop()
+            self.progress.pack_forget()
             self.run_button.configure(state="normal")
             self._set_form_enabled(True)
             if kind == "done":
@@ -605,7 +666,10 @@ if tk is not None:
                     "end",
                     iid=str(index),
                     values=(phase_label, status_label, Path(path).name if path else "—"),
+                    tags=("even" if index % 2 == 0 else "odd", "failed" if not path else "ready"),
                 )
+            self.tree.tag_configure("odd", background=BG)
+            self.tree.tag_configure("failed", foreground=ERROR)
             report_path = getattr(result, "report_path", None)
             output_dir = getattr(result, "output_dir", None)
             exit_code = int(getattr(result, "exit_code", 2))
@@ -625,6 +689,12 @@ if tk is not None:
                 self._show_record_details()
             elif report_path:
                 self._write_details(str(report_path))
+            self.update_idletasks()
+            bounds = self._scroll_canvas.bbox("all")
+            if bounds:
+                top = self.results_frame.winfo_y()
+                total = max(1, bounds[3] - bounds[1])
+                self._scroll_canvas.yview_moveto(max(0, top - 12) / total)
 
         def _show_record_details(self, _event: Any = None) -> None:
             selection = self.tree.selection()

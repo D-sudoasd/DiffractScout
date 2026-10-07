@@ -49,7 +49,7 @@ diffractscout-gui
 
 界面提供：CIF 文件与文件夹批量选择、递归扫描、光源/能量/波长、`2θ` 范围、`d` 过滤、线型模型、步长、FWHM、伪 Voigt 混合参数、CSV/Excel 谱线坐标、连续谱线与图件、弹性配对、候选相数量上限、倒易空间资源限制、覆盖授权、Excel/实验室视图依赖、运行状态、结构化日志和结果入口。API 密钥只保存在当前进程内存中，不写入项目文件。详见 [docs/GUI.md](docs/GUI.md)。
 
-GUI 默认语言为中文（`zh`），可通过语言选择器切换为 English。截图仅作示意，可能显示英文，即使新启动的界面默认是中文。
+GUI 默认语言为中文（`zh`），可切换为 English。常用设置优先显示，线型、资源上限和 Cij 按需展开。完成运行后，界面自动显示结果概览、理论 2θ 图谱、可排序峰表和诊断筛选；初始 CIF 准备可从顶部按钮进入。截图仅作示意。
 
 Windows 下可在可编辑安装后双击 `启动DiffractScout.bat` 启动界面；或将 CIF 拖到 `quick_export_diffractscout.bat` 进行一次实验室默认导出。两个仓库启动器都是源码 checkout 的便捷入口：经 `scripts/diffractscout_entry.py` 运行 checkout 源码，并按仓库 `.venv\Scripts\python.exe`、当前/激活的 `python`、`py -3` 顺序选择解释器。无 `.venv` 时，quick-export 启动器还会使用已安装的 `diffractscout-quick-export`。安装后的 `diffractscout-gui` / `diffractscout gui` / `diffractscout-quick-export` 不依赖仓库启动器。
 

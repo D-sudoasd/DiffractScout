@@ -60,7 +60,11 @@ diffractscout-gui
 
 The desktop interface exposes the scientific controls used by the Python API: radiation definition, angular window, *d*-spacing filters, profile model and spacing, pseudo-Voigt parameters, pattern axis, optional continuous patterns and figures, elastic-tensor pairing, candidate limits, reciprocal-space resource guards, overwrite authorization, progress, structured diagnostics, Excel/lab-view dependencies, and result access. The API key remains in memory and is not written to project files. See [docs/GUI.md](docs/GUI.md).
 
-The GUI defaults to Chinese (`zh`); use its language selector to switch to English. The screenshots are illustrative and may show English even when a fresh launch starts in Chinese.
+The GUI defaults to Chinese (`zh`); use its language selector to switch to
+English. Common controls appear first, with optional settings that expand on
+demand. Completed runs open an in-app result overview with theoretical 2θ
+patterns, sortable peak tables and filtered diagnostics. The screenshots are
+illustrative and may show English even when a fresh launch starts in Chinese.
 
 On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export. Both repository launchers are source-checkout convenience entry points: they run the checkout source through `scripts/diffractscout_entry.py` and prefer the repository `.venv\Scripts\python.exe`, then the current/active `python`, then `py -3`. The quick-export launcher also uses an installed `diffractscout-quick-export` command when `.venv` is absent. Installed `diffractscout-gui` / `diffractscout gui` / `diffractscout-quick-export` do not require the repository launchers.
 
