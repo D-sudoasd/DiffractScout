@@ -39,6 +39,18 @@ macOS 桌面不作为支持目标。命令行输出统一为 UTF-8，重定向�
 
 </details>
 
+## 原理示意 / Principle schematic
+
+<p align="center">
+  <img src="assets/readme/principle.png" width="100%" alt="Structure identity, radiation settings and reference provenance — conceptual schematic / 概念示意图">
+</p>
+
+*本地 CIF 或数据库候选结构在保留身份、辐射条件和诊断信息的情况下生成理论峰参考及可核验文件包；图中结构和峰线不代表实验物相鉴定。*
+
+*Local CIFs or database candidate structures retain identity, radiation settings and diagnostics in theoretical reference bundles. Structures and peaks are conceptual and do not establish experimental phase identification.*
+
+[查看完整示意图 / View full-size schematic](assets/readme/principle.png)
+
 ## 主要工作流
 
 使用与开发入口：[文档索引](docs/README.md) · [贡献指南](CONTRIBUTING.md) ·

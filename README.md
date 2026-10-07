@@ -44,6 +44,18 @@ for retained formats, engine differences and validation limits.
 
 </details>
 
+## 原理示意 / Principle schematic
+
+<p align="center">
+  <img src="assets/readme/principle.png" width="100%" alt="Structure identity, radiation settings and reference provenance — conceptual schematic / 概念示意图">
+</p>
+
+*本地 CIF 或数据库候选结构在保留身份、辐射条件和诊断信息的情况下生成理论峰参考及可核验文件包；图中结构和峰线不代表实验物相鉴定。*
+
+*Local CIFs or database candidate structures retain identity, radiation settings and diagnostics in theoretical reference bundles. Structures and peaks are conceptual and do not establish experimental phase identification.*
+
+[查看完整示意图 / View full-size schematic](assets/readme/principle.png)
+
 ## Why this software exists
 
 <p align="center"><img src="paper/fig_workflow.png" width="100%" alt="Workflow from structure inputs to a verified diffraction-reference bundle."></p>
