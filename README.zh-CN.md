@@ -1,8 +1,21 @@
-<p align="center">
-  <img src="docs/assets/hero.png" width="100%" alt="DiffractScout: Traceable powder-diffraction references. AI-generated conceptual illustration.">
-</p>
-
 # DiffractScout 中文说明
+
+**从本地 CIF 或化学体系检索出发，生成带来源、诊断和校验清单的理论衍射参考。**
+
+[图形界面与安装](#图形界面) · [CLI](docs/CLI.md) · [科研约定](docs/SCIENTIFIC_CONTRACTS.md) · [英文主页](README.md)
+
+[![CI](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/License-MIT-455A64)](LICENSE) [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10--3.13-3776AB)](pyproject.toml)
+
+![DiffractScout local CIF analysis interface / 本地CIF分析界面](docs/assets/gui-local.png)
+
+**第一次使用：** 在源码目录运行 `python -m pip install -e .`，再运行 `diffractscout-gui` 并导入本地 CIF。基础本地分析可离线使用；Materials Project 查询为可选功能，需要使用者自己的 API 密钥。
+
+**输入到输出：** CIF 与辐射条件 → 结构诊断和带索引的理论峰 → 数据表、可选谱线与图件、来源记录和校验清单。理论参考用于实验比较，不能单独证明样品中的物相。
+
+**源码与发行：** 当前源码为 `v0.4.0 Unreleased`，最新正式发行版为 `v0.3.0`。桌面支持目标为 Windows；平台、依赖和完整版选项见下方详细说明。
+
+<details>
+<summary>Platform, complete edition and release details / 平台、完整版与发布详情</summary>
 
 本项目以 **Windows** 为使用和验收平台。Linux CI 保留用于基础代码验证，
 macOS 桌面不作为支持目标。命令行输出统一为 UTF-8，重定向或通过其他程序
@@ -19,6 +32,8 @@ macOS 桌面不作为支持目标。命令行输出统一为 UTF-8，重定向�
 **DiffractScout 将合金/化学体系候选相检索、本地 CIF 检查、理论粉末衍射计算、可选晶面法向弹性分析和可验证结果导出连接为一个流程。** 每项结果均可追溯到数据库记录或本地文件、CIF 哈希、辐射条件、计算定义、软件版本和结构化诊断。
 
 [英文主页](README.md) · [CLI 使用说明](docs/CLI.md) · [API](docs/API.md) · [GUI 使用说明](docs/GUI.md) · [科研计算约定](docs/SCIENTIFIC_CONTRACTS.md) · [验证策略](docs/VALIDATION.md) · [发布流程](docs/RELEASE.md) · [JOSS 准备状态](docs/JOSS_READINESS.md)
+
+</details>
 
 ## 主要工作流
 

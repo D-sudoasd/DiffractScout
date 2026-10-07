@@ -1,11 +1,21 @@
-<p align="center">
-  <img src="docs/assets/hero.png" width="100%" alt="DiffractScout: Traceable powder-diffraction references. AI-generated conceptual illustration.">
-</p>
-
 # DiffractScout
 
-[Documentation guide](docs/README.md) · [中文说明](README.zh-CN.md) ·
-[Contributing](CONTRIBUTING.md) · [Agent workflow](docs/AGENT_WORKFLOW.md)
+**Turn local CIF structures or a chemical-system query into theoretical diffraction references with verifiable provenance.**
+
+[Install and GUI](#graphical-interface) · [CLI guide](docs/CLI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [中文说明](README.zh-CN.md)
+
+[![CI](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/License-MIT-455A64)](LICENSE) [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10--3.13-3776AB)](pyproject.toml)
+
+![DiffractScout local CIF analysis interface / 本地CIF分析界面](docs/assets/gui-local.png)
+
+**First use / 第一次使用：** install the checkout with `python -m pip install -e .`, launch `diffractscout-gui`, and analyze local CIF files. Base local analysis works offline; Materials Project access is optional and requires your own API key.
+
+**Input → output / 输入到输出：** CIF + radiation settings → structure diagnostics and indexed theoretical peaks → tables, optional profiles and figures, provenance, and checksums. A theoretical reference supports comparison; it does not establish an experimental phase identification.
+
+**Source and release / 源码与发行：** current source `v0.4.0 Unreleased`; latest formal release `v0.3.0`. The desktop target is Windows; detailed compatibility and installation choices follow below.
+
+<details>
+<summary>Platform, complete edition and release details / 平台、完整版与发布详情</summary>
 
 Windows is the supported desktop platform. Linux CI remains for automated core
 validation; macOS desktop support is not an acceptance requirement. CLI output
@@ -27,6 +37,8 @@ for retained formats, engine differences and validation limits.
 **DiffractScout turns a chemical-system question or a folder of CIF files into a verifiable theoretical powder-diffraction reference bundle.** It preserves database identity, exact CIF hashes, structural diagnostics, radiation settings, optional elastic-tensor provenance, indexed reflections, warnings, and file checksums in one workflow.
 
 [中文说明](README.zh-CN.md) · [CLI guide](docs/CLI.md) · [API](docs/API.md) · [GUI guide](docs/GUI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [Validation](docs/VALIDATION.md) · [Release procedure](docs/RELEASE.md) · [JOSS readiness](docs/JOSS_READINESS.md)
+
+</details>
 
 ## Why this software exists
 
