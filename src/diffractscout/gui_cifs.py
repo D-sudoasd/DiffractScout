@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .gui_theme import BG, BORDER, ERROR, MUTED, TEXT, configure_styles
+from .gui_help import HoverHelp
+from .gui_i18n import t
 
 try:  # Keep the core package importable when Tk is unavailable.
     import tkinter as tk
@@ -166,6 +168,7 @@ if tk is not None:
             self._result_paths: list[Path] = []
             self._input_widgets: list[Any] = []
             self._template_vars: dict[str, Any] = {}
+            self.help = HoverHelp(self)
 
             self.title(self._t("title"))
             screen_height = self.winfo_screenheight()
@@ -178,10 +181,63 @@ if tk is not None:
             self.transient(master)
             self._make_variables()
             self._build_widgets()
+            self._install_help()
             self._set_status(self._t("ready"))
 
         def _t(self, key: str, **fmt: object) -> str:
             return _TEXT[self.lang][key].format(**fmt)
+
+        def _help_text(self, key: str) -> str:
+            return t(self.lang, key)
+
+        def _install_help(self) -> None:
+            variables = {
+                str(self.composition_var): "help_cifs_composition", str(self.nominal_var): "help_cifs_nominal",
+                str(self.host_var): "help_cifs_host", str(self.output_var): "help_cifs_output",
+                str(self.parameter_var): "help_cifs_parameters", str(self.api_key_var): "help_cifs_api_key",
+                **{str(var): "help_cifs_template" for var in self._template_vars.values()},
+            }
+            checkbox_help = {
+                str(self.offline_var): "help_cifs_offline", str(self.show_key_var): "help_show_key",
+                **{str(var): "help_cifs_" + phase.replace("-", "_") for phase, var in self.phase_vars.items()},
+            }
+            actions = {
+                self._t("browse_parent"): "help_cifs_parent", self._t("run"): "help_cifs_run",
+                self._t("load"): "help_cifs_load", self._t("open_report"): "help_cifs_report",
+                self._t("open_folder"): "help_cifs_folder", self._t("close"): "help_cifs_close",
+                self._t("advanced_show"): "help_cifs_advanced",
+            }
+
+            def visit(widget: Any) -> None:
+                kind = widget.winfo_class()
+                key = None
+                if kind == "TEntry":
+                    key = variables.get(str(widget.cget("textvariable")))
+                elif kind == "TCheckbutton":
+                    key = checkbox_help.get(str(widget.cget("variable")))
+                elif kind == "TRadiobutton":
+                    key = {"nominal": "help_cifs_nominal", "weight_percent": "help_cifs_weight",
+                           "atomic_percent": "help_cifs_atomic"}[str(widget.cget("value"))]
+                elif kind == "TButton":
+                    key = actions.get(str(widget.cget("text")))
+                    if str(widget.cget("text")) == self._t("browse"):
+                        key = ("help_cifs_parameters_browse" if widget.master is self.advanced_frame
+                               and int(widget.grid_info()["row"]) == 0 else "help_cifs_template_browse")
+                if key is not None:
+                    self.help.add(widget, lambda k=key: self._help_text(k))
+                for child in widget.winfo_children():
+                    visit(child)
+            visit(self)
+            self.help.add(self.percent_entry, lambda: self._help_text("help_cifs_percent_weight" if
+                          self.basis_var.get() == "weight_percent" else "help_cifs_percent_atomic"))
+            self.help.add_tree(self.tree, lambda: self._help_text("help_cifs_tree"), {
+                "__resize__": lambda: self._help_text("help_table_resize"),
+                "phase": lambda: self._help_text("help_cifs_tree"),
+                "status": lambda: self._help_text("help_cifs_status"),
+                "cif": lambda: self._help_text("help_cifs_details"),
+            })
+            self.help.add(self.details, lambda: self._help_text("help_cifs_details"))
+            self.help.add_scrollbars(self, lambda: self._help_text("help_scrollbar"))
 
         def _make_variables(self) -> None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

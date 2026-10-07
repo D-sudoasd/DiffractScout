@@ -6,6 +6,11 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Added
 
+- Contextual help throughout the main desktop, initial CIF preparation,
+  results and retained workbenches. Delayed hover, keyboard focus and F1
+  explain actions, drop-down choices, units and table headings in plain
+  language; Esc dismisses help without taking focus or changing values.
+  Manual stiffness-table validation warnings are now visible before analysis.
 - Desktop result overview with theoretical 2θ preview, sortable paginated peak
   tables, severity-filtered diagnostics and explicit missing elastic values.
   Shared native styles, translated canonical choices, expandable advanced

@@ -155,7 +155,7 @@ jobs:
         run: |
           xvfb-run -a python -c "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
       - name: Run GUI interaction tests
-        run: xvfb-run -a pytest -q tests/test_gui.py tests/test_gui_cifs.py tests/test_gui_results.py
+        run: xvfb-run -a pytest -q tests/test_gui.py tests/test_gui_cifs.py tests/test_gui_results.py tests/test_gui_help.py tests/test_compat_gui_help.py
 
   inherited-workflows:
     name: Complete edition inherited workflows

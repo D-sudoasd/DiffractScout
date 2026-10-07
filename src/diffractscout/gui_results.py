@@ -19,6 +19,7 @@ except ImportError:  # pragma: no cover - platform-dependent
     ttk = None  # type: ignore[assignment]
 
 from .gui_theme import BORDER, CARD, ERROR, MUTED, SUCCESS, TEAL_DARK, TEXT, WARNING
+from .gui_help import HoverHelp
 from .models import DiagnosticRecord, PhaseAnalysis, PipelineResult, ReflectionRecord
 
 
@@ -236,6 +237,8 @@ class ResultView(_FrameBase):
         self._font_family = "TkDefaultFont"
         self._configure_styles()
         self._build_widgets()
+        self.help = HoverHelp(self)
+        self._install_help()
         self._apply_static_translations()
         self._show_empty()
 
@@ -330,7 +333,7 @@ class ResultView(_FrameBase):
             style="Results.TCombobox",
         )
         self._phase_combo.grid(row=0, column=1, sticky="ew")
-        self._bind(self._phase_combo, "<<ComboboxSelected>>", self._on_phase_selected)
+        self._bind_event(self._phase_combo, "<<ComboboxSelected>>", self._on_phase_selected)
 
         self._notebook = ttk.Notebook(self._content, takefocus=True, style="Results.TNotebook")
         self._notebook.grid(row=3, column=0, sticky="nsew")
@@ -349,7 +352,7 @@ class ResultView(_FrameBase):
             highlightbackground=BORDER, height=190,
         )
         self._canvas.grid(row=1, column=0, sticky="nsew")
-        self._bind(self._canvas, "<Configure>", self._schedule_plot)
+        self._bind_event(self._canvas, "<Configure>", self._schedule_plot)
         self._peaks_tab = ttk.Frame(self._notebook, padding=8)
         self._peaks_tab.columnconfigure(0, weight=1)
         self._peaks_tab.rowconfigure(0, weight=1)
@@ -384,9 +387,9 @@ class ResultView(_FrameBase):
             "young_modulus_hkl_normal_GPa": (126, "e"),
         }
         self._peak_frame.grid(row=0, column=0, sticky="nsew")
-        self._bind(self._peak_tree, "<<TreeviewSelect>>", self._on_peak_selected)
-        self._bind(self._peak_tree, "<Return>", self._show_selected_peak)
-        self._bind(self._peak_tree, "<Double-1>", lambda event: self._show_selected_peak()
+        self._bind_event(self._peak_tree, "<<TreeviewSelect>>", self._on_peak_selected)
+        self._bind_event(self._peak_tree, "<Return>", self._show_selected_peak)
+        self._bind_event(self._peak_tree, "<Double-1>", lambda event: self._show_selected_peak()
                    if self._peak_tree.identify_region(event.x, event.y) == "cell" else None)
 
         paging = ttk.Frame(self._peaks_tab)
@@ -422,7 +425,7 @@ class ResultView(_FrameBase):
             filter_row, textvariable=self._diagnostic_filter_var, state="readonly", width=18
         )
         self._diagnostic_filter_combo.grid(row=0, column=1, sticky="w")
-        self._bind(
+        self._bind_event(
             self._diagnostic_filter_combo,
             "<<ComboboxSelected>>",
             self._on_diagnostic_filter_selected,
@@ -446,7 +449,7 @@ class ResultView(_FrameBase):
         )
         self._diagnostic_scroll.grid(row=0, column=1, sticky="ns")
         self._diagnostic_tree.configure(yscrollcommand=self._diagnostic_scroll.set)
-        self._bind(
+        self._bind_event(
             self._diagnostic_tree, "<<TreeviewSelect>>", self._on_diagnostic_selected
         )
 
@@ -471,13 +474,38 @@ class ResultView(_FrameBase):
         self._diagnostic_empty = ttk.Label(
             self._diagnostics_tab, style="Hint.TLabel", anchor="center"
         )
-        self._bind(self._notebook, "<<NotebookTabChanged>>", self._on_tab_changed)
+        self._bind_event(self._notebook, "<<NotebookTabChanged>>", self._on_tab_changed)
 
-    def _bind(self, widget: object, sequence: str, callback: Callable[..., object]) -> None:
+    def _bind_event(self, widget: object, sequence: str, callback: Callable[..., object]) -> None:
         bind = getattr(widget, "bind")
         func_id = bind(sequence, callback, add="+")
         if func_id:
             self._bindings.append((widget, sequence, str(func_id)))
+
+    def _install_help(self) -> None:
+        def message(key: str) -> Callable[[], str]:
+            return lambda: self._tr(key)
+
+        for widget, key in (
+            (self._output_entry, "help_result_path"), (self._canvas, "help_result_pattern"),
+            (self._previous_button, "help_result_previous"), (self._next_button, "help_result_next"),
+            (self._locate_button, "help_result_locate"), (self._diagnostic_details, "help_diag_details"),
+        ):
+            self.help.add(widget, message(key))
+        self.help.add_combobox(self._phase_combo, message("help_result_phase"), {})
+        self.help.add_notebook(self._notebook, [message(key) for key in
+                              ("help_result_pattern", "help_result_peaks", "help_result_diagnostics")])
+        self.help.add_tree(self._peak_tree, message("help_result_peaks"), {
+            "__resize__": message("help_table_resize"),
+            "hkl": message("help_peak_hkl"), "two_theta_deg": message("help_peak_angle"),
+            "d_spacing_A": message("help_peak_d"), "normalized_intensity": message("help_peak_intensity"),
+            "q_invA": message("help_peak_q"), "young_modulus_hkl_normal_GPa": message("help_peak_modulus"),
+        })
+        self.help.add_tree(self._diagnostic_tree, message("help_result_diagnostics"), {
+            "__resize__": message("help_table_resize"),
+            "level": message("help_diag_level"), "source": message("help_diag_source"),
+        })
+        self.help.add_scrollbars(self, message("help_scrollbar"))
 
     def _show_empty(self) -> None:
         self._content.grid_remove()
@@ -492,6 +520,7 @@ class ResultView(_FrameBase):
 
         if self._destroyed:
             return
+        self.help.hide()
         self._result = result
         self._state = ResultViewState()
         self._plot_cache_key = None
@@ -525,6 +554,7 @@ class ResultView(_FrameBase):
 
         if self._destroyed:
             return
+        self.help.hide()
         self._apply_static_translations()
         if self._result is None:
             self._show_empty()
@@ -563,6 +593,11 @@ class ResultView(_FrameBase):
         self._diagnostic_details_label.configure(text=self._tr("results_diag_details"))
         self._render_peak_headings()
         self._set_diagnostic_filter_label()
+        self.help.add_combobox(self._diagnostic_filter_combo,
+                               lambda: self._tr("help_diag_filter"), {
+            self._tr(f"results_diag_{kind}"): (lambda k=kind: self._tr(f"help_diag_{k}"))
+            for kind in ("all", "warning", "error")
+        })
 
     def _render_result(self) -> None:
         if self._result is None:
@@ -656,6 +691,9 @@ class ResultView(_FrameBase):
                 )
             )
         self._phase_combo.configure(values=labels, state="readonly" if labels else "disabled")
+        self.help.add_combobox(self._phase_combo, lambda: self._tr("help_result_phase"), {
+            label: (lambda text=label: text + "\n" + self._tr("help_result_phase")) for label in labels
+        })
         if labels:
             self._state.phase_index = min(max(0, self._state.phase_index), len(labels) - 1)
             self._phase_combo.current(self._state.phase_index)
@@ -1039,6 +1077,7 @@ class ResultView(_FrameBase):
     def destroy(self) -> None:
         if not self._destroyed:
             self._destroyed = True
+            self.help.destroy()
             if self._draw_after_id is not None:
                 try:
                     self.after_cancel(self._draw_after_id)

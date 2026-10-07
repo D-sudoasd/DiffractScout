@@ -140,6 +140,7 @@ def test_language_refresh_does_not_reset_navigation_state() -> None:
     view._result = object()
     view._translate = lambda key, **_fmt: f"translated:{key}"
     view._heading = LabelStub()
+    view.help = SimpleNamespace(hide=lambda: None)
     view._apply_static_translations = lambda: None
     view._render_result = lambda: None
     before = ResultViewState(**vars(state))

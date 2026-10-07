@@ -21,6 +21,7 @@ from . import __version__
 from .diffraction import ENERGY_WAVELENGTH_KEV_A, X_RAY_SOURCES_A, validate_analysis_settings
 from .elasticity_input import parse_cij_matrix_6x6, parse_cij_paste_text, parse_cubic_cij
 from .gui_i18n import DEFAULT_LANG, t
+from .gui_help_text import CHOICE_HELP, CONTROL_HELP, VARIABLE_HELP
 from .gui_theme import (
     BG, BORDER, CARD, LOG_BG, LOG_TEXT, NAVY, NAVY_DARK,
     TEAL, TEAL_DARK, TEXT, configure_styles,
@@ -313,6 +314,8 @@ if tk is not None:
             self._sash_initialized = False
 
             self._configure_style()
+            from .gui_help import HoverHelp
+            self.help = HoverHelp(self)
             self._create_variables()
             self._build_header()
             self._build_status_bar()
@@ -322,6 +325,7 @@ if tk is not None:
             for bind_scroll_tree in self._scroll_bind_callbacks:
                 bind_scroll_tree()
             self._build_compat_menu()
+            self._install_help()
             self._sync_radiation_controls()
             self._sync_output_dependencies()
             self._refresh_cij_status()
@@ -342,58 +346,61 @@ if tk is not None:
             self._i18n_targets.append((widget, key, attr))
             if attr == "text":
                 widget.configure(text=self._t(key))
+                if key in CONTROL_HELP:
+                    self._add_hover_help(widget, CONTROL_HELP[key])
             return widget
 
         def _add_hover_help(self, widget: Any, key: str) -> None:
-            """Attach concise help only to controls with consequential units/semantics."""
-
-            binding_id = f"{widget}|{key}"
-            if binding_id in self._help_bindings:
-                return
-            self._help_bindings[binding_id] = (widget, key)
-            widget.bind(
-                "<Enter>",
-                lambda event, target=widget, help_key=key: self._show_hover_help(
-                    target, help_key, event
-                ),
-                add="+",
-            )
-            widget.bind("<Leave>", lambda _event: self._hide_hover_help(), add="+")
+            self._help_bindings[str(widget)] = (widget, key)
+            self.help.add(widget, lambda: self._t(key))
 
         def _show_hover_help(self, widget: Any, key: str, event: Any) -> None:
-            self._hide_hover_help()
-            try:
-                popup = tk.Toplevel(self)
-                popup.wm_overrideredirect(True)
-                popup.attributes("-topmost", True)
-                label = tk.Label(
-                    popup,
-                    text=self._t(key),
-                    justify="left",
-                    wraplength=420,
-                    bg="#FFFBEA",
-                    fg=TEXT,
-                    relief="solid",
-                    borderwidth=1,
-                    padx=8,
-                    pady=5,
-                )
-                label.pack()
-                x = int(getattr(event, "x_root", widget.winfo_rootx())) + 12
-                y = int(getattr(event, "y_root", widget.winfo_rooty() + widget.winfo_height())) + 12
-                popup.geometry(f"+{x}+{y}")
-                self._hover_help_popup = popup
-            except tk.TclError:
-                self._hover_help_popup = None
+            self._add_hover_help(widget, key)
+            self.help.show(widget, event, immediate=True)
 
         def _hide_hover_help(self) -> None:
-            popup = getattr(self, "_hover_help_popup", None)
-            self._hover_help_popup = None
-            if popup is not None:
-                try:
-                    popup.destroy()
-                except tk.TclError:
-                    pass
+            self.help.hide()
+
+        def _install_help(self) -> None:
+            variables = {str(getattr(self, name)): key for name, key in VARIABLE_HELP.items()}
+
+            def visit(widget: Any) -> None:
+                if widget is self.results_view:
+                    return  # The reusable result view owns its contextual help.
+                if widget.winfo_class() in {"TEntry", "TCombobox"}:
+                    variable = str(widget.cget("textvariable"))
+                    if variable in variables:
+                        self._add_hover_help(widget, variables[variable])
+                if widget.winfo_class() != "TCombobox":
+                    for child in widget.winfo_children():
+                        visit(child)
+            visit(self)
+            for widget, key in (
+                (self.input_list, "help_input_list"), (self.input_empty, "help_input_drop"),
+                (self.cij_paste, "help_cij_paste"), (self.log, "help_log"),
+            ):
+                self._add_hover_help(widget, key)
+            self.help.add_notebook(self.notebook, [lambda k=k: self._t(k) for k in
+                                  ("help_tab_local", "help_tab_mp", "help_tab_results")])
+            self.help.add(self._main_paned, lambda: self._t("help_resize_log"),
+                          resolve=lambda event: self._t("help_resize_log") if event is None
+                          or self._main_paned.identify(event.x, event.y) != "" else "")
+            self.help.add_scrollbars(self, lambda: self._t("help_scrollbar"))
+            self._refresh_choice_help()
+            # The value's unit changes with radiation mode.
+            for widget in self._radiation_value_widgets + self._radiation_value_labels:
+                self.help.add(widget, lambda: self._t("help_radiation_energy" if
+                              self.input_mode.get() == "energy" else "help_radiation_wavelength"))
+
+        def _refresh_choice_help(self) -> None:
+            for combo in self._translated_combos:
+                name = next(name for name in VARIABLE_HELP
+                            if getattr(self, name) is combo.canonical_variable)
+                self.help.add_combobox(
+                    combo, lambda key=VARIABLE_HELP[name]: self._t(key),
+                    {self._t(label_key): (lambda key=CHOICE_HELP[value]: self._t(key))
+                     for value, label_key in combo.value_keys.items()},
+                )
 
         def _configure_style(self) -> None:
             self.ui_font = configure_styles(self)
@@ -422,6 +429,7 @@ if tk is not None:
             section["button"] = button
             self._disclosures.append(section)
             self._label_disclosure(section)
+            self._add_hover_help(button, f"help_{key}")
             return content
 
         def _label_disclosure(self, section: dict[str, Any]) -> None:
@@ -494,7 +502,7 @@ if tk is not None:
             self.input_path_text = tk.StringVar(value="")
 
         def _build_compat_menu(self) -> None:
-            menu = tk.Menu(self)
+            menu = tk.Menu(self, tearoff=False)
             menu.add_command(
                 label="初始 CIF 准备 / Prepare initial CIFs",
                 command=self._open_initial_cif_dialog,
@@ -508,6 +516,10 @@ if tk is not None:
                     label=label, command=lambda name=workflow: self._launch_compat(name)
                 )
             menu.add_cascade(label="兼容工作台 / Compatibility", menu=workflows)
+            self.help.add_menu(menu, {0: lambda: self._t("help_prepare"),
+                                     1: lambda: self._t("help_compat")})
+            self.help.add_menu(workflows, {0: lambda: self._t("help_compat_peaks"),
+                                          1: lambda: self._t("help_compat_download")})
             self.configure(menu=menu)
 
         def _open_initial_cif_dialog(self) -> None:
@@ -755,6 +767,8 @@ if tk is not None:
                 if str(widget.winfo_class()) in focusable_classes and widget_path not in focus_bound:
                     widget.bind("<FocusIn>", _focus_into_view, add="+")
                     focus_bound.add(widget_path)
+                if widget.winfo_class() == "TCombobox":
+                    return  # Native drop-down children are Tcl-owned.
                 for child in widget.winfo_children():
                     _bind_focus_recursive(child)
 
@@ -1328,15 +1342,15 @@ if tk is not None:
                     row=row, column=1, sticky="ew", padx=(8, 0), pady=2
                 )
                 self._cij_widgets.extend((lbl, entry))
-                self._add_hover_help(lbl, "help_cij")
-                self._add_hover_help(entry, "help_cij")
+                self._add_hover_help(lbl, f"help_{key}")
+                self._add_hover_help(entry, f"help_{key}")
             btn_cubic = ttk.Button(
                 cubic, text=self._t("apply_cubic"), style="Secondary.TButton", command=self._apply_cubic_cij
             )
             btn_cubic.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
             self.btn_apply_cubic = btn_cubic
             self._cij_widgets.append(btn_cubic)
-            self._add_hover_help(btn_cubic, "help_cij")
+            self._add_hover_help(btn_cubic, "help_apply_cubic")
             self._register_text(btn_cubic, "apply_cubic")
 
             paste_lbl = ttk.Label(box, text=self._t("cij_paste_hint"), style="Hint.TLabel", wraplength=400)
@@ -1360,7 +1374,7 @@ if tk is not None:
             self.cij_paste.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
             self.cij_paste.grid(row=0, column=0, sticky="nsew")
             self._cij_widgets.append(self.cij_paste)
-            self._add_hover_help(self.cij_paste, "help_cij")
+            self._add_hover_help(self.cij_paste, "help_cij_paste")
             yscroll.grid(row=0, column=1, sticky="ns")
             xscroll.grid(row=1, column=0, sticky="ew")
             paste_frame.columnconfigure(0, weight=1)
@@ -1374,14 +1388,14 @@ if tk is not None:
             btn_matrix.pack(side="left")
             self._register_text(btn_matrix, "apply_matrix")
             self._cij_widgets.append(btn_matrix)
-            self._add_hover_help(btn_matrix, "help_cij")
+            self._add_hover_help(btn_matrix, "help_apply_matrix")
             btn_clear = ttk.Button(
                 actions, text=self._t("clear_cij"), style="Danger.TButton", command=self._clear_cij_override
             )
             btn_clear.pack(side="left", padx=(8, 0))
             self._register_text(btn_clear, "clear_cij")
             self._cij_widgets.append(btn_clear)
-            self._add_hover_help(btn_clear, "help_cij")
+            self._add_hover_help(btn_clear, "help_clear_cij")
             status = ttk.Label(box, textvariable=self.cij_status, style="Hint.TLabel", wraplength=400)
             status.pack(anchor="w", pady=(6, 0))
             self._wrap_labels.append((status, 400))
@@ -1394,6 +1408,7 @@ if tk is not None:
             btn = ttk.Button(row, text=self._t("browse"), style="Secondary.TButton", command=command)
             btn.pack(side="left", padx=(8, 0))
             self._register_text(btn, "browse")
+            self._add_hover_help(btn, "help_output_browse")
             return entry
 
         def _build_readiness(self, footer: Any) -> None:
@@ -1607,6 +1622,8 @@ if tk is not None:
                 self.status_text.set(self._t("status_ready"))
 
         def _apply_language(self) -> None:
+            self.help.hide()
+            self._refresh_choice_help()
             for widget, key, attr in self._i18n_targets:
                 try:
                     if attr == "text":
@@ -1948,6 +1965,8 @@ if tk is not None:
                 self.elastic_overrides[identity] = tensor
             self._refresh_cij_status()
             self._log(self._t("log_cij_override", kind="cubic", paths=", ".join(identities)), "info")
+            for warning in self._cij_warning_messages(tensor):
+                self._log(warning, "warning")
 
         def _apply_matrix_cij(self) -> None:
             identities = self._selected_cif_identities()
@@ -1966,6 +1985,19 @@ if tk is not None:
                 self.elastic_overrides[identity] = tensor
             self._refresh_cij_status()
             self._log(self._t("log_cij_override", kind="matrix", paths=", ".join(identities)), "info")
+            for warning in self._cij_warning_messages(tensor):
+                self._log(warning, "warning")
+
+        def _cij_warning_messages(self, tensor: ElasticTensor) -> list[str]:
+            messages = []
+            for warning in getattr(tensor, "warnings", ()):
+                if "not symmetric" in warning:
+                    messages.append(self._t("cij_warning_symmetry"))
+                elif "high condition number" in warning:
+                    messages.append(self._t("cij_warning_condition"))
+                else:
+                    messages.append(warning)
+            return messages
 
         def _clear_cij_override(self) -> None:
             selected = self._selected_input_paths()
@@ -1988,7 +2020,12 @@ if tk is not None:
                 self.cij_status.set(self._t("cij_none"))
                 return
             keys = ", ".join(sorted(self.elastic_overrides))
-            self.cij_status.set(self._t("cij_status", paths=keys))
+            warnings = list(dict.fromkeys(
+                warning for tensor in self.elastic_overrides.values()
+                for warning in self._cij_warning_messages(tensor)
+            ))
+            self.cij_status.set(self._t("cij_status", paths=keys)
+                                + ("\n" + " ".join(warnings) if warnings else ""))
 
         def _add_cif_files(self) -> None:
             selected = filedialog.askopenfilenames(
@@ -2627,7 +2664,7 @@ if tk is not None:
 
         def destroy(self) -> None:
             self._cancel_scheduled_callbacks()
-            self._hide_hover_help()
+            self.help.destroy()
             super().destroy()
 
 else:

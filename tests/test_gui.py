@@ -1006,7 +1006,7 @@ def test_i18n_required_keys_zh_en_parity() -> None:
     assert t("en", "radiation_value_keV") == "Radiation value (keV)"
     assert "eV/atom" in t("zh", "help_e_hull") and "0.05" in t("en", "help_e_hull")
     assert "GPa" in t("zh", "help_cij") and "GPa" in t("en", "help_cij")
-    assert "q=2π/d" in t("zh", "help_pattern_axis") and "g=1/d" in t("en", "help_pattern_axis")
+    assert "q=2π/d" in t("zh", "help_choice_q") and "g=1/d" in t("en", "help_choice_g")
 
 
 def _validation_controller(lang: str):
@@ -1406,6 +1406,34 @@ def test_readiness_tracks_required_inputs_and_busy_state(tmp_path) -> None:
         app._clear_inputs()
         assert app._run_buttons[0].instate(("disabled",))
         assert app.input_empty.winfo_manager() == "place"
+    finally:
+        app.destroy()
+
+
+def test_manual_matrix_reports_averaging_without_modifying_source(tmp_path) -> None:
+    import numpy as np
+    app = _create_test_app()
+    try:
+        source = tmp_path / "sample.cif"
+        original = b"data_sample\n"
+        source.write_bytes(original)
+        app._add_input_paths([source])
+        app.input_list.selection_set(0)
+        matrix = np.eye(6) * 160.0
+        matrix[0, 1], matrix[1, 0] = 8.0, 12.0
+        app.cij_paste.insert("1.0", "\n".join(" ".join(map(str, row)) for row in matrix))
+
+        app._apply_matrix_cij()
+
+        tensor = app.elastic_overrides[gui_module.canonical_input_identity(source)]
+        assert tensor.status == "valid_with_warnings"
+        assert tensor.stiffness_GPa[0, 1] == tensor.stiffness_GPa[1, 0] == 10.0
+        warning = t("zh", "cij_warning_symmetry")
+        assert warning in app.cij_status.get()
+        assert warning in app.log.get("1.0", "end")
+        app._set_language("en")
+        assert t("en", "cij_warning_symmetry") in app.cij_status.get()
+        assert source.read_bytes() == original
     finally:
         app.destroy()
 

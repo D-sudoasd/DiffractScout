@@ -54,6 +54,24 @@ list to remove selected paths. The Activity log remains in a resizable vertical
 split. The default size is `1200×820`, with a minimum of `900×640`; text wraps to
 its actual column width.
 
+## Contextual help
+
+Pause over a control to see what it does, how to use it, and what changes after
+the action. Buttons remain readable when disabled, with the required earlier
+step explained in their help. Keyboard focus also shows help; press **F1** to
+show it again and **Esc** to dismiss it. Clicking, typing, leaving the control,
+or resizing the window dismisses the bubble without changing the control's
+value or taking keyboard focus.
+
+Help covers the main workflows, initial CIF preparation, result tables and
+both compatibility workbenches. Each drop-down option and result-table heading
+has its own explanation. Units and terms such as CIF, FWHM, d, q and stiffness
+constants are explained in context. Chinese and English help follows the main
+window's language setting; the retained PhaseScout downloader uses Chinese.
+
+The [help acceptance record](evidence/gui-help-20261007.md) contains actual
+Windows captures and interaction checks, including the compatibility views.
+
 ## Local CIF analysis
 
 ![Local CIF analysis interface](assets/gui-local.png)
@@ -291,7 +309,8 @@ the desktop, CIF preparation and result-view tests under Xvfb on Linux:
 ```bash
 xvfb-run -a python -c \
   "from diffractscout.gui import create_app; app=create_app(); app.update(); app.destroy()"
-xvfb-run -a pytest -q tests/test_gui.py tests/test_gui_cifs.py tests/test_gui_results.py
+xvfb-run -a pytest -q tests/test_gui.py tests/test_gui_cifs.py \
+  tests/test_gui_results.py tests/test_gui_help.py tests/test_compat_gui_help.py
 ```
 
 The smoke validates import, widget construction, layout initialization, and

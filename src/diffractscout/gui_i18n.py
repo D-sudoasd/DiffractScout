@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Mapping
 
+from .gui_help_text import HELP_TEXT
+
 DEFAULT_LANG = "zh"
 SUPPORTED_LANGS = ("zh", "en")
 
@@ -86,6 +88,8 @@ REQUIRED_KEYS = frozenset(
         "clear_cij",
         "cij_none",
         "cij_status",
+        "cij_warning_symmetry",
+        "cij_warning_condition",
         "activity",
         "copy",
         "clear_log",
@@ -358,6 +362,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "clear_cij": "清除覆盖",
         "cij_none": "当前无用户 Cij 覆盖",
         "cij_status": "Cij：{paths}",
+        "cij_warning_symmetry": "请核对：表格对角线两侧的对应数值不一致，程序已将每对数值取平均。",
+        "cij_warning_condition": "请核对：这些抗变形数值的组合可能放大微小误差，计算结果可能不可靠。",
         "activity": "活动日志",
         "copy": "复制",
         "clear_log": "清空",
@@ -365,7 +371,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "preview_excel": "预览 Excel",
         "save_excel_as": "另存 Excel",
         "open_result_folder": "结果文件夹",
-        "help_preview_excel": "打开结果工作簿的临时副本，避免 Excel 锁文件进入结果包。关闭程序时，未修改的副本会清理；已修改或含有其他文件的副本目录会保留并提示路径。",
         "status_excel_saved": "Excel 副本已保存",
         "log_excel_preview": "临时 Excel 预览：{path}",
         "log_excel_saved": "Excel 副本已保存到：{path}",
@@ -466,11 +471,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "shortcut_30": "30 keV",
         "shortcut_83": "83 keV",
         "shortcut_custom": "自定义",
-        "help_radiation": "单位随模式变化：波长为 Å，能量为 keV；切换不会把数字当作另一种单位。",
-        "help_e_hull": "Eₕᵤₗₗ 上限单位为 eV/atom；near_stable 留空时默认 0.05 eV/atom。",
-        "help_cij": "C11、C12、C44 的单位为 GPa；覆盖值保留到重新启用弹性计算。",
-        "help_pattern_axis": "q=2π/d、g=1/d，单位 Å⁻¹；只影响 CSV/Excel 连续谱线，图件仍使用 2θ。",
-        "help_lab_views": "实验室视图只写入 Excel；关闭 Excel 时此选项不可用。",
     },
     "en": {
         "app_subtitle": "Theoretical powder diffraction · Traceable structures and results",
@@ -627,6 +627,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "clear_cij": "Clear override",
         "cij_none": "No user Cij overrides",
         "cij_status": "Cij: {paths}",
+        "cij_warning_symmetry": "Please check: values mirrored across the table diagonal differed; each pair has been averaged.",
+        "cij_warning_condition": "Please check: this combination of stiffness values can magnify small errors and make results unreliable.",
         "activity": "Activity",
         "copy": "Copy",
         "clear_log": "Clear",
@@ -634,7 +636,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "preview_excel": "Preview Excel",
         "save_excel_as": "Save Excel As",
         "open_result_folder": "Result Folder",
-        "help_preview_excel": "Opens a temporary workbook copy so Excel lock files stay out of the result bundle. Unchanged copies are removed when the app closes; edited copies or folders with extra files are retained and their paths are shown.",
         "status_excel_saved": "Excel copy saved",
         "log_excel_preview": "Temporary Excel preview: {path}",
         "log_excel_saved": "Excel copy saved to: {path}",
@@ -735,11 +736,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "shortcut_30": "30 keV",
         "shortcut_83": "83 keV",
         "shortcut_custom": "Custom",
-        "help_radiation": "The unit follows the mode: wavelength is Å and energy is keV; switching never reinterprets the number in the other unit.",
-        "help_e_hull": "Eₕᵤₗₗ uses eV/atom; leaving near_stable blank uses the explicit default 0.05 eV/atom.",
-        "help_cij": "C11, C12, and C44 use GPa; overrides remain stored when elasticity is disabled.",
-        "help_pattern_axis": "q=2π/d and g=1/d in Å⁻¹; this applies to continuous CSV/Excel profiles, while figures remain on 2θ.",
-        "help_lab_views": "Lab views are written only to Excel; this option is unavailable when Excel output is off.",
     },
 }
 
@@ -751,6 +747,11 @@ def normalize_lang(lang: str | None) -> str:
     if code.startswith("en"):
         return "en"
     return DEFAULT_LANG
+
+
+for _language, _help_messages in HELP_TEXT.items():
+    STRINGS[_language].update(_help_messages)
+REQUIRED_KEYS = REQUIRED_KEYS | frozenset(HELP_TEXT["zh"])
 
 
 def t(lang: str | None, key: str, **fmt: object) -> str:

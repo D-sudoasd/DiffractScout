@@ -1,0 +1,131 @@
+{
+  "capture_method": "Private desktop; PrintWindow captures each specified app-owned HWND only.",
+  "desktop_switch": false,
+  "system_input": false,
+  "F1_keeps_field_focus": true,
+  "help-fwhm-zh.png": {
+    "text": "设置模拟峰有多宽：FWHM 是峰在一半高度处的宽度，单位为度。比如 0.15；调大后峰更宽，峰的位置不变。",
+    "size": [
+      250,
+      67
+    ],
+    "within_window": true
+  },
+  "help-cij-order-zh.png": {
+    "text": "粘贴 6 行、每行 6 个数值，单位 GPa（十亿帕）。行列顺序均为 11、22、33、23、13、12：前三项沿三条轴拉伸，后三项剪切。数字用空格或逗号隔开，再点“应用矩阵”。",
+    "size": [
+      382,
+      67
+    ],
+    "within_window": true
+  },
+  "manual_matrix_warning_visible": true,
+  "help-energy-en.png": {
+    "text": "Enter the instrument's X-ray energy, for example 30 keV. keV means kiloelectronvolts, an energy unit; the program converts it to wavelength to calculate peak positions.",
+    "size": [
+      377,
+      67
+    ],
+    "within_window": true
+  },
+  "help-dropdown-en.png": {
+    "text": "Find only the database IDs you entered, such as mp-23, without searching element combinations. Click Run to download and calculate them.",
+    "selection_unchanged": true,
+    "dispatch": "installed Tcl Motion binding"
+  },
+  "fixture": {
+    "path": "src\\diffractscout\\benchmark_data\\fcc_al.cif",
+    "sha256": "c82f082d2c1ed45c2219713cf972ffce67a7df78d00eb8b953541363c8f0ffdf",
+    "unchanged": true,
+    "phases": 1
+  },
+  "help-young-modulus-zh.png": {
+    "text": "杨氏模量 E(hkl)：垂直于这组原子层拉伸时抵抗变形的能力，单位 GPa（十亿帕）。“—”表示没有可用且坐标匹配的数据；点击排序，再点反向。",
+    "size": [
+      380,
+      67
+    ],
+    "within_window": true
+  },
+  "help-preparation-zh.png": {
+    "text": "选择为已勾选相准备的 JSON 文本数据文件；晶胞（原子排列的重复单元）尺寸和原子坐标需附出处。分析预设不能用在这里；可留空使用起始假设。",
+    "size": [
+      382,
+      67
+    ],
+    "within_window": true
+  },
+  "help-phase-scout-zh.png": {
+    "text": "每个原子的计算能量比相同元素比例下最稳定的材料组合高多少；越小越接近稳定。eV/atom 指每原子的电子伏特能量；电子伏特是微观能量单位。",
+    "size": [
+      382,
+      67
+    ],
+    "within_window": true
+  },
+  "baseline_commit": "4bd0bd8638506ec8db32188479b0af6f5f6beb89",
+  "platform": {
+    "os": "Windows",
+    "python": "3.12.10",
+    "tk": "8.6"
+  },
+  "help_entries": {
+    "main_bilingual": 147,
+    "cif2peaks_bilingual": 57
+  },
+  "compatibility_capture": {
+    "text": "输入6×6 Cij 抗变形数值表，单位 GPa（十亿帕）。行列顺序均为 11、22、33、23、13、12：前三项拉伸，后三项剪切。可逐格填或从表格粘贴。",
+    "size": [
+      382,
+      67
+    ],
+    "registered_controls": 74,
+    "source": "Actual CIF2Peaks _launch_tk_app construction; no export, external app or clipboard action."
+  },
+  "validation": {
+    "initial_affected_suite": {
+      "passed": 118,
+      "failed": 1,
+      "seconds": 44.76
+    },
+    "startup_failure": "Optional tkdnd loader reported an unreadable Tcl file, which was present on disk.",
+    "isolated_failed_case_retry": {
+      "passed": 1,
+      "seconds": 0.77
+    },
+    "final_help_compatibility_contract_checks": {
+      "passed": 14,
+      "seconds": 10.83
+    },
+    "after_manual_warning_refinement": {
+      "passed": 28,
+      "seconds": 13.66
+    },
+    "ruff": "pass",
+    "compile_changed_sources": "pass",
+    "docs": "pass",
+    "native_tcl_dispatch": "Native dropdown Motion and menu callbacks were dispatched in-process; the system pointer was not moved."
+  },
+  "retained_test_bundles": {
+    "initial_cifs_Ti-Al-V_20261007_092954": {
+      "location": "outputs/ui-review-20261007/retained-test-initial_cifs_Ti-Al-V_20261007_092954",
+      "verified_after_move": true
+    },
+    "initial_cifs_Ti-Al-V_20261007_094319": {
+      "location": "outputs/ui-review-20261007/retained-test-initial_cifs_Ti-Al-V_20261007_094319",
+      "verified_after_move": true
+    }
+  },
+  "cleanup": "The private test harness and generated bundles remain ignored; deleting their parent directory was rejected by automatic command approval in the preceding UI delivery.",
+  "screenshots": {
+    "docs/assets/gui-help-fwhm-zh.png": "d8710daefbfadb82e8af8575fa4c712c2aba28a04c29198a55c17a517d445dd2",
+    "docs/assets/gui-help-energy-en.png": "e7ac6cd59030c52659d5529f2abea0b893120f9dc875d486ef7e24752eed39e3",
+    "docs/assets/gui-help-dropdown-en.png": "1f0cc203ce971d9c4db8fe8c99bfc166fde5545afe5fef8418f689a7812213fa",
+    "docs/assets/gui-help-cij-order-zh.png": "0768c355cf6fa1ca00fd84bb94f772a87b9bfd4146762ecddcd72d036af29448",
+    "docs/assets/gui-help-young-modulus-zh.png": "d1710db0a021dd2ceb1c8d89c89d0349eddb185d8f70487b2a3b33057ef3cfc9",
+    "docs/assets/gui-help-preparation-zh.png": "aa63f2cecdde2a4a2cbd07cceb8f09cf40e9f11ea8f5ba9a620979576d3d839f",
+    "docs/assets/gui-help-phase-scout-zh.png": "8a8c763bcad287e74a4704eb308a5dbc1b2bbb26514b16cc0c90b94e90a74fb2",
+    "docs/assets/gui-help-cif2peaks-zh.png": "a4ac60af871851eec45d95eae57e7945c0ffb83ceb382d4f39133c7de2b1c22e",
+    "docs/assets/gui-help-cij-warning-context-zh.png": "d261516af29017830e1bd37ad992202c4b9636c808126139a13f8cd5038f2a28"
+  }
+}

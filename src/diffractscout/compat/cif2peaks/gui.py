@@ -98,11 +98,14 @@ GUI_WORKBENCH_LAYOUT = {
 }
 CIJ_TABLE_SIZE = 6
 GUI_TOOLTIP_KEYS = {
+    "language_toggle": "tooltip_language_toggle",
     "add_files": "tooltip_add_files",
     "add_folder": "tooltip_add_folder",
     "remove_selected": "tooltip_remove_selected",
     "clear_files": "tooltip_clear_files",
     "display_name": "tooltip_display_name",
+    "apply_display_name": "tooltip_apply_display_name",
+    "reset_display_name": "tooltip_reset_display_name",
     "elastic_cubic": "tooltip_elastic_cubic",
     "elastic_matrix": "tooltip_elastic_matrix",
     "elastic_source": "tooltip_elastic_source",
@@ -123,6 +126,35 @@ GUI_TOOLTIP_KEYS = {
     "figure_preset": "tooltip_figure_preset",
     "export_excel": "tooltip_export_excel",
     "open_excel": "tooltip_open_excel",
+    "file_list": "tooltip_cif_list",
+    "preview_tree": "tooltip_preview_table",
+    "activity_list": "tooltip_activity_list",
+}
+GUI_XRAY_TOOLTIP_KEYS = {
+    "Cu Kα": "tooltip_xray_cu_ka",
+    "30 keV": "tooltip_xray_30_kev",
+    "83 keV": "tooltip_xray_83_kev",
+}
+GUI_PATTERN_AXIS_TOOLTIP_KEYS = {
+    "two_theta": "tooltip_axis_two_theta",
+    "d_spacing": "tooltip_axis_d_spacing",
+    "q": "tooltip_axis_q",
+    "g": "tooltip_axis_g",
+}
+GUI_FIGURE_PRESET_TOOLTIP_KEYS = {
+    "publication": "tooltip_figure_publication",
+    "single_column": "tooltip_figure_single_column",
+    "double_column": "tooltip_figure_double_column",
+    "presentation": "tooltip_figure_presentation",
+    "raw_inspection": "tooltip_figure_raw_inspection",
+}
+GUI_PREVIEW_HEADING_TOOLTIP_KEYS = {
+    "display_name": "tooltip_tree_display_name",
+    "formula": "tooltip_tree_formula",
+    "space_group": "tooltip_tree_space_group",
+    "peaks": "tooltip_tree_peaks",
+    "warning": "tooltip_tree_warning",
+    "elastic": "tooltip_tree_elastic",
 }
 GUI_TEXT = {
     "zh": {
@@ -233,28 +265,28 @@ GUI_TEXT = {
         "preview_pending": "待导出",
         "preview_failed": "无法读取",
         "default_output_name": "CIF2Peaks峰表.xlsx",
-        "tooltip_add_files": "选择一个或多个 CIF 文件加入当前批量导出列表。",
-        "tooltip_add_folder": "选择文件夹后自动递归加入其中的 CIF 文件。",
-        "tooltip_remove_selected": "仅从当前列表移除选中的 CIF，不删除磁盘文件。",
-        "tooltip_clear_files": "清空当前 CIF 列表和预览，不删除磁盘文件。",
-        "tooltip_display_name": "为选中的 CIF 设置导出表中的相名；留空则使用文件名。",
-        "tooltip_elastic_cubic": "输入 C11,C12,C44 后点击“填充立方”，自动生成完整 6x6 Cij 表格。",
-        "tooltip_elastic_matrix": "逐格输入 Cij，或从 Excel、Origin、文本中复制完整 6x6 矩阵后粘贴。",
-        "tooltip_elastic_source": "记录该相 Cij 的文献、数据库或备注来源，会写入 Elastic Constants 工作表。",
-        "tooltip_apply_elastic": "校验并把当前 Cij 表格保存到选中的 CIF 相。",
-        "tooltip_clear_elastic": "清除选中 CIF 相已保存的 Cij，不删除 CIF 文件。",
-        "tooltip_paste_elastic": "从剪贴板读取完整 6x6 Cij 矩阵并填入表格。",
-        "tooltip_copy_elastic": "把当前 6x6 Cij 表格复制为制表符分隔文本。",
-        "tooltip_fill_cubic_elastic": "用 C11,C12,C44 生成立方晶系 Cij 矩阵并填入表格。",
-        "tooltip_output_file": "Excel 工作簿保存路径；导出会写入该文件。",
-        "tooltip_choose_output": "选择或更改 Excel 输出位置。",
-        "tooltip_xray_preset": "选择常用 X 射线波长/能量；手动能量非空时优先使用手动值。",
-        "tooltip_manual_energy": "可选，单位 keV；用于同步辐射等非 Cu Kα 条件。",
-        "tooltip_d_range": "可选，只导出指定 d 间距范围内的理论峰。",
-        "tooltip_publication_export": "导出 Excel 的同时，为每个可计算相生成论文级 SVG/PDF/EPS 矢量图和 600 dpi PNG/TIFF 位图。",
-        "tooltip_figure_preset": "选择论文级图的尺寸、DPI、字体和线宽预设；默认 publication 适合论文初稿。",
-        "tooltip_export_excel": "计算理论 XRD 峰表并写入 Excel；若已勾选论文级图，也会同时导出图像文件。",
-        "tooltip_open_excel": "打开最近一次成功导出的 Excel 文件。",
+        "tooltip_add_files": "选择记录原子的重复排列单元和位置的 CIF 文件，加入列表；随后可计算理论衍射峰并导出 Excel 表格。",
+        "tooltip_add_folder": "选择文件夹，将其中及子文件夹里的 CIF 结构文件加入列表，再批量生成 Excel 表格。",
+        "tooltip_remove_selected": "从待处理列表移除选中的结构文件；只移出列表，不删除硬盘上的原文件。",
+        "tooltip_clear_files": "清空当前结构文件列表和预览；只清除窗口中的项目，不删除硬盘上的原文件。",
+        "tooltip_display_name": "为选中的结构设置导出表格中显示的材料名称；留空时自动使用文件名。",
+        "tooltip_elastic_cubic": "C11、C12、C44 是材料抵抗变形数据表中的三项数值。对于三边等长、夹角为90°的立方晶体，输入这三项即可生成完整表格；单位 GPa，1 GPa = 10亿帕。",
+        "tooltip_elastic_matrix": "输入6×6 Cij 抗变形数值表，单位 GPa（十亿帕）。行列顺序均为 11、22、33、23、13、12：前三项拉伸，后三项剪切。可逐格填或从表格粘贴。",
+        "tooltip_elastic_source": "填写这些抗变形数值的出处，如论文、数据库或备注；导出时会保存到 Excel 工作表。",
+        "tooltip_apply_elastic": "检查6×6 Cij 抗变形数值表，再用于选中结构的后续导出。只在当前窗口暂存，原文件不变；退出后需重新填。单位 GPa（十亿帕）。",
+        "tooltip_clear_elastic": "清除选中结构已保存的 Cij 抗变形数据；不删除结构文件。",
+        "tooltip_paste_elastic": "把剪贴板中按行列排列的6×6数值粘贴到表格；数值单位为 GPa（1 GPa = 10亿帕）。",
+        "tooltip_copy_elastic": "把当前6×6数值表复制为可粘贴到 Excel 或文字编辑器的表格；数值单位为 GPa（1 GPa = 10亿帕）。",
+        "tooltip_fill_cubic_elastic": "按立方晶体的规律，用上方 C11、C12、C44 三项抗变形数据自动填写表格其余格；仅适用于立方晶体，单位 GPa（1 GPa = 10亿帕）。",
+        "tooltip_output_file": "显示结果 Excel 表格将保存到哪个文件；导出时会写入此位置。",
+        "tooltip_choose_output": "选择结果 Excel 表格的保存路径和文件名。",
+        "tooltip_xray_preset": "选择一种常用 X 射线条件来计算峰的位置；若下方手动能量已填写，则改用手动数值。",
+        "tooltip_manual_energy": "可选：填写 X 射线能量，单位 keV（能量单位）；填写后会覆盖上方预设。",
+        "tooltip_d_range": "可选：按相邻平行原子层之间的距离 d 筛选理论峰；1 Å = 0.1 纳米。填写下限、上限或两者，留空的一侧不限制。",
+        "tooltip_publication_export": "勾选后，除 Excel 表格外，还会为成功计算的结构保存衍射图：SVG/PDF/EPS 是可放大仍清晰的图像，PNG/TIFF 是像素图（600 dpi，即每英寸600个像素点）。",
+        "tooltip_figure_preset": "选择图像大小、文字和线条样式。dpi 表示每英寸的像素点数，同样大小下数值越高图像越清晰；下拉选项说明了各预设尺寸。",
+        "tooltip_export_excel": "按结构文件计算理论衍射峰，并写入所选 Excel 表格；这些是计算结果，不是实验测量。勾选曲线或图件后，也会另存对应数据表和图像。",
+        "tooltip_open_excel": "打开最近一次成功生成的 Excel 结果表格。",
         "confirm_clear_title": "清空 CIF 列表",
         "confirm_clear_message": "确定清空当前 CIF 列表和预览吗？这不会删除磁盘上的原始文件。",
         "confirm_overwrite_title": "覆盖已有文件",
@@ -368,28 +400,28 @@ GUI_TEXT = {
         "preview_pending": "Ready",
         "preview_failed": "Cannot read",
         "default_output_name": "CIF2Peaks_peak_table.xlsx",
-        "tooltip_add_files": "Choose one or more CIF files for the current batch export.",
-        "tooltip_add_folder": "Choose a folder and add CIF files from it recursively.",
-        "tooltip_remove_selected": "Remove selected CIFs from this list only; source files are not deleted.",
-        "tooltip_clear_files": "Clear the current CIF list and preview; source files are not deleted.",
-        "tooltip_display_name": "Set the phase name used in exported tables; leave blank to use the file name.",
-        "tooltip_elastic_cubic": "Enter C11,C12,C44 and click Fill cubic to generate a full 6x6 Cij table.",
-        "tooltip_elastic_matrix": "Enter Cij cell by cell, or paste a full 6x6 matrix copied from Excel, Origin, or text.",
-        "tooltip_elastic_source": "Record the literature, database, or note source for this phase's Cij; it is exported in the Elastic Constants sheet.",
-        "tooltip_apply_elastic": "Validate and save the current Cij table to the selected CIF phase.",
-        "tooltip_clear_elastic": "Clear the saved Cij for the selected CIF phase without deleting the CIF file.",
-        "tooltip_paste_elastic": "Read a full 6x6 Cij matrix from the clipboard and fill the table.",
-        "tooltip_copy_elastic": "Copy the current 6x6 Cij table as tab-separated text.",
-        "tooltip_fill_cubic_elastic": "Use C11,C12,C44 to generate a cubic Cij matrix and fill the table.",
-        "tooltip_output_file": "Excel workbook path that will be written during export.",
-        "tooltip_choose_output": "Choose or change the Excel output location.",
-        "tooltip_xray_preset": "Select a common X-ray wavelength/energy; manual energy takes priority when filled.",
-        "tooltip_manual_energy": "Optional, in keV; useful for synchrotron conditions or non-Cu Kalpha setups.",
-        "tooltip_d_range": "Optional; export theoretical peaks only within the selected d-spacing range.",
-        "tooltip_publication_export": "Generate publication-style SVG/PDF/EPS vector figures plus 600 dpi PNG/TIFF rasters for each calculable phase alongside the Excel workbook.",
-        "tooltip_figure_preset": "Choose the figure size, DPI, font and line-width preset; publication is the default manuscript draft style.",
-        "tooltip_export_excel": "Calculate theoretical XRD peak tables and write the Excel workbook; if publication figures are enabled, export those image files too.",
-        "tooltip_open_excel": "Open the most recently exported Excel workbook.",
+        "tooltip_add_files": "Choose CIF structure files, which record the unit cell and atom positions. The app can calculate theoretical diffraction peaks and save them in an Excel table.",
+        "tooltip_add_folder": "Choose a folder to add its CIF structure files, including files in subfolders, then make Excel tables in one batch.",
+        "tooltip_remove_selected": "Remove selected structure files from the work list only; the original files stay on disk.",
+        "tooltip_clear_files": "Clear the structure-file list and preview in this window; the original files stay on disk.",
+        "tooltip_display_name": "Set the material name shown for the selected structure in exported tables. Leave blank to use its file name.",
+        "tooltip_elastic_cubic": "C11, C12 and C44 are three values in the material's resistance-to-deformation table. For a cubic crystal (equal cell edges and 90° angles), enter them to fill the table. Unit: GPa (one billion pascals).",
+        "tooltip_elastic_matrix": "Enter the 6×6 Cij stiffness table in GPa (billion pascals). Rows and columns follow 11,22,33,23,13,12: three stretching axes, then three shearing pairs. Fill each cell or paste a table.",
+        "tooltip_elastic_source": "Enter where these resistance values came from, such as a paper, database or note; the source is saved in the Excel workbook.",
+        "tooltip_apply_elastic": "Check the 6×6 Cij stiffness table for exports of the selected structure. Values last only in this window; re-enter them after restarting. Source files stay unchanged. Unit: GPa (billion pascals).",
+        "tooltip_clear_elastic": "Remove the saved Cij resistance-to-deformation data from the selected structure; the structure file is not deleted.",
+        "tooltip_paste_elastic": "Paste a row-and-column table of 36 values from the clipboard into the grid. Unit: GPa (one billion pascals).",
+        "tooltip_copy_elastic": "Copy the 6×6 values as a table that can be pasted into Excel or a text editor. Unit: GPa (one billion pascals).",
+        "tooltip_fill_cubic_elastic": "Use the three resistance values above to fill the remaining cells according to cubic-crystal symmetry. Use only for cubic crystals. Unit: GPa (one billion pascals).",
+        "tooltip_output_file": "Shows where the results Excel table will be saved when you export.",
+        "tooltip_choose_output": "Choose the save location and file name for the results Excel table.",
+        "tooltip_xray_preset": "Choose a common X-ray setting for calculating peak positions. A value entered in Manual energy below takes priority.",
+        "tooltip_manual_energy": "Optional: enter the X-ray energy in keV, a unit of energy. When filled, it overrides the preset above.",
+        "tooltip_d_range": "Optional: filter peaks by d, the distance between neighboring parallel layers of atoms. 1 Å = 0.1 nanometer. Enter a lower limit, an upper limit or both; a blank side is unrestricted.",
+        "tooltip_publication_export": "Also save diffraction figures for each successfully calculated structure: SVG/PDF/EPS stay sharp when enlarged; PNG/TIFF are pixel images saved at 600 dpi (600 pixels per inch). The Excel table is saved too.",
+        "tooltip_figure_preset": "Choose the figure size, text and line style. dpi means pixels per inch; at the same physical size, more pixels give a clearer image. Each preset lists its size.",
+        "tooltip_export_excel": "Calculate theoretical diffraction peaks from the structure files and save them in the selected Excel table; these are calculations, not measurements. If curve data or figures are checked, their data tables and figure images are saved too.",
+        "tooltip_open_excel": "Open the most recently created Excel results table.",
         "confirm_clear_title": "Clear CIF list",
         "confirm_clear_message": "Clear the current CIF list and preview? This will not delete source files from disk.",
         "confirm_overwrite_title": "Overwrite existing file",
@@ -410,9 +442,9 @@ GUI_TEXT["zh"].update(
         "export_peaks": "导出峰位表",
         "export_patterns": "导出XRD谱线",
         "pattern_axis": "谱线 x轴",
-        "tooltip_export_peaks": "导出原有 hkl/d/2θ 峰位表。",
-        "tooltip_export_patterns": "导出每个 CIF 的连续模拟 XRD 谱线 x-y 数据到单独 Excel。",
-        "tooltip_pattern_axis": "选择谱线数据表中 x 列使用 2θ、d、q 或 g。",
+        "tooltip_export_peaks": "把每个理论衍射峰写入 Excel 表格；h、k、l 三个整数标记对应的原子层，表中还列出层间距 d 和角度 2θ（入射与衍射方向的夹角）。这是计算结果，不是实验测量。",
+        "tooltip_export_patterns": "把每个结构的连续理论衍射曲线数据写入单独 Excel 表格：每行包含曲线横坐标和对应强度。",
+        "tooltip_pattern_axis": "选择曲线横坐标：2θ 是入射与衍射方向的夹角；d 是相邻平行原子层的距离（1 Å = 0.1 纳米）；q = 2π/d，g = 1/d。",
     }
 )
 GUI_TEXT["en"].update(
@@ -420,9 +452,81 @@ GUI_TEXT["en"].update(
         "export_peaks": "Export peak table",
         "export_patterns": "Export XRD pattern data",
         "pattern_axis": "Pattern x axis",
-        "tooltip_export_peaks": "Export the hkl/d/2theta peak reference workbook.",
-        "tooltip_export_patterns": "Export continuous simulated XRD x-y profile data for each CIF to a separate Excel workbook.",
-        "tooltip_pattern_axis": "Choose whether the pattern data x column uses 2theta, d, q, or g.",
+        "tooltip_export_peaks": "Save each calculated diffraction peak in an Excel table. The three integers h, k and l identify the atom layers; the table also gives their spacing d and angle 2θ (between incoming and diffracted X-rays). These are calculations, not measurements.",
+        "tooltip_export_patterns": "Save each structure's continuous calculated diffraction curve in a separate Excel table, with one horizontal-axis value and matching intensity per row.",
+        "tooltip_pattern_axis": "Choose the curve's horizontal scale: 2θ is the angle between incoming and diffracted X-rays; d is the distance between parallel atom layers (1 Å = 0.1 nm); q = 2π/d and g = 1/d.",
+    }
+)
+GUI_TEXT["zh"].update(
+    {
+        "tooltip_language_toggle": "切换中文或英文；当前文件列表和已填写的数值会保留。",
+        "tooltip_apply_display_name": "把当前材料名称用于选中结构的预览和导出表格；不会改动原文件名。",
+        "tooltip_reset_display_name": "将选中结构的显示名称恢复为原文件名。",
+        "tooltip_cij_cell": "输入抗变形数据表第 {row} 行、第 {column} 列的数值；单位 GPa（1 GPa = 10亿帕），填满6×6表格后点击保存。",
+        "tooltip_cif_list": "待处理结构文件列表。CIF 文件记录原子的重复排列单元和位置；单击选择，按 Ctrl 或 Shift 多选，双击可编辑显示名称。",
+        "tooltip_cif_list_item": "{name}\n单击选择；双击修改显示名称。\n文件：{path}",
+        "tooltip_file_list_scroll": "上下滚动查看待处理的结构文件。",
+        "tooltip_main_scroll": "拖动滑块查看当前区域未显示的内容；滚动不会改动设置或选择。",
+        "tooltip_tree_resize": "按住列标题之间的分隔线拖动，调整列宽以看清较长的内容。",
+        "tooltip_preview_table": "每行是一个结构文件，显示名称、元素组成、对称规则、理论峰数、问题及抗变形数据状态。",
+        "tooltip_tree_display_name": "该结构在预览和导出表格中显示的材料名称。",
+        "tooltip_tree_formula": "各元素原子数量的最简比例，例如 Ni₃Al 表示镍与铝为 3:1。",
+        "tooltip_tree_space_group": "描述原子排列平移、旋转等后如何重复不变的规则。",
+        "tooltip_tree_peaks": "显示读取状态和计算得到的理论衍射峰数量；理论计算不代表实验测量。",
+        "tooltip_tree_warning": "读取结构文件或计算理论峰时遇到的问题。",
+        "tooltip_tree_elastic": "该结构抵抗拉伸或剪切变形的数据是否已填写并通过检查；单位为 GPa（1 GPa = 10亿帕）。",
+        "tooltip_preview_scroll": "滚动查看预览表格或运行记录；左右滚动可查看表格其它列。",
+        "tooltip_activity_list": "显示添加文件、读取结构和导出结果的进度。",
+        "tooltip_activity_item": "{message}\n运行记录；向上滚动可查看更早的内容。",
+        "tooltip_activity_scroll": "上下滚动查看最近和较早的运行记录。",
+        "tooltip_xray_cu_ka": "使用实验室常见的铜靶 X 射线条件（Cu Kα）计算理论峰的位置。",
+        "tooltip_xray_30_kev": "使用能量为 30 keV 的 X 射线条件计算理论峰；keV 是能量单位。",
+        "tooltip_xray_83_kev": "使用能量为 83 keV 的 X 射线条件计算理论峰；keV 是能量单位。",
+        "tooltip_axis_two_theta": "横坐标显示 X 射线入射与衍射方向之间的角度 2θ，单位为度。",
+        "tooltip_axis_d_spacing": "横坐标显示相邻平行原子层之间的距离 d；1 Å = 0.1 纳米。",
+        "tooltip_axis_q": "横坐标将原子层间距 d 换算为 q = 2π/d；d 是相邻平行原子层间距，1 Å = 0.1 纳米，Å⁻¹ 表示每 Å 的倒数。",
+        "tooltip_axis_g": "横坐标将原子层间距 d 换算为 g = 1/d；d 是相邻平行原子层间距，1 Å = 0.1 纳米，Å⁻¹ 表示每 Å 的倒数。",
+        "tooltip_figure_publication": "论文单栏图，约 8.9 × 6.5 厘米，600 dpi（每英寸600个像素点；同样大小下点数越多越清晰）。",
+        "tooltip_figure_single_column": "单栏图，约 8.5 × 6.0 厘米，600 dpi（每英寸600个像素点；同样大小下点数越多越清晰）。",
+        "tooltip_figure_double_column": "双栏图，约 17.8 × 10.7 厘米，600 dpi（每英寸600个像素点；同样大小下点数越多越清晰）。",
+        "tooltip_figure_presentation": "演示用大图，约 25.4 × 14.2 厘米，300 dpi（每英寸300个像素点；同样大小下点数越多越清晰）。",
+        "tooltip_figure_raw_inspection": "用于检查数据的大字图，约 15.2 × 8.9 厘米，300 dpi（每英寸300个像素点；同样大小下点数越多越清晰）。",
+    }
+)
+GUI_TEXT["en"].update(
+    {
+        "tooltip_language_toggle": "Switch between Chinese and English. The current file list and entered values are kept.",
+        "tooltip_apply_display_name": "Use this material name in the selected structure's preview and exported tables; the original file name is unchanged.",
+        "tooltip_reset_display_name": "Restore the selected structure's display name to its original file name.",
+        "tooltip_cij_cell": "Enter the resistance-to-deformation value at row {row}, column {column}. Unit: GPa (one billion pascals). Fill all 36 cells, then click Save.",
+        "tooltip_cif_list": "Structures waiting to be processed. CIF files record the repeating arrangement of atoms and their positions. Click to select, use Ctrl or Shift for several, or double-click to edit a display name.",
+        "tooltip_cif_list_item": "{name}\nClick to select; double-click to change the display name.\nFile: {path}",
+        "tooltip_file_list_scroll": "Scroll up or down through the structures waiting to be processed.",
+        "tooltip_main_scroll": "Drag the thumb to see more content in this area. Scrolling does not change your settings or selection.",
+        "tooltip_tree_resize": "Drag the line between column headings to resize a column and read longer values.",
+        "tooltip_preview_table": "Each row is one structure file. It shows the name, element ratio, repeating symmetry rule, calculated peak count, issues and deformation-data status.",
+        "tooltip_tree_display_name": "The material name shown for this structure in the preview and exported tables.",
+        "tooltip_tree_formula": "The simplest ratio of atom counts for each element; Ni₃Al means three nickel atoms for every aluminum atom.",
+        "tooltip_tree_space_group": "The rule describing how an atom arrangement repeats after shifts, rotations and related symmetry operations.",
+        "tooltip_tree_peaks": "Shows whether the structure was read and how many diffraction peaks were calculated; calculated peaks are not measurements.",
+        "tooltip_tree_warning": "Problems found while reading the structure file or calculating peaks.",
+        "tooltip_tree_elastic": "Shows whether values describing resistance to stretching or shearing are present and passed checks. Unit: GPa (one billion pascals).",
+        "tooltip_preview_scroll": "Scroll through the preview table or activity log. Scroll sideways to reveal other table columns.",
+        "tooltip_activity_list": "Shows progress while adding files, reading structures and exporting results.",
+        "tooltip_activity_item": "{message}\nActivity log; scroll up to see earlier messages.",
+        "tooltip_activity_scroll": "Scroll up or down through recent and earlier activity messages.",
+        "tooltip_xray_cu_ka": "Use the common laboratory X-ray setting produced by a copper target (Cu Kα) to calculate peak positions.",
+        "tooltip_xray_30_kev": "Use X-rays with an energy of 30 keV to calculate peaks; keV is a unit of energy.",
+        "tooltip_xray_83_kev": "Use X-rays with an energy of 83 keV to calculate peaks; keV is a unit of energy.",
+        "tooltip_axis_two_theta": "Show the angle between the incoming and diffracted X-rays as 2θ, in degrees.",
+        "tooltip_axis_d_spacing": "Show d, the distance between neighboring parallel layers of atoms. 1 Å = 0.1 nanometer.",
+        "tooltip_axis_q": "Convert d to q = 2π/d. Here d is the distance between neighboring parallel layers of atoms; 1 Å = 0.1 nanometer, and Å⁻¹ means per Å.",
+        "tooltip_axis_g": "Convert d to g = 1/d. Here d is the distance between neighboring parallel layers of atoms; 1 Å = 0.1 nanometer, and Å⁻¹ means per Å.",
+        "tooltip_figure_publication": "Manuscript single-column figure, about 8.9 × 6.5 cm, at 600 dpi (600 pixels per inch; more pixels give a sharper image at the same size).",
+        "tooltip_figure_single_column": "Single-column figure, about 8.5 × 6.0 cm, at 600 dpi (600 pixels per inch; more pixels give a sharper image at the same size).",
+        "tooltip_figure_double_column": "Two-column figure, about 17.8 × 10.7 cm, at 600 dpi (600 pixels per inch; more pixels give a sharper image at the same size).",
+        "tooltip_figure_presentation": "Large presentation figure, about 25.4 × 14.2 cm, at 300 dpi (300 pixels per inch; more pixels give a sharper image at the same size).",
+        "tooltip_figure_raw_inspection": "Large-text figure for checking data, about 15.2 × 8.9 cm, at 300 dpi (300 pixels per inch; more pixels give a sharper image at the same size).",
     }
 )
 
@@ -1341,69 +1445,13 @@ def open_export_result(output_path: str | Path, opener: Callable[[str], object] 
         return path.parent
 
 
-class _GuiTooltip:
-    def __init__(self, widget: object, text_factory: Callable[[], str], tk_module: object, delay_ms: int = 450) -> None:
-        self.widget = widget
-        self.text_factory = text_factory
-        self.tk = tk_module
-        self.delay_ms = delay_ms
-        self._after_id: object | None = None
-        self._tip: object | None = None
-        widget.bind("<Enter>", self._schedule, add="+")
-        widget.bind("<Leave>", self._hide, add="+")
-        widget.bind("<ButtonPress>", self._hide, add="+")
-
-    def _schedule(self, _event: object | None = None) -> None:
-        self._cancel()
-        self._after_id = self.widget.after(self.delay_ms, self._show)
-
-    def _cancel(self) -> None:
-        if self._after_id is None:
-            return
-        self.widget.after_cancel(self._after_id)
-        self._after_id = None
-
-    def _show(self) -> None:
-        self._after_id = None
-        if self._tip is not None:
-            return
-        text = self.text_factory()
-        if not text:
-            return
-        x = self.widget.winfo_rootx() + 18
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
-        tip = self.tk.Toplevel(self.widget)
-        tip.wm_overrideredirect(True)
-        tip.wm_geometry(f"+{x}+{y}")
-        label = self.tk.Label(
-            tip,
-            text=text,
-            justify="left",
-            background="#fffff4",
-            foreground=GUI_THEME["text"],
-            relief="solid",
-            borderwidth=1,
-            padx=8,
-            pady=5,
-            wraplength=320,
-        )
-        label.pack()
-        self._tip = tip
-
-    def _hide(self, _event: object | None = None) -> None:
-        self._cancel()
-        if self._tip is None:
-            return
-        self._tip.destroy()
-        self._tip = None
-
-
 def _launch_tk_app(initial_paths: Sequence[str | Path] = ()) -> None:
     import threading
 
     _configure_tcl_tk_environment()
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
+    from ...gui_help import HoverHelp
 
     try:
         from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -1462,11 +1510,11 @@ def _launch_tk_app(initial_paths: Sequence[str | Path] = ()) -> None:
     )
     settings_summary_var = tk.StringVar()
     activity_log_lines: list[str] = []
-    tooltips: list[_GuiTooltip] = []
+    help = HoverHelp(root)
 
     def attach_tooltip(widget: object, role: str) -> None:
         tooltip_key = GUI_TOOLTIP_KEYS[role]
-        tooltips.append(_GuiTooltip(widget, lambda key=tooltip_key: _gui_text(lang(), key), tk))
+        help.add(widget, lambda key=tooltip_key: _gui_text(lang(), key))
 
     def append_activity(message: str) -> None:
         if not message:
@@ -2317,6 +2365,7 @@ def _launch_tk_app(initial_paths: Sequence[str | Path] = ()) -> None:
             drop_hint_var.set(_gui_text(lang(), "drop_unavailable_short"))
 
     def apply_language(refresh_preview: bool = False) -> None:
+        help.hide()
         root.title(_gui_text(lang(), "window_title"))
         workspace_label.configure(text=_gui_text(lang(), "workspace_section"))
         title_label.configure(text=_gui_text(lang(), "app_title"))
@@ -2400,11 +2449,14 @@ def _launch_tk_app(initial_paths: Sequence[str | Path] = ()) -> None:
     refresh_export_control_states(update_status=True)
     open_button.configure(command=open_output_folder)
     for widget, role in (
+        (language_button, "language_toggle"),
         (add_files_button, "add_files"),
         (add_folder_button, "add_folder"),
         (remove_button, "remove_selected"),
         (clear_button, "clear_files"),
         (display_name_entry, "display_name"),
+        (apply_name_button, "apply_display_name"),
+        (reset_name_button, "reset_display_name"),
         (elastic_entry, "elastic_cubic"),
         (fill_cubic_button, "fill_cubic_elastic"),
         (elastic_grid_frame, "elastic_matrix"),
@@ -2427,8 +2479,90 @@ def _launch_tk_app(initial_paths: Sequence[str | Path] = ()) -> None:
         (figure_preset_box, "figure_preset"),
         (export_button, "export_excel"),
         (open_button, "open_excel"),
+        (listbox, "file_list"),
+        (tree, "preview_tree"),
+        (activity_listbox, "activity_list"),
     ):
         attach_tooltip(widget, role)
+
+    for row, entry_row in enumerate(elastic_cell_entries, start=1):
+        for column, cell_entry in enumerate(entry_row, start=1):
+            help.add(
+                cell_entry,
+                lambda row=row, column=column: _gui_text(
+                    lang(), "tooltip_cij_cell", row=row, column=column
+                ),
+            )
+
+    help.add_combobox(
+        preset_box,
+        lambda: _gui_text(lang(), "tooltip_xray_preset"),
+        {
+            label: lambda key=GUI_XRAY_TOOLTIP_KEYS[label]: _gui_text(lang(), key)
+            for label in GUI_XRAY_PRESET_LABELS
+        },
+    )
+    help.add_combobox(
+        pattern_axis_box,
+        lambda: _gui_text(lang(), "tooltip_pattern_axis"),
+        {
+            label: lambda key=GUI_PATTERN_AXIS_TOOLTIP_KEYS[label]: _gui_text(lang(), key)
+            for label in GUI_PATTERN_AXIS_TOOLTIP_KEYS
+        },
+    )
+    help.add_combobox(
+        figure_preset_box,
+        lambda: _gui_text(lang(), "tooltip_figure_preset"),
+        {
+            label: lambda key=GUI_FIGURE_PRESET_TOOLTIP_KEYS[label]: _gui_text(lang(), key)
+            for label in GUI_PUBLICATION_PRESET_LABELS
+        },
+    )
+
+    def cif_list_tooltip(event: object | None) -> str:
+        if event is not None:
+            index = listbox.nearest(getattr(event, "y", 0))
+            if 0 <= index < len(selected_paths):
+                path = selected_paths[index]
+                name = display_names.get(path, path.name).strip() or path.name
+                return _gui_text(lang(), "tooltip_cif_list_item", name=name, path=path)
+        return _gui_text(lang(), "tooltip_cif_list")
+
+    help.add(
+        listbox,
+        lambda: _gui_text(lang(), "tooltip_cif_list"),
+        resolve=cif_list_tooltip,
+    )
+
+    def activity_item_tooltip(event: object | None) -> str:
+        if event is not None:
+            index = activity_listbox.nearest(getattr(event, "y", 0))
+            if 0 <= index < len(activity_log_lines):
+                return _gui_text(lang(), "tooltip_activity_item", message=activity_log_lines[index])
+        return _gui_text(lang(), "tooltip_activity_list")
+
+    help.add(
+        activity_listbox,
+        lambda: _gui_text(lang(), "tooltip_activity_list"),
+        resolve=activity_item_tooltip,
+    )
+    help.add_tree(
+        tree,
+        lambda: _gui_text(lang(), "tooltip_preview_table"),
+        {
+            "__resize__": lambda: _gui_text(lang(), "tooltip_tree_resize"),
+            **{
+                column: lambda key=key: _gui_text(lang(), key)
+                for column, key in GUI_PREVIEW_HEADING_TOOLTIP_KEYS.items()
+            },
+        },
+    )
+    help.add_scrollbars(files_panel, lambda: _gui_text(lang(), "tooltip_file_list_scroll"))
+    help.add_scrollbars(preview_panel, lambda: _gui_text(lang(), "tooltip_preview_scroll"))
+    help.add(tree_scroll, lambda: _gui_text(lang(), "tooltip_preview_scroll"))
+    help.add(tree_x_scroll, lambda: _gui_text(lang(), "tooltip_preview_scroll"))
+    help.add(activity_scroll, lambda: _gui_text(lang(), "tooltip_activity_scroll"))
+    help.add_scrollbars(main_container, lambda: _gui_text(lang(), "tooltip_main_scroll"))
     apply_language()
     refresh_list()
     root.mainloop()
