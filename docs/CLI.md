@@ -4,6 +4,53 @@ The command-line interface uses the same calculation and bundle-verification
 code as the Python API and desktop application. Run `diffractscout --help` for
 the command list or add `--help` to a command for its options.
 
+## JSON interface for external agents
+
+`diffractscout agent` (also `diffractscout-agent`) returns JSON on stdout for
+scientific execution and durable job control. Ordinary commands below remain
+available for interactive shell use.
+
+```bash
+diffractscout agent context
+diffractscout agent schema request
+diffractscout agent plan examples/agent/analyze-local.json
+diffractscout agent run examples/agent/analyze-local.json
+diffractscout agent submit examples/agent/prepare-analyze-tc4.json
+diffractscout agent list
+```
+
+Replace `RUN_ID` with the identity returned by `run`, `submit` or `list`:
+
+```bash
+diffractscout agent status RUN_ID
+diffractscout agent events RUN_ID --after 0 --limit 50
+diffractscout agent result RUN_ID
+diffractscout agent resume RUN_ID
+diffractscout agent cancel RUN_ID
+```
+
+Use `--workspace PATH` before or after the subcommand to select durable history.
+The default is `outputs/agent-workspace` relative to the current directory.
+Requests can be a JSON filename, inline JSON object, or `-` for stdin. File
+paths resolve from the request file; inline/stdin paths resolve from the current
+directory. Missing `output_dir` gets a unique output in the workspace.
+`plan` is local and read-only: check `ready` and `diagnostics` before execution.
+For long work, use `submit`, retain `run_id`, then poll status and incremental
+events. Submission alone is not completion. `resume --foreground` waits for
+recovery instead of starting it in the background.
+
+`result` verifies artifacts by default; use `--table TABLE_NAME --offset 0
+--limit 50` for a table page after discovering available names. `events` returns
+`next_cursor` for the next `--after` and `has_more` for further pages. Errors are
+JSON objects; progress messages use stderr. Exit `0` means the operation
+succeeded, `3` indicates partial work, and `2` indicates an error or unsuccessful
+terminal state. Inspect returned states even when exit `0` is returned.
+
+The [agent pipeline guide](AGENT_PIPELINE.md) covers cancellation, source and
+checkpoint integrity, runtime credentials, bounded batches, MCP and Python
+equivalents. [Offline requests](../examples/agent/README.md) are runnable from
+the checkout without a database key.
+
 ## Start with a complete offline run
 
 ```bash

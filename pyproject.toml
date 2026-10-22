@@ -43,6 +43,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = ["mcp>=2.3,<3"]
 complete = [
   "mp-api>=0.43,<0.46; python_version < '3.11'",
   "mp-api>=0.43; python_version >= '3.11'",
@@ -85,6 +86,8 @@ paper = [
 
 [project.scripts]
 diffractscout = "diffractscout.cli:main"
+diffractscout-agent = "diffractscout.agent_cli:main"
+diffractscout-mcp = "diffractscout.mcp_server:main"
 diffractscout-quick-export = "diffractscout.quick_export:main"
 diffractscout-compat = "diffractscout.compat.launcher:main"
 

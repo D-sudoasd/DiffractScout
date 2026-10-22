@@ -9,6 +9,7 @@ and [Chinese README](../README.zh-CN.md) cover installation and first use.
 | Use the desktop application | [GUI](GUI.md) |
 | Read or save Excel results | [Excel](EXCEL.md) |
 | Call the Python API | [API](API.md) |
+| Execute scientific jobs from an external agent, resume work or connect MCP | [Agent pipeline](AGENT_PIPELINE.md), [offline requests](../examples/agent/README.md) |
 | Interpret equations, units, assumptions and limits | [Scientific contracts](SCIENTIFIC_CONTRACTS.md) |
 | Understand field aliases and engine differences | [Schema aliases](SCHEMA_ALIASES.md), [engine parity](ENGINE_PARITY.md) |
 | Make a code or documentation change | [Contributing](../CONTRIBUTING.md), [agent workflow](AGENT_WORKFLOW.md), [project instructions](../AGENTS.md) |

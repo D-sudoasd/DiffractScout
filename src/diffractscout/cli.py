@@ -208,6 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"diffractscout {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    agent = subparsers.add_parser("agent", help="JSON workflow and durable job commands.")
+    agent.add_argument("agent_args", nargs=argparse.REMAINDER)
+
     analyze = subparsers.add_parser("analyze", help="Analyze local CIF files or directories.")
     analyze.add_argument("inputs", nargs="+", help="CIF files or directories.")
     analyze.add_argument("-o", "--output", required=True)
@@ -377,6 +380,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     configure_cli_output()
     effective = list(sys.argv[1:] if argv is None else argv)
+    if effective and effective[0] == "_agent-worker":
+        from .workflow.worker import main as worker_main
+
+        return worker_main(effective[1:])
+    if effective and effective[0] == "agent":
+        from .agent_cli import main as agent_main
+
+        return agent_main(effective[1:])
     if effective and effective[0] == "compat":
         from .compat.launcher import main as compat_main
 

@@ -11,8 +11,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
-import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -27,10 +25,8 @@ from .gui_theme import (
     TEAL, TEAL_DARK, TEXT, configure_styles,
 )
 from .models import AnalysisSettings, DiscoverySettings, ElasticTensor, PipelineResult
-from .pipeline import analyze_cifs, run_pipeline
-from .providers.materials_project import MaterialsProjectProvider
 from .selection import validate_discovery_settings
-from .utils import sha256_file
+from .utils import sha256_file, to_jsonable
 
 try:  # Tk remains optional on minimal/headless Python installations.
     import tkinter as tk
@@ -267,7 +263,6 @@ if tk is not None:
             self.lang = DEFAULT_LANG
             self.events: queue.Queue[tuple[str, object]] = queue.Queue()
             self.running = False
-            self._worker_thread: threading.Thread | None = None
             # Each preview records its directory, workbook path, and SHA-256
             # at creation. Changed previews are retained when the GUI closes.
             self._preview_dirs: list[tuple[Path, Path, str]] = []
@@ -381,7 +376,7 @@ if tk is not None:
             ):
                 self._add_hover_help(widget, key)
             self.help.add_notebook(self.notebook, [lambda k=k: self._t(k) for k in
-                                  ("help_tab_local", "help_tab_mp", "help_tab_results")])
+                                  ("help_tab_local", "help_tab_mp", "help_tab_results", "help_tab_tasks")])
             self.help.add(self._main_paned, lambda: self._t("help_resize_log"),
                           resolve=lambda event: self._t("help_resize_log") if event is None
                           or self._main_paned.identify(event.x, event.y) != "" else "")
@@ -529,6 +524,7 @@ if tk is not None:
                 self,
                 language=self.lang,
                 on_load=self._load_prepared_inputs,
+                workspace=self.tasks_view.workspace_path(),
             )
 
         def _load_prepared_inputs(self, paths: list[Path]) -> None:
@@ -608,7 +604,14 @@ if tk is not None:
 
             self.results_view = ResultView(notebook, translate=self._t)
             notebook.add(self.results_view, text=self._t("tab_results"))
-            self._notebook_tabs = [(0, "tab_local"), (1, "tab_mp"), (2, "tab_results")]
+            from .gui_tasks import TasksView
+
+            self.tasks_view = TasksView(
+                notebook, translate=self._t, on_result=self._show_task_result,
+                api_key=lambda: self.mp_key.get().strip(), help_view=self.help,
+            )
+            notebook.add(self.tasks_view, text=self._t("tab_tasks"))
+            self._notebook_tabs = [(0, "tab_local"), (1, "tab_mp"), (2, "tab_results"), (3, "tab_tasks")]
             self._build_local_tab(local)
             self._build_mp_tab(mp)
             self._build_activity_panel(activity_host)
@@ -1645,6 +1648,7 @@ if tk is not None:
             for section in self._disclosures:
                 self._label_disclosure(section)
             self.results_view.refresh_language()
+            self.tasks_view.refresh_language()
             self._refresh_status_text()
             self._refresh_inputs()
             self._refresh_cij_status()
@@ -2299,18 +2303,13 @@ if tk is not None:
             include_excel = bool(self.include_excel.get())
             overwrite = bool(self.overwrite.get())
             label = self._t("analyze_local") if hasattr(self, "_t") else "Analyze selected CIFs"
-            self._start_task(
-                label,
-                lambda: analyze_cifs(
-                    inputs,
-                    output,
-                    settings=settings,
-                    recursive=recursive,
-                    include_excel=include_excel,
-                    overwrite=overwrite,
-                    elastic_overrides=overrides,
-                ),
-            )
+            self._submit_workflow({
+                "schema": "diffractscout_workflow_v1", "workflow": "analyze", "name": label,
+                "inputs": inputs, "output_dir": str(Path(output).expanduser().resolve()),
+                "analysis": to_jsonable(settings), "elastic_overrides": to_jsonable(overrides or {}),
+                "exports": {"include_excel": include_excel, "template": "full"},
+                "execution": {"recursive": recursive, "overwrite": overwrite},
+            })
 
         def _run_mp(self) -> None:
             if self.running:
@@ -2346,44 +2345,30 @@ if tk is not None:
             include_excel = bool(self.include_excel.get())
             overwrite = bool(self.overwrite.get())
 
-            def run() -> PipelineResult:
-                provider = MaterialsProjectProvider(api_key)
-                return run_pipeline(
-                    composition,
-                    provider,
-                    output,
-                    discovery_settings=discovery,
-                    analysis_settings=analysis,
-                    conventional_unit_cell=conventional,
-                    include_elasticity=analysis.include_elasticity,
-                    include_excel=include_excel,
-                    overwrite=overwrite,
-                    confirm_above=limit,
-                    authorize_large_download=True,
-                )
+            self._submit_workflow({
+                "schema": "diffractscout_workflow_v1", "workflow": "run", "name": self._t("run_mp"),
+                "composition": composition, "output_dir": str(Path(output).expanduser().resolve()),
+                "analysis": to_jsonable(analysis), "discovery": to_jsonable(discovery),
+                "exports": {"include_excel": include_excel, "template": "full"},
+                "execution": {"conventional_unit_cell": conventional, "overwrite": overwrite,
+                              "confirm_above": limit, "authorize_large_download": True},
+            }, api_key=api_key)
 
-            self._start_task(self._t("run_mp"), run)
+        def _submit_workflow(self, request: dict, *, api_key: str | None = None) -> None:
+            self.tasks_view.submit(request, api_key=api_key)
+            self.notebook.select(self.tasks_view)
+            self._log(self._t("tasks_submitting"))
 
-        def _start_task(self, label: str, function: Callable[[], PipelineResult]) -> None:
-            self.running = True
-            self._set_status("status_busy", label=label)
-            self.progress.pack(side="right", before=self._status_actions, padx=(6, 12), pady=8)
-            self.progress.start(12)
-            DiffractScoutApp._update_open_button_state(self)
-            for button in self._run_buttons:
-                button.configure(state="disabled")
-            self._refresh_readiness()
-            self._log(self._t("log_started", label=label), "info")
-            for button in self._result_buttons + self._preset_buttons:
-                button.configure(state="disabled")
-            self._worker_thread = threading.Thread(target=self._worker, args=(function,), daemon=False)
-            self._worker_thread.start()
+        def _show_task_result(self, result: Any) -> None:
+            if isinstance(result, PipelineResult):
+                # Reuse the established result rendering and diagnostic summary.
+                self.events.put(("done", result))
+            else:
+                from .gui_cifs import InitialCifDialog
 
-        def _worker(self, function: Callable[[], PipelineResult]) -> None:
-            try:
-                self.events.put(("done", function()))
-            except Exception as exc:  # pragma: no cover - thread/UI path
-                self.events.put(("error", (exc, traceback.format_exc())))
+                dialog = InitialCifDialog(self, language=self.lang, on_load=self._load_prepared_inputs,
+                                          workspace=self.tasks_view.workspace_path())
+                dialog._show_result(result)
 
         def _finish_task(self) -> None:
             self.running = False
@@ -2644,15 +2629,6 @@ if tk is not None:
                 messagebox.showerror(self._t("err_save_excel"), str(exc))
 
         def _on_close(self) -> None:
-            if self.running or (self._worker_thread is not None and self._worker_thread.is_alive()):
-                # Do not destroy a live controller or rely on daemon-thread
-                # truncation. The worker owns a transactional pipeline and
-                # will publish a safe boundary through the event queue.
-                messagebox.showinfo(
-                    self._t("msg_close_title"),
-                    self._t("msg_close_running"),
-                )
-                return
             retained = self._cleanup_preview_dirs()
             if retained:
                 paths = "\n".join(str(path) for path in retained)

@@ -39,8 +39,8 @@ to Chinese.
 
 ## Layout and scrolling
 
-The workbench separates **Local CIF analysis**, **Materials Project**, and
-**Analysis results**. Common radiation, scan-range and export controls appear
+The workbench separates **Local CIF analysis**, **Materials Project**,
+**Tasks**, and **Analysis results**. Common radiation, scan-range and export controls appear
 first. **Profile and d-spacing**, **Resource limits**, and **Cij** settings expand
 on demand; collapsing them retains their values. Chinese and English choices
 map to the same canonical settings used by the CLI and API.
@@ -89,6 +89,39 @@ scrolling for long paths. Selecting one input displays its complete path.
 Language changes retain the input selection and all calculation settings.
 
 Duplicate input paths are removed. Only readable files with the `.cif` extension enter the calculation. Selecting `Replace an existing verified DiffractScout bundle` authorizes replacement only when the existing directory contains a supported manifest and currently passes the bundle-integrity check.
+
+## Task history and recovery
+
+![Chinese Tasks page at the minimum client size](assets/gui-tasks-zh.png)
+
+The screenshot uses synthetic history to illustrate the task controls; an
+[English capture](assets/gui-tasks-en.png) is also available.
+
+Open **Tasks / 任务** to see scientific jobs saved by the desktop, JSON CLI,
+Python service or local MCP server. Choose the same **Workspace / 工作区** used
+by the caller; the default is `outputs/agent-workspace` relative to the launch
+directory. Changing the workspace changes the displayed history.
+
+- **Import request / 导入请求** selects a workflow JSON file and submits it.
+  Paths in that file resolve from its own directory. The
+  [offline requests](../examples/agent/README.md) provide working examples.
+- **Refresh / 刷新** rereads saved jobs. The page also refreshes while open;
+  selecting a row shows its state, stage, item counts, diagnostics and events.
+- **Resume / 继续** continues an eligible unfinished job after its reported
+  problem has been resolved. The service checks source/checkpoint integrity
+  before reusing completed work. Supply a runtime database key again if needed.
+- **Cancel / 取消** requests a stop at a safe operation boundary. Completed
+  evidence is retained; the current network or calculation operation may finish
+  before the state changes.
+- **Open result / 打开结果** verifies a completed or partial output, then opens
+  its result view when available. Prototype-fetch and CIF-adaptation jobs show
+  their artifact summary. Read partial-job diagnostics before scientific use.
+
+Closing and reopening the application retains history in the workspace. If the
+worker is interrupted, select its recorded job and resume it; do not remove lock
+files or edit checkpoints. A submission message means the job has been saved,
+and the state must reach completion before the result is ready. Details of
+states and the shared service are in the [agent pipeline guide](AGENT_PIPELINE.md).
 
 ## Reuse analysis settings
 

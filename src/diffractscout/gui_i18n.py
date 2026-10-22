@@ -749,6 +749,57 @@ def normalize_lang(lang: str | None) -> str:
     return DEFAULT_LANG
 
 
+_TASK_STRINGS = (
+    ("tab_tasks", "任务", "Tasks"),
+    ("tasks_workspace", "任务文件夹", "Task workspace"),
+    ("tasks_choose", "选择…", "Choose…"),
+    ("tasks_import", "导入任务 JSON", "Import job JSON"),
+    ("tasks_refresh", "刷新", "Refresh"),
+    ("tasks_resume", "恢复", "Resume"),
+    ("tasks_cancel", "取消任务", "Cancel task"),
+    ("tasks_open", "核验并打开", "Verify and open"),
+    ("tasks_folder", "结果文件夹", "Open folder"),
+    ("tasks_name", "名称 / 任务 ID", "Name / run ID"),
+    ("tasks_state", "状态", "State"),
+    ("tasks_stage", "当前步骤", "Stage"),
+    ("tasks_counts", "完成 / 总数", "Done / total"),
+    ("tasks_missing", "需要补齐", "Missing requirements"),
+    ("tasks_output_dir", "结果位置", "Result location"),
+    ("tasks_integrity", "完整性", "Integrity"),
+    ("tasks_coverage", "完成范围", "Coverage"),
+    ("tasks_counters", "实际操作数量", "Operation counts"),
+    ("tasks_elapsed_seconds", "用时（秒）", "Elapsed seconds"),
+    ("tasks_tables", "结果表格", "Result tables"),
+    ("task_stage_planning", "检查请求", "Planning"),
+    ("task_stage_snapshot", "保存输入副本", "Snapshot inputs"),
+    ("task_stage_discovery", "查询结构", "Discover structures"),
+    ("task_stage_download", "下载结构", "Download structures"),
+    ("task_stage_preparation", "准备初始 CIF", "Prepare initial CIFs"),
+    ("task_stage_analysis", "计算衍射", "Analyze diffraction"),
+    ("task_stage_export", "导出结果", "Export results"),
+    ("task_stage_verification", "核验结果", "Verify results"),
+    ("task_stage_fetch", "获取原型", "Fetch prototypes"),
+    ("task_stage_adapt", "调整结构", "Adapt structure"),
+    ("tasks_hint", "关闭窗口后任务继续运行。重启后选择同一任务文件夹即可查看记录。", "Tasks continue after closing. Choose this workspace after restart to view history."),
+    ("tasks_submitting", "正在提交任务…", "Submitting task…"),
+    ("tasks_saved", "已保存任务：{run_id}", "Task saved: {run_id}"),
+    ("tasks_verified", "结果已核验：{run_id}", "Results verified: {run_id}"),
+    ("tasks_error", "任务操作失败：{error}", "Task operation failed: {error}"),
+    ("task_state_pending", "等待运行", "Pending"),
+    ("task_state_running", "运行中", "Running"),
+    ("task_state_cancelling", "取消中", "Cancelling"),
+    ("task_state_cancelled", "已取消", "Cancelled"),
+    ("task_state_interrupted", "已中断", "Interrupted"),
+    ("task_state_blocked", "等待补齐条件", "Blocked"),
+    ("task_state_completed", "已完成", "Completed"),
+    ("task_state_partial", "部分完成", "Partial"),
+    ("task_state_failed", "失败", "Failed"),
+)
+for _key, _zh, _en in _TASK_STRINGS:
+    STRINGS["zh"][_key] = _zh
+    STRINGS["en"][_key] = _en
+REQUIRED_KEYS = REQUIRED_KEYS | frozenset(key for key, _zh, _en in _TASK_STRINGS)
+
 for _language, _help_messages in HELP_TEXT.items():
     STRINGS[_language].update(_help_messages)
 REQUIRED_KEYS = REQUIRED_KEYS | frozenset(HELP_TEXT["zh"])

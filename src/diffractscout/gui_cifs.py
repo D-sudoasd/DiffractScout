@@ -6,6 +6,7 @@ import os
 import queue
 import re
 import threading
+import time
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -112,11 +113,30 @@ def prepare_kwargs_from_form(
 
 
 def _prepare_cifs(**kwargs: Any) -> Any:
-    """Import the optional workflow only when a user starts the operation."""
+    """Submit a durable job; this thread only observes the independent worker."""
 
-    from .initial_cifs import prepare_cifs
+    from .gui_tasks import workflow_api, ACTIVE_STATES
+    from .utils import to_jsonable
 
-    return prepare_cifs(**kwargs)
+    options = dict(kwargs)
+    workspace = options.pop("_workspace", None)
+    api_key = options.pop("api_key", None)
+    composition = options.pop("composition")
+    output_dir = options.pop("output_dir")
+    api = workflow_api()
+    request = api.WorkflowRequest.from_dict({
+        "schema": "diffractscout_workflow_v1", "workflow": "prepare",
+        "composition": composition, "output_dir": str(output_dir),
+        "preparation": to_jsonable(options),
+    })
+    status = api.submit_job(request, workspace=workspace, api_key=api_key)
+    run_id = status["run_id"]
+    while status["state"] in ACTIVE_STATES:
+        time.sleep(0.5)
+        status = api.status_job(run_id, workspace=workspace)
+    if status["state"] not in {"completed", "partial"}:
+        raise RuntimeError(f"{run_id}: {status['state']}\n{status.get('diagnostics', [])}")
+    return api.load_result_object(run_id, workspace=workspace)
 
 
 def _worker_run(
@@ -153,6 +173,7 @@ if tk is not None:
             language: str = "zh",
             on_load: Callable[[list[Path]], Any] | None = None,
             on_close: Callable[[], Any] | None = None,
+            workspace: str | Path | None = None,
         ) -> None:
             super().__init__(master)
             self.ui_font = configure_styles(self)
@@ -160,6 +181,7 @@ if tk is not None:
             self.lang = "en" if str(language).lower() == "en" else "zh"
             self._on_load = on_load
             self._on_close = on_close
+            self._workspace = workspace
             self._closed = False
             self._events: queue.Queue[tuple[str, object]] = queue.Queue()
             self._after_id: str | None = None
@@ -669,7 +691,8 @@ if tk is not None:
             self.progress.start(12)
             self._set_status(self._t("running"))
             thread = threading.Thread(
-                target=_worker_run, args=(kwargs, self._events), daemon=True, name="initial-cif-worker"
+                target=_worker_run, args=({**kwargs, "_workspace": self._workspace}, self._events),
+                daemon=True, name="initial-cif-monitor"
             )
             thread.start()
             self._schedule_poll()

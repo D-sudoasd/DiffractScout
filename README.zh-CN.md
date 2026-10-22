@@ -6,7 +6,7 @@
 
 **从本地 CIF 或化学体系检索出发，生成带来源、诊断和校验清单的理论衍射参考。**
 
-[图形界面与安装](#图形界面) · [CLI](docs/CLI.md) · [科研约定](docs/SCIENTIFIC_CONTRACTS.md) · [英文主页](README.md)
+[图形界面与安装](#图形界面) · [CLI](docs/CLI.md) · [外部 agent](docs/AGENT_PIPELINE.md) · [科研约定](docs/SCIENTIFIC_CONTRACTS.md) · [英文主页](README.md)
 
 [![CI](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/License-MIT-455A64)](LICENSE) [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10--3.13-3776AB)](pyproject.toml)
 
@@ -50,6 +50,27 @@ macOS 桌面不作为支持目标。命令行输出统一为 UTF-8，重定向�
 *Local CIFs or database candidate structures retain identity, radiation settings and diagnostics in theoretical reference bundles. Structures and peaks are conceptual and do not establish experimental phase identification.*
 
 [查看完整示意图 / View full-size schematic](assets/readme/principle.png)
+
+## 外部 agent 科研工作流
+
+JSON CLI、Python 工作流服务和可选的本地 stdio MCP 共用持久任务记录，
+桌面“任务”页可查看同一工作区。外部 agent 提供科研参数后，可规划已有的候选
+检索、CIF 准备与显式修改、理论衍射、弹性和导出流程，再提交长任务、查看进度、
+恢复中断项目并读取经过完整性校验的结果。
+
+```bash
+diffractscout agent context
+diffractscout agent plan examples/agent/analyze-local.json
+diffractscout agent run examples/agent/analyze-local.json
+diffractscout agent list
+```
+
+基础安装即可离线运行以上示例。长任务使用 `submit`，保留返回的 `run_id`，再用
+`status`、`events` 和 `result` 查看状态与结果。参见
+[完整说明](docs/AGENT_PIPELINE.md)、[可运行请求](examples/agent/README.md) 和
+[项目工作流技能](.agents/skills/diffractscout-agent-pipeline/SKILL.md)。需要连接 MCP
+客户端时安装 `.[mcp]`；数据库密钥只在运行时提供。此入口不包含内部大模型或实验
+谱线拟合；理论计算和原型起始模型的科研边界沿用现有约定。
 
 ## 主要工作流
 
@@ -192,6 +213,7 @@ Remove-Item Env:MP_API_KEY
 |---|---|---|
 | base | `python -m pip install -e .` | 离线本地 CIF、CLI/API、合成演示和校验 |
 | `mp` | `python -m pip install -e ".[mp]"` | Materials Project 检索/下载和可选 provider 元数据；需要自己的 API 密钥 |
+| `mcp` | `python -m pip install -e ".[mcp]"` | 通过本地 stdio MCP 连接共用的持久科研任务服务 |
 | `figures` | `python -m pip install -e ".[figures]"` | 可选 matplotlib 渲染路径和论文制图工具 |
 | `gui-dnd` | `python -m pip install -e ".[gui-dnd]"` | 可选 `tkinterdnd2` 文件/文件夹拖放；没有它仍可使用按钮式 GUI |
 | `test` | `python -m pip install -e ".[test]"` | pytest、覆盖率、Ruff、YAML 支持和开发检查 |

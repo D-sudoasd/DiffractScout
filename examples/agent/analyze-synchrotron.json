@@ -1,0 +1,17 @@
+{
+  "schema": "diffractscout_workflow_v1",
+  "workflow": "analyze",
+  "name": "Offline synthetic reference at 83 keV",
+  "inputs": ["../demo_cifs/synthetic_fcc_al.cif"],
+  "experiment": "synchrotron",
+  "analysis": {
+    "input_mode": "energy",
+    "energy_keV": 83.0,
+    "two_theta_min_deg": 0.5,
+    "two_theta_max_deg": 15.0,
+    "step_deg": 0.005,
+    "fwhm_deg": 0.03,
+    "include_elasticity": false
+  },
+  "exports": {"include_excel": true, "template": "peak_table"}
+}
