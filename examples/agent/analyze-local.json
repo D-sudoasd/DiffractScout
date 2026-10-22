@@ -1,0 +1,15 @@
+{
+  "schema": "diffractscout_workflow_v1",
+  "workflow": "analyze",
+  "name": "Offline synthetic FCC reference",
+  "inputs": ["../demo_cifs/synthetic_fcc_al.cif"],
+  "experiment": "laboratory",
+  "analysis": {
+    "input_mode": "source",
+    "source_preset": "Cu Ka",
+    "two_theta_min_deg": 5.0,
+    "two_theta_max_deg": 100.0,
+    "include_elasticity": true
+  },
+  "exports": {"include_excel": true, "template": "full"}
+}

@@ -6,7 +6,7 @@
 
 **Turn local CIF structures or a chemical-system query into theoretical diffraction references with verifiable provenance.**
 
-[Install and GUI](#graphical-interface) · [CLI guide](docs/CLI.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [中文说明](README.zh-CN.md)
+[Install and GUI](#graphical-interface) · [CLI guide](docs/CLI.md) · [External agents](docs/AGENT_PIPELINE.md) · [Scientific contracts](docs/SCIENTIFIC_CONTRACTS.md) · [中文说明](README.zh-CN.md)
 
 [![CI](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml/badge.svg)](https://github.com/D-sudoasd/DiffractScout/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/License-MIT-455A64)](LICENSE) [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10--3.13-3776AB)](pyproject.toml)
 
@@ -95,6 +95,30 @@ patterns, sortable peak tables and filtered diagnostics. The screenshots are
 illustrative and may show English even when a fresh launch starts in Chinese.
 
 On Windows, double-click `启动DiffractScout.bat` after an editable install, or drag CIF files onto `quick_export_diffractscout.bat` for a one-shot lab export. Both repository launchers are source-checkout convenience entry points: they run the checkout source through `scripts/diffractscout_entry.py` and prefer the repository `.venv\Scripts\python.exe`, then the current/active `python`, then `py -3`. The quick-export launcher also uses an installed `diffractscout-quick-export` command when `.venv` is absent. Installed `diffractscout-gui` / `diffractscout gui` / `diffractscout-quick-export` do not require the repository launchers.
+
+## External-agent workflows
+
+The JSON CLI, Python workflow service and optional local stdio MCP adapter share
+durable jobs with the desktop **Tasks / 任务** page. An external agent can plan
+existing discovery, CIF preparation/adaptation, theoretical diffraction,
+elasticity and export workflows, submit long work, inspect progress, resume
+interrupted items and read verified results.
+
+```bash
+diffractscout agent context
+diffractscout agent plan examples/agent/analyze-local.json
+diffractscout agent run examples/agent/analyze-local.json
+diffractscout agent list
+```
+
+These examples work offline after the base installation. For a long job, use
+`submit` and follow its `run_id` with `status`, `events` and `result`. See the
+[agent pipeline guide](docs/AGENT_PIPELINE.md),
+[runnable requests](examples/agent/README.md) and
+[project workflow skill](.agents/skills/diffractscout-agent-pipeline/SKILL.md).
+Install `.[mcp]` only when connecting an MCP client. Database credentials remain
+runtime inputs; the service does not contain an internal LLM or experimental
+pattern-fitting engine.
 
 ## CIF2Peaks parity features
 
@@ -250,6 +274,7 @@ in the [CLI guide](docs/CLI.md).
 |---|---|---|
 | base | `python -m pip install -e .` | Offline local CIF analysis, CLI/API, synthetic demo and verification |
 | `mp` | `python -m pip install -e ".[mp]"` | Materials Project discovery/download and optional provider metadata; requires your own API key |
+| `mcp` | `python -m pip install -e ".[mcp]"` | Optional local stdio MCP tools for the shared durable scientific workflow service |
 | `figures` | `python -m pip install -e ".[figures]"` | Optional matplotlib rendering path and paper-figure tooling |
 | `gui-dnd` | `python -m pip install -e ".[gui-dnd]"` | Optional `tkinterdnd2` file/folder drag-and-drop; button-based GUI use remains available without it |
 | `test` | `python -m pip install -e ".[test]"` | Pytest, coverage, Ruff, YAML support, and development checks |

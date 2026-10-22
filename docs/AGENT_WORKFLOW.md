@@ -45,11 +45,11 @@ python -m diffractscout benchmark -o "outputs/dev-benchmark-$runId"
 
 ## 项目技能的入口
 
-本仓库提供一个具体工作流：[$diffractscout-cif-reference](../.agents/skills/diffractscout-cif-reference/SKILL.md)。例如：“用这个 CIF 生成 Cu Kα、5–120° 的理论峰表，导出 Excel，并核验来源与单位。”
+本仓库提供两个科研执行技能：[$diffractscout-cif-reference](../.agents/skills/diffractscout-cif-reference/SKILL.md) 用于本地 CIF 的直接峰表与 Excel 导出，例如：“用这个 CIF 生成 Cu Kα、5–120° 的理论峰表，导出 Excel，并核验来源与单位。”[$diffractscout-agent-pipeline](../.agents/skills/diffractscout-agent-pipeline/SKILL.md) 用于通过共用持久任务服务执行检索、CIF 准备、理论分析、恢复与结果核验；外部调用说明见 [agent pipeline](AGENT_PIPELINE.md)。
 
 技能位于 Codex 支持的 `.agents/skills/` 仓库目录。其他 agent 可直接读取对应 `SKILL.md`。无需复制到全局技能库或修改全局模型设置；如果当前会话尚未显示新技能，可直接指定文件，或重新打开项目会话检查发现结果。
 
-技能复用现有 CLI 和校验工具；详细公式链接到科学约定。只在本地 CIF 导出与核验时触发。新增技能应解决一个真实重复流程，保持名称和描述短而明确，避免把通用编码任务吸入科研导出流程。
+技能复用现有 CLI、工作流服务和校验工具；详细公式链接到科学约定。按科研请求选择直接导出或持久任务流程，不对普通代码修改触发。新增技能应解决一个真实重复流程，保持名称和描述短而明确，避免把通用编码任务吸入科研导出流程。
 
 ## 完成标准与规则回归
 

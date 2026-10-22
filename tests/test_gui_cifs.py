@@ -402,6 +402,7 @@ def test_offline_tc4_runs_real_service_through_gui_and_loads_cifs(
     loaded: list[tuple[list[Path], int]] = []
     root, dialog = _make_hidden_dialog(
         language="zh",
+        workspace=tmp_path / "workspace",
         on_load=lambda paths: loaded.append((paths, threading.get_ident())),
     )
     try:

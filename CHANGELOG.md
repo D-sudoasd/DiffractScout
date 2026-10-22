@@ -6,6 +6,13 @@ All notable changes are recorded here. The project follows semantic versioning a
 
 ### Added
 
+- Durable scientific jobs shared by the JSON `agent` CLI, Python workflow
+  service, optional local stdio MCP tools and bilingual desktop Tasks page.
+  Supports existing discovery, CIF preparation/adaptation, diffraction,
+  elasticity and exports with planning, progress events, bounded batches,
+  source/checkpoint integrity checks, recovery and cooperative cancellation.
+  Includes offline request examples and a project scientific-workflow skill.
+
 - Contextual help throughout the main desktop, initial CIF preparation,
   results and retained workbenches. Delayed hover, keyboard focus and F1
   explain actions, drop-down choices, units and table headings in plain

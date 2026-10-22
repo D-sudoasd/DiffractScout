@@ -2191,6 +2191,7 @@ def analyze_cifs(
     include_excel: bool = True,
     overwrite: bool = False,
     elastic_overrides: Mapping[str, ElasticTensor] | None = None,
+    _execution: Any = None,
 ) -> PipelineResult:
     settings = settings or AnalysisSettings()
     validate_analysis_settings(settings)
@@ -2217,7 +2218,10 @@ def analyze_cifs(
             )
             for path in paths
         ]
-        analyses, diagnostics = _analyze_paths(copied, settings)
+        runner = _execution.analyze_paths if _execution is not None else _analyze_paths
+        analyses, diagnostics = runner(copied, settings)
+        if _execution is not None:
+            _execution.before_export(diagnostics)
         export_result_bundle(
             staging,
             analyses=analyses,
@@ -2226,6 +2230,8 @@ def analyze_cifs(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
+        if _execution is not None:
+            _execution.before_verify(staging)
         manifest = _verify_and_commit(
             target,
             staging,
@@ -2234,7 +2240,7 @@ def analyze_cifs(
             expected_state=expected_target_state,
             diagnostics=diagnostics,
         )
-    except Exception:
+    except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     _rebind_committed_results(analyses, [], staging, target)
@@ -2267,6 +2273,7 @@ def export_discovery(
     discovery_settings: DiscoverySettings | None = None,
     include_excel: bool = True,
     overwrite: bool = False,
+    _execution: Any = None,
 ) -> PipelineResult:
     target = _validate_output_target(output_dir, overwrite=overwrite)
     expected_target_state = _capture_target_state(target)
@@ -2281,6 +2288,8 @@ def export_discovery(
         for warning in discovery.warnings
     ]
     try:
+        if _execution is not None:
+            _execution.before_export(diagnostics)
         export_result_bundle(
             staging,
             analyses=[],
@@ -2290,6 +2299,8 @@ def export_discovery(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
+        if _execution is not None:
+            _execution.before_verify(staging)
         manifest = _verify_and_commit(
             target,
             staging,
@@ -2297,7 +2308,7 @@ def export_discovery(
             expected_state=expected_target_state,
             diagnostics=diagnostics,
         )
-    except Exception:
+    except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     _rebind_committed_results([], [], staging, target, discovery=discovery)
@@ -2325,6 +2336,7 @@ def run_pipeline(
     overwrite: bool = False,
     confirm_above: int = 200,
     authorize_large_download: bool = False,
+    _execution: Any = None,
 ) -> PipelineResult:
     if analysis_settings is None:
         requested_analysis_settings = AnalysisSettings(
@@ -2453,8 +2465,11 @@ def run_pipeline(
                                 )
             path_pairs.append((item.cif_path, tensor))
 
-        analyses, analysis_diagnostics = _analyze_paths(path_pairs, settings)
+        runner = _execution.analyze_paths if _execution is not None else _analyze_paths
+        analyses, analysis_diagnostics = runner(path_pairs, settings)
         diagnostics.extend(analysis_diagnostics)
+        if _execution is not None:
+            _execution.before_export(diagnostics)
         export_result_bundle(
             staging,
             analyses=analyses,
@@ -2464,6 +2479,8 @@ def run_pipeline(
             diagnostics=diagnostics,
             include_excel=include_excel,
         )
+        if _execution is not None:
+            _execution.before_verify(staging)
         manifest = _verify_and_commit(
             target,
             staging,
@@ -2472,7 +2489,7 @@ def run_pipeline(
             expected_state=expected_target_state,
             diagnostics=diagnostics,
         )
-    except Exception:
+    except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
 

@@ -528,7 +528,7 @@ def test_local_run_blocks_stale_input_and_does_not_walk_folder_on_tk_thread(
     scheduled = []
     errors = []
     warnings = []
-    controller._start_task = lambda label, function: scheduled.append((label, function))
+    controller._submit_workflow = lambda request: scheduled.append(request)
     controller._format_input_problems = (
         gui_module.DiffractScoutApp._format_input_problems.__get__(controller)
     )
@@ -1328,7 +1328,7 @@ def test_local_left_form_controls_are_reachable_after_scroll(geometry: str) -> N
         app.destroy()
 
 
-def test_local_worker_uses_ui_state_snapshot(tmp_path, monkeypatch) -> None:
+def test_local_worker_uses_ui_state_snapshot(tmp_path) -> None:
     """Worker options are frozen without needing a live Tk display."""
 
     if not hasattr(gui_module.DiffractScoutApp, "_run_local"):
@@ -1348,40 +1348,34 @@ def test_local_worker_uses_ui_state_snapshot(tmp_path, monkeypatch) -> None:
         pass
 
     controller = Controller()
-    sentinel = object()
-    observed: dict[str, object] = {}
     scheduled: dict[str, object] = {}
-
-    def fake_analyze(inputs, output, **kwargs):
-        observed.update({"inputs": inputs, "output": output, **kwargs})
-        return sentinel
-
-    monkeypatch.setattr(gui_module, "analyze_cifs", fake_analyze)
     controller.running = False
     input_cif = tmp_path / "input.cif"
     input_cif.write_text("data_input\n", encoding="utf-8")
     controller.local_inputs = [input_cif]
     controller.local_output = Variable(str(tmp_path / "bundle"))
-    controller.elastic_overrides = {}
+    controller.elastic_overrides = {
+        str(input_cif.resolve()): gui_module.parse_cubic_cij(160, 90, 45, source="manual")
+    }
     controller.local_recursive = Variable(True)
     controller.include_excel = Variable(False)
     controller.overwrite = Variable(False)
     controller._form_analysis_settings = lambda: AnalysisSettings()
-    controller._start_task = lambda label, function: scheduled.update(
-        {"label": label, "function": function}
-    )
+    controller._submit_workflow = lambda request: scheduled.update(request)
 
     gui_module.DiffractScoutApp._run_local(controller)
-    function = scheduled["function"]
     controller.local_recursive.set(False)
     controller.include_excel.set(True)
     controller.overwrite.set(True)
 
-    assert callable(function)
-    assert function() is sentinel
-    assert observed["recursive"] is True
-    assert observed["include_excel"] is False
-    assert observed["overwrite"] is False
+    assert scheduled["workflow"] == "analyze"
+    assert scheduled["inputs"] == [str(input_cif)]
+    assert scheduled["execution"]["recursive"] is True
+    assert scheduled["exports"]["include_excel"] is False
+    assert scheduled["execution"]["overwrite"] is False
+    tensor = scheduled["elastic_overrides"][str(input_cif.resolve())]
+    assert tensor["stiffness_GPa"][0][0] == 160
+    assert tensor["source_record_id"] == "manual"
 
 
 def test_readiness_tracks_required_inputs_and_busy_state(tmp_path) -> None:

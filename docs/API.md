@@ -5,6 +5,62 @@ The public result schemas and scientific meanings are defined in
 validation workflow are documented in the [GUI guide](GUI.md),
 [README](../README.md), and [release procedure](RELEASE.md).
 
+## Durable workflow service
+
+`diffractscout.workflow` provides the same durable jobs used by the JSON CLI,
+local MCP adapter and desktop Tasks page. It wraps existing scientific routines;
+the ordinary functions below remain available for direct synchronous use.
+See the [agent pipeline guide](AGENT_PIPELINE.md) for request semantics,
+recovery and scientific interpretation.
+
+```python
+import json
+from pathlib import Path
+from diffractscout import workflow
+
+request_file = Path("examples/agent/analyze-local.json").resolve()
+request = workflow.WorkflowRequest.from_dict(
+    json.loads(request_file.read_text(encoding="utf-8")),
+    base_dir=request_file.parent,
+)
+plan = workflow.plan_workflow(request)
+if not plan["ready"]:
+    raise RuntimeError(plan["diagnostics"])
+
+workspace = Path("outputs/agent-workspace").resolve()
+job = workflow.submit_job(request, workspace=workspace)
+run_id = job["run_id"]
+print(run_id, workflow.status_job(run_id, workspace=workspace))
+```
+
+Poll `status_job` until work reaches a terminal state; then inspect diagnostics
+and call `get_result(run_id, workspace=workspace)` for verified artifact metadata.
+For a short foreground call, use `run_job(request, workspace=workspace)` instead
+of `submit_job`. Runtime credentials can be passed as `api_key=` or supplied
+through `MP_API_KEY`; requests must not contain credentials.
+
+| Function | Purpose |
+| --- | --- |
+| `context()`, `schema("request")` | Discover capabilities/dependencies and current request fields/defaults |
+| `plan_workflow(request)` | Check local readiness without execution, network access or writes |
+| `run_job(request, workspace=...)`, `submit_job(request, workspace=...)` | Execute in the foreground or submit background work |
+| `list_jobs(workspace=...)`, `status_job(run_id, workspace=...)` | Inspect durable history and progress |
+| `read_events(run_id, workspace=..., after=0, limit=100)` | Read event pages; continue from `next_cursor` |
+| `resume_job(run_id, workspace=..., background=True)`, `cancel_job(run_id, workspace=...)` | Resume with integrity checks or request cooperative cancellation |
+| `get_result(run_id, workspace=..., table=None, offset=0, limit=100, verify=True)` | Verify artifacts and optionally read a named table page |
+| `load_result_object(run_id, workspace=...)` | Verify and reconstruct the published result object for Python consumers |
+| `run_batch(requests, workspace=..., max_workers=1, background=False)` | Run independent requests serially by default, with explicit finite concurrency |
+
+Pass a `WorkflowRequest` or request mapping. Use `WorkflowRequest.from_dict`
+with `base_dir` when the mapping came from a file; ordinary mappings resolve
+relative paths from the calling process directory. Omitted `output_dir` selects
+a unique service-managed output. Workspace paths are independent of that base.
+`schema()` and the service validate the contract; duplicating its full field
+list in a caller is unnecessary. Batch requests use separate output targets and
+retain individual job identities. `load_result_object` returns the result type
+for that workflow; `get_result` provides a common artifact/table interface
+across all workflow types, including `fetch` and `adapt`.
+
 ## Local CIF analysis
 
 ```python

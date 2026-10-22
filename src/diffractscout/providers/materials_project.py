@@ -485,13 +485,15 @@ class MaterialsProjectProvider:
                         )
                     )
                 except Exception as exc:
+                    from ..network import transient_error
+
                     results.append(
                         DownloadArtifact(
                             candidate=candidate,
                             cif_path=None,
                             status="failed",
                             error=str(exc),
-                            provider_metadata=self.metadata(),
+                            provider_metadata={**self.metadata(), "retryable": transient_error(exc)},
                         )
                     )
 

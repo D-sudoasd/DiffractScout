@@ -1,0 +1,38 @@
+{
+  "scenario": "two synthetic CIFs; export fails once after both calculations",
+  "runs": {
+    "legacy_restart": {
+      "initial": {
+        "queries": 1,
+        "material_downloads": 2,
+        "phase_calculations": 2,
+        "seconds": 0.070319099992048
+      },
+      "retry": {
+        "queries": 1,
+        "material_downloads": 2,
+        "phase_calculations": 2,
+        "seconds": 0.264390199969057
+      },
+      "verified": true,
+      "bundle": "legacy"
+    },
+    "workflow_resume": {
+      "initial": {
+        "queries": 1,
+        "material_downloads": 2,
+        "phase_calculations": 2,
+        "seconds": 0.22331999999005347
+      },
+      "retry": {
+        "queries": 0,
+        "material_downloads": 0,
+        "phase_calculations": 0,
+        "seconds": 0.29836600000271574
+      },
+      "verified": true,
+      "bundle": "workspace\\jobs\\fb7df5c69565486fb9d4cb2ea06e8f92\\bundle"
+    }
+  },
+  "all_passed": true
+}

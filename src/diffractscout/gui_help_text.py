@@ -151,6 +151,19 @@ _MESSAGES = (
     ("help_cifs_details", "选中上方一行后，这里显示文件位置和说明。可滚动查看，也可选中文字后复制。", "Select a row above to view its file path and notes here. Scroll to read more, or select text to copy it."),
 )
 
+_MESSAGES += (
+    ("help_tab_tasks", "查看保存的任务、当前步骤和实际完成数量。选择任务后可恢复、取消或核验并打开结果；关闭窗口后任务继续运行。", "View saved tasks, current stages and actual item counts. Select a task to resume, cancel, or verify and open results. Tasks continue after closing the window."),
+    ("help_tasks_workspace", "选择保存任务记录的文件夹。同一文件夹中的历史任务会在重启后重新显示；切换文件夹不会取消任务。", "Choose the folder holding task records. Its history reappears after restart. Changing folders does not cancel tasks."),
+    ("help_tasks_import", "选择工作流请求 JSON 文件并提交。文件中的相对路径以该文件所在文件夹为准；联网任务使用主窗口填写的密钥。", "Choose and submit a workflow request JSON file. Relative paths use the file's folder. Online tasks use the key entered in the main window."),
+    ("help_tasks_refresh", "重新读取当前任务文件夹的记录。运行中的任务也会自动更新，数量表示已实际完成的项目。", "Reload task records in the current folder. Running tasks also update automatically; counts represent actual completed items."),
+    ("help_tasks_resume", "选择中断、受阻或未全部完成的任务后恢复。先根据详情补齐缺失条件；已完成并通过核验的项目可以复用。", "Resume an interrupted, blocked or unfinished task. Resolve missing requirements in its details first. Completed verified items can be reused."),
+    ("help_tasks_cancel", "请求取消选中的活动任务。当前操作可能需要先完成安全写入，状态会由取消中变为已取消。", "Request cancellation of the selected active task. The current operation may need to finish a safe write before the state changes from cancelling to cancelled."),
+    ("help_tasks_open", "选择已完成或部分完成的任务，核验保存文件后打开结果。文件缺失或内容变化时会显示错误。", "Select a completed or partial task to verify its saved files and open results. Missing or changed files produce an error."),
+    ("help_tasks_folder", "核验所选任务的结果文件后，在文件管理器中打开保存结果的文件夹。核验失败时不会打开。", "Verify the selected task's result files, then open their folder in the file manager. Verification failure keeps it closed."),
+    ("help_tasks_list", "选择一行查看任务状态、当前步骤和实际完成数量。运行中不显示估算百分比；双击可核验并打开已完成结果。", "Select a row for its state, stage and actual completed item count. Double-click to verify and open completed results."),
+    ("help_tasks_details", "显示所选任务的记录，包括诊断、缺失条件、文件位置、完整性和完成范围。可以选中文字复制。", "Read the selected task's diagnostics, missing requirements, file locations, integrity and coverage. Select text to copy it."),
+)
+
 HELP_TEXT = {
     "zh": {key: zh for key, zh, _en in _MESSAGES},
     "en": {key: en for key, _zh, en in _MESSAGES},
